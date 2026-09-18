@@ -19,9 +19,13 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Caché temporal de datos dinámicos (radar / descargas)
-backend/data/radar_cache/
+# Datos dinámicos y cachés generados en tiempo de ejecución (SAIH, radar, weather_state)
+backend/data/*
+!backend/data/.gitkeep
+data/*
+!data/.gitkeep
 *.log
+saih_aforos.geojson
 
 # Archivos de sistema operativo y editores
 .DS_Store
