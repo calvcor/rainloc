@@ -136,7 +136,7 @@ export const CONFIG = {
       {
         id: 'radar',
         name: 'Radar Meteorológico',
-        subtitle: 'Reflectividad dBZ (RadarSpain.es)',
+        subtitle: 'Reflectividad dBZ (ORD OPERA / EUMETNET)',
         description: 'Imágenes compuestas de radar en tiempo real calibradas en decibelios de reflectividad.',
         type: 'raster',
         defaultActive: false,

@@ -15,7 +15,7 @@ Integra en una interfaz unificada e interactiva datos oficiales de radares meteo
 - **Selector de Proximidad**: Detección automática y navegación entre estaciones de aforo y presas cercanas (<3 km).
 
 ### 📡 Meteorología en Vivo
-- **Radar Meteorológico**: Compuesto nacional y radares individuales calibrados en reflectividad (dBZ) procedentes de **EUMETNET / OPERA** y **RadarSpain.es**, con consulta de intensidad por píxel en tiempo real (0ms de latencia).
+- **Radar Meteorológico**: Compuesto nacional y radares individuales calibrados en reflectividad (dBZ) procedentes del programa **ORD / OPERA (EUMETNET)**, con consulta de intensidad por píxel en tiempo real (0ms de latencia).
 - **Rayos y Descargas Eléctricas (Blitzortung)**: Conexión push en directo con filtrado configurable por ventana temporal (1, 5 o 15 minutos), cálculo dinámico de tasa de impactos por minuto y diferenciación cromática por antigüedad.
 - **Avisos Oficiales (AEMET Meteoalerta)**: Ingesta del feed oficial CAP/ATOM de avisos meteorológicos con polígonos vectoriales y niveles de severidad (amarillo, naranja, rojo).
 
@@ -150,5 +150,6 @@ Abre tu navegador en `http://localhost:3000`.
 
 - **CHJ (Confederación Hidrográfica del Júcar)**: Datos en tiempo real de la red [SAIH Júcar](https://saih.chj.es).
 - **AEMET (Agencia Estatal de Meteorología)**: Avisos de fenómenos adversos [Meteoalerta](https://www.aemet.es).
-- **EUMETNET / OPERA & RadarSpain.es**: Datos abiertos de reflectividad de radar [RadarSpain.es](https://radarspain.es).
+- **EUMETNET / OPERA (Open Radar Data - ORD)**: Proveedor oficial de datos abiertos y compuestos de reflectividad de radar meteorológico.
 - **Blitzortung.org**: Red comunitaria de localización de descargas eléctricas.
+- **RadarSpain.es**: Proyecto de referencia e inspiración en visualización meteorológica ([RadarSpain.es](https://radarspain.es)).
