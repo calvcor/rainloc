@@ -14,3 +14,7 @@ api_v1_router.include_router(radar_router)
 api_v1_router.include_router(models_router)
 api_v1_router.include_router(lightning_router)
 api_v1_router.include_router(saih_router)
+
+# Alias de acceso directo para /api/v1/ccaa
+from app.api.v1.cuencas import get_ccaa_boundaries
+api_v1_router.add_api_route("/ccaa", get_ccaa_boundaries, methods=["GET"], tags=["Límites CCAA"])

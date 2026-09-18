@@ -39,6 +39,44 @@ def get_cuencas_data() -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al leer datos de cuencas: {str(e)}")
 
+# Cache en memoria de CCAA GeoJSON
+_ccaa_cache: Optional[Dict[str, Any]] = None
+
+def get_ccaa_data() -> Dict[str, Any]:
+    """Carga y mantiene en memoria el GeoJSON de límites de Comunidades Autónomas de España."""
+    global _ccaa_cache
+    if _ccaa_cache is not None:
+        return _ccaa_cache
+
+    for candidate in [
+        getattr(settings, "CCAA_DATA_FILE", None),
+        getattr(settings, "CCAA_FILE", None),
+        Path(__file__).resolve().parent.parent.parent.parent / "ccaa.geojson",
+        Path(__file__).resolve().parent.parent.parent.parent / "data" / "ccaa.geojson"
+    ]:
+        if candidate and candidate.exists():
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    _ccaa_cache = json.load(f)
+                    return _ccaa_cache
+            except Exception as e:
+                pass
+
+    raise HTTPException(status_code=404, detail="Archivo GeoJSON de Comunidades Autónomas no encontrado.")
+
+@router.get("/ccaa", summary="Obtener GeoJSON de límites de Comunidades Autónomas de España")
+async def get_ccaa_boundaries():
+    """Devuelve la FeatureCollection de las Comunidades Autónomas de España sin relleno."""
+    data = get_ccaa_data()
+    return Response(
+        content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+        media_type="application/geo+json",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Feature-Count": str(len(data.get("features", [])))
+        }
+    )
+
 @router.get("", summary="Obtener GeoJSON de cuencas y subsistemas CHJ")
 async def get_all_cuencas():
     """

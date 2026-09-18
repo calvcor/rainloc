@@ -6,13 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Instalar dependencias del sistema requeridas para pyproj, h5py y librerías científicas
+# Instalar dependencias del sistema requeridas para pyproj, h5py y librerías científicas (eccodes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libproj-dev \
     proj-data \
     proj-bin \
     libhdf5-dev \
+    libeccodes-dev \
+    libeccodes0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,8 +29,8 @@ COPY subsistemas.geojson ./subsistemas.geojson
 
 WORKDIR /app/backend
 
-# Crear directorio de datos
-RUN mkdir -p data/radar_cache
+# Crear directorios de datos y cachés
+RUN mkdir -p data/radar_cache data/ecmwf_cache
 
 EXPOSE 8000
 

@@ -10,3 +10,9 @@ pillow>=10.2.0
 tifffile>=2024.2.12
 boto3>=1.34.0
 pyproj>=3.6.0
+ecmwf-opendata>=0.2.0
+xarray>=2024.2.0
+cfgrib>=0.9.14
+eccodes>=1.7.0
+scipy>=1.12.0
+

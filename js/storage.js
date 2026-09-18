@@ -14,6 +14,7 @@ export class StorageManager {
       basemapId: 'ignBase',
       fillOpacity: 0.25,
       cuencasVisible: true,
+      ccaaVisible: true,
       favoriteBasinId: null,
       favoriteBasinName: null,
       activeTab: 'realtime', // 'realtime' | 'prediction'
@@ -145,6 +146,14 @@ export class StorageManager {
   }
 
   /**
+   * Guarda la visibilidad de los límites de CCAA
+   * @param {boolean} visible 
+   */
+  static setCcaaVisible(visible) {
+    return this.save({ ccaaVisible: Boolean(visible) });
+  }
+
+  /**
    * Guarda el modo de visualización de radar ('composite' | 'single')
    * @param {string} mode 
    */
@@ -170,11 +179,13 @@ export class StorageManager {
 
   /**
    * Comprueba si una cuenca es la favorita
-   * @param {string} id 
+   * @param {string|number} id 
    */
   static isFavorite(id) {
+    if (id === null || id === undefined) return false;
     const prefs = this.load();
-    return prefs.favoriteBasinId === id;
+    if (prefs.favoriteBasinId === null || prefs.favoriteBasinId === undefined) return false;
+    return String(prefs.favoriteBasinId) === String(id);
   }
 }
 

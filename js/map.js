@@ -12,6 +12,10 @@ export class MapManager {
     this.baseLayers = {};
     this.layerControl = null;
     this.layerNameToId = {};
+    this.ccaaLayer = null;
+    this.currentBasemapId = null;
+    const savedPrefs = StorageManager.load();
+    this.ccaaVisible = (savedPrefs.ccaaVisible !== undefined) ? Boolean(savedPrefs.ccaaVisible) : true;
   }
 
   /**
@@ -37,15 +41,43 @@ export class MapManager {
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(this.map);
 
     // Crear paneles dedicados para jerarquía estricta de capas y clics
-    // Cuencas (400), Avisos (450), Lluvias (580), Caudales (590), Embalses (610 - prioridad superior)
+    // 1. Cuencas base (350) y Resalte/Selección de cuencas (360) -> Por debajo de todas las capas de tiempo real y modelos
     if (!this.map.getPane('cuencasPane')) {
       this.map.createPane('cuencasPane');
-      this.map.getPane('cuencasPane').style.zIndex = 400;
+      this.map.getPane('cuencasPane').style.zIndex = 350;
     }
+    if (!this.map.getPane('cuencasHoverPane')) {
+      this.map.createPane('cuencasHoverPane');
+      this.map.getPane('cuencasHoverPane').style.zIndex = 360;
+      this.map.getPane('cuencasHoverPane').style.pointerEvents = 'none';
+    }
+
+    // 2. Modelos de Predicción Numérica (ECMWF, AROME, ICON) -> por encima de cuencas (420)
+    if (!this.map.getPane('modelsPane')) {
+      this.map.createPane('modelsPane');
+      this.map.getPane('modelsPane').style.zIndex = 420;
+    }
+
+    // 3. Radar Meteorológico en Tiempo Real -> por encima de modelos y cuencas (440)
+    if (!this.map.getPane('radarPane')) {
+      this.map.createPane('radarPane');
+      this.map.getPane('radarPane').style.zIndex = 440;
+    }
+
+    // 4. Avisos Meteorológicos AEMET en Tiempo Real (460)
     if (!this.map.getPane('warningsPane')) {
       this.map.createPane('warningsPane');
-      this.map.getPane('warningsPane').style.zIndex = 450;
+      this.map.getPane('warningsPane').style.zIndex = 460;
     }
+
+    // 5. Límites Autonómicos CCAA (500)
+    if (!this.map.getPane('ccaaPane')) {
+      this.map.createPane('ccaaPane');
+      this.map.getPane('ccaaPane').style.zIndex = 500;
+      this.map.getPane('ccaaPane').style.pointerEvents = 'none';
+    }
+
+    // 6. Redes de Observación y Estaciones en Tiempo Real (SAIH Júcar) -> Máxima prioridad
     if (!this.map.getPane('lluviasPane')) {
       this.map.createPane('lluviasPane');
       this.map.getPane('lluviasPane').style.zIndex = 580;
@@ -59,18 +91,107 @@ export class MapManager {
       this.map.getPane('embalsesPane').style.zIndex = 610;
     }
 
+    // 7. Tooltips y Popups Leaflet
+    if (this.map.getPane('tooltipPane')) {
+      this.map.getPane('tooltipPane').style.zIndex = 750;
+    }
+    if (this.map.getPane('popupPane')) {
+      this.map.getPane('popupPane').style.zIndex = 800;
+    }
+
     // Registrar y montar capas base respetando preferencias guardadas
     this._setupBaseLayers();
 
-    // Guardar selección cuando el usuario cambia el mapa base
+    // Cargar y superponer límites vectoriales de CCAA por encima de todo
+    this._loadCcaaBoundaries();
+
+    // Guardar selección y adaptar color de límites cuando el usuario cambia el mapa base
     this.map.on('baselayerchange', (e) => {
       const basemapId = this.layerNameToId[e.name];
       if (basemapId) {
+        this.currentBasemapId = basemapId;
         StorageManager.setBasemap(basemapId);
+        this.updateCcaaStyle(basemapId);
       }
     });
 
     return this.map;
+  }
+
+  /**
+   * Obtiene el estilo de las líneas de CCAA en función del mapa base activo
+   * (Azul muy oscuro en mapas claros/satélite, blanco en mapa oscuro)
+   */
+  _getCcaaStyle(basemapId = null) {
+    const activeId = basemapId || this.currentBasemapId || StorageManager.load().basemapId || 'ignBase';
+    const isDarkMap = activeId === 'esriDarkCanvas';
+
+    return {
+      color: isDarkMap ? '#ffffff' : '#0a192f',
+      weight: 2.0,
+      opacity: isDarkMap ? 0.95 : 0.9,
+      fill: false,
+      fillOpacity: 0.0,
+      lineCap: 'round',
+      lineJoin: 'round',
+      dashArray: '6, 6'
+    };
+  }
+
+  /**
+   * Actualiza el estilo dinámico de las fronteras de CCAA en tiempo real
+   */
+  updateCcaaStyle(basemapId = null) {
+    if (this.ccaaLayer) {
+      this.ccaaLayer.setStyle(this._getCcaaStyle(basemapId));
+    }
+  }
+
+  /**
+   * Conmuta o establece la visibilidad de los límites de CCAA
+   * @param {boolean} visible 
+   */
+  setCcaaVisible(visible) {
+    this.ccaaVisible = Boolean(visible);
+    StorageManager.setCcaaVisible(this.ccaaVisible);
+    if (this.ccaaLayer) {
+      if (this.ccaaVisible) {
+        if (!this.map.hasLayer(this.ccaaLayer)) {
+          this.map.addLayer(this.ccaaLayer);
+        }
+      } else {
+        if (this.map.hasLayer(this.ccaaLayer)) {
+          this.map.removeLayer(this.ccaaLayer);
+        }
+      }
+    }
+  }
+
+  /**
+   * Carga el GeoJSON de Comunidades Autónomas y lo dibuja en el panel prioritario sin relleno
+   */
+  async _loadCcaaBoundaries() {
+    let geojsonData = null;
+    for (const url of CONFIG.dataSources.ccaaGeoJson) {
+      try {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          geojsonData = await resp.json();
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (geojsonData && geojsonData.features) {
+      this.ccaaLayer = L.geoJSON(geojsonData, {
+        pane: 'ccaaPane',
+        interactive: false,
+        style: () => this._getCcaaStyle()
+      });
+      if (this.ccaaVisible) {
+        this.ccaaLayer.addTo(this.map);
+      }
+    }
   }
 
   /**
@@ -97,13 +218,16 @@ export class MapManager {
 
       if ((isSavedActive || isConfigDefault) && !defaultLayer) {
         defaultLayer = tileLayer;
+        this.currentBasemapId = bm.id;
         tileLayer.addTo(this.map);
       }
     });
 
     // Si ninguna fue marcada, usar la primera
     if (!defaultLayer && Object.values(this.baseLayers).length > 0) {
-      defaultLayer = Object.values(this.baseLayers)[0];
+      const firstEntry = Object.entries(this.baseLayers)[0];
+      defaultLayer = firstEntry[1];
+      this.currentBasemapId = this.layerNameToId[firstEntry[0]];
       defaultLayer.addTo(this.map);
     }
 

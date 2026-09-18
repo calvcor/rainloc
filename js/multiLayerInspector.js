@@ -100,6 +100,78 @@ export class MultiLayerInspector {
     }
   }
 
+  /**
+   * Obtiene la precipitación en mm instantáneamente (0ms) a partir del pixel en el canvas de ECMWF IFS
+   */
+  _getInstantEcmwfPixel(lat, lng) {
+    if (!this.layerManager || !this.layerManager.ecmwfCanvasData) return null;
+    const { ctx, width, height, bounds, step, type, validText } = this.layerManager.ecmwfCanvasData;
+    if (!bounds || bounds.length < 2) return null;
+
+    const latMin = Math.min(bounds[0][0], bounds[1][0]);
+    const latMax = Math.max(bounds[0][0], bounds[1][0]);
+    const lonMin = Math.min(bounds[0][1], bounds[1][1]);
+    const lonMax = Math.max(bounds[0][1], bounds[1][1]);
+
+    if (lat < latMin || lat > latMax || lng < lonMin || lng > lonMax) return null;
+
+    const yPt = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 360)));
+    const yMin = Math.log(Math.tan(Math.PI / 4 + (latMin * Math.PI / 360)));
+    const yMax = Math.log(Math.tan(Math.PI / 4 + (latMax * Math.PI / 360)));
+
+    const x = Math.floor(((lng - lonMin) / (lonMax - lonMin)) * width);
+    const y = Math.floor(((yMax - yPt) / (yMax - yMin)) * height);
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+
+    try {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
+
+      if (a < 30) {
+        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
+      }
+
+      const palette = [
+        { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
+        { minMm: 150, mm: 180, label: '150 - 250 mm (Torrencial)', rgb: [217, 70, 239], color: '#d946ef' },
+        { minMm: 100, mm: 120, label: '100 - 150 mm (Muy Fuerte)', rgb: [239, 68, 68], color: '#ef4444' },
+        { minMm: 70, mm: 85, label: '70 - 100 mm (Muy Fuerte)', rgb: [249, 115, 22], color: '#f97316' },
+        { minMm: 40, mm: 55, label: '40 - 70 mm (Fuerte)', rgb: [250, 204, 21], color: '#facc15' },
+        { minMm: 20, mm: 30, label: '20 - 40 mm (Moderada)', rgb: [22, 163, 74], color: '#16a34a' },
+        { minMm: 10, mm: 15, label: '10 - 20 mm (Moderada)', rgb: [74, 222, 128], color: '#4ade80' },
+        { minMm: 3, mm: 6, label: '3 - 10 mm (Ligera)', rgb: [2, 132, 199], color: '#0284c7' },
+        { minMm: 1, mm: 2, label: '1 - 3 mm (Débil)', rgb: [56, 189, 248], color: '#38bdf8' },
+        { minMm: 0.1, mm: 0.5, label: '0.1 - 1 mm (Muy Débil)', rgb: [186, 230, 253], color: '#bae6fd' }
+      ];
+
+      let bestMatch = palette[palette.length - 1];
+      let minDistance = Infinity;
+
+      for (const p of palette) {
+        const dr = r - p.rgb[0];
+        const dg = g - p.rgb[1];
+        const db = b - p.rgb[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestMatch = p;
+        }
+      }
+
+      return {
+        mm: bestMatch.mm,
+        label: bestMatch.label,
+        color: bestMatch.color,
+        step,
+        type,
+        validText
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   _debouncedFetchDbz(lat, lng, mode, stationId) {
     if (this._dbzDebounceTimer) clearTimeout(this._dbzDebounceTimer);
     this._dbzDebounceTimer = setTimeout(async () => {
@@ -216,12 +288,10 @@ export class MultiLayerInspector {
       }
     }
 
-    // 2. Inspeccionar Capas Temáticas Activas (AEMET, Radar, Acumulados, Modelos)
+    // 2. Inspeccionar Capas Temáticas Activas en el Mapa (AEMET, Radar, SAIH, Modelos)
     if (this.layerManager) {
-      const activeStates = this.layerManager.layerStates;
-
       // 2.1 Avisos AEMET
-      if (activeStates["aemet_warnings"] && activeStates["aemet_warnings"].active) {
+      if (this.layerManager.isLayerOnMap("aemet_warnings")) {
         const aemetGroup = this.layerManager.layers["aemet_warnings"];
         if (aemetGroup) {
           const matchingWarnings = [];
@@ -262,7 +332,7 @@ export class MultiLayerInspector {
       }
 
       // 2.2 Radar Meteorológico
-      if (activeStates["radar"] && activeStates["radar"].active) {
+      if (this.layerManager.isLayerOnMap("radar")) {
         const bounds = this.layerManager.currentRadarBounds;
 
         let inRadarArea = false;
@@ -285,35 +355,39 @@ export class MultiLayerInspector {
           // (tolerancia fina < 0.005° ~ 500m para evitar usar valores de celdas adyacentes)
           const cached = this._lastRadarLookup &&
             Math.abs(this._lastRadarLookup.lat - lat) < 0.005 &&
-            Math.abs(this._lastRadarLookup.lng - lng) < 0.005
-              ? this._lastRadarLookup
-              : null;
+            Math.abs(this._lastRadarLookup.lng - lng) < 0.005;
 
-          // Si el píxel en pantalla tiene reflectividad, mostrar la sección del radar
-          if (instantPixel) {
-            const dbzValue = (cached && cached.dbz !== null && cached.dbz !== undefined) ? cached.dbz : instantPixel.dbz;
-            const rainIntensity = (cached && cached.rain_intensity) ? cached.rain_intensity : instantPixel.rain_intensity;
+          if (instantPixel || cached) {
+            const dbzVal = (cached && this._lastRadarLookup.dbz !== null && this._lastRadarLookup.dbz !== undefined)
+              ? this._lastRadarLookup.dbz
+              : (instantPixel ? instantPixel.dbz : 0);
 
-            // Determinar color del badge estrictamente según el valor de dBZ o el color exacto del píxel
-            let badgeColor = instantPixel.badgeColor || "#38bdf8";
-            if (dbzValue >= 55) badgeColor = "#ef4444";
-            else if (dbzValue >= 45) badgeColor = "#f97316";
-            else if (dbzValue >= 35) badgeColor = "#eab308";
-            else if (dbzValue >= 25) badgeColor = "#22c55e";
-            else if (dbzValue >= 15) badgeColor = "#0284c7";
-            else badgeColor = "#38bdf8";
+            const label = (cached && this._lastRadarLookup.rain_intensity)
+              ? this._lastRadarLookup.rain_intensity
+              : (instantPixel ? instantPixel.rain_intensity : 'Sin lluvia');
 
-            const rainDesc = `${rainIntensity} (${dbzValue.toFixed(0)} dBZ)`;
+            const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
+
+            const stMode = this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId
+              ? `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId}`
+              : 'Compuesto Nacional';
 
             sections.push({
               type: "radar",
-              title: "Radar Meteorológico (España)",
-              headerColor: "#38bdf8",
+              title: "Radar de Reflectividad (OPERA)",
+              headerColor: "#0284c7",
               icon: "📡",
-              name: "Eco de Precipitación",
-              badge: `${dbzValue.toFixed(0)} dBZ`,
-              badgeBg: badgeColor,
-              details: `Intensidad: ${rainDesc}`
+              name: `Intensidad: ${dbzVal.toFixed(1)} dBZ`,
+              badge: `${dbzVal.toFixed(0)} dBZ`,
+              badgeBg: badgeBg,
+              badgeColor: "#ffffff",
+              details: `
+                <div style="font-size: 0.76rem; color: #f8fafc; font-weight: 600;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
+                  ${label}
+                </div>
+                <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Cobertura: ${stMode}</div>
+              `
             });
 
             // Disparar consulta de calibración fina con debounce si no está en cache
@@ -324,11 +398,8 @@ export class MultiLayerInspector {
         }
       }
 
-
-
-
       // 2.3 Caudales en Ríos (SAIH Júcar)
-      if (activeStates["saih_caudales"] && activeStates["saih_caudales"].active) {
+      if (this.layerManager.isLayerOnMap("saih_caudales")) {
         const caudalesGroup = this.layerManager.layers["saih_caudales"];
         if (caudalesGroup) {
           let closestStation = null;
@@ -411,27 +482,26 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.3.b Embalses y Presas (SAIH Júcar)
-      if (activeStates["saih_embalses"] && activeStates["saih_embalses"].active) {
+      // 2.4 Embalses y Presas (SAIH Júcar)
+      if (this.layerManager.isLayerOnMap("saih_embalses")) {
         const embalsesGroup = this.layerManager.layers["saih_embalses"];
         if (embalsesGroup) {
           let closestEmbalse = null;
-          let minScreenDist = 25; // Radio de captura 25px
-
-          const mousePt = this.map.latLngToContainerPoint(latlng);
-
-          const checkLayer = (layer) => {
-            if (layer.getLatLng && layer.feature && layer.feature.properties) {
-              const markerPt = this.map.latLngToContainerPoint(layer.getLatLng());
-              const screenDist = Math.hypot(markerPt.x - mousePt.x, markerPt.y - mousePt.y);
-              if (screenDist < minScreenDist) {
-                minScreenDist = screenDist;
-                closestEmbalse = layer.feature.properties;
-              }
-            }
-          };
+          let minPixDist = 24; // Tolerancia más amplia para embalses (iconos más grandes)
 
           embalsesGroup.eachLayer((child) => {
+            const checkLayer = (l) => {
+              if (l.getLatLng && l.feature && l.feature.properties) {
+                const ptPix = this.map.latLngToContainerPoint(l.getLatLng());
+                const mousePix = this.map.latLngToContainerPoint(latlng);
+                const pixDist = Math.hypot(ptPix.x - mousePix.x, ptPix.y - mousePix.y);
+                if (pixDist <= minPixDist) {
+                  minPixDist = pixDist;
+                  closestEmbalse = l.feature.properties;
+                }
+              }
+            };
+
             if (child.eachLayer) {
               child.eachLayer(checkLayer);
             } else {
@@ -440,41 +510,42 @@ export class MultiLayerInspector {
           });
 
           if (closestEmbalse) {
-            const vol = closestEmbalse.volumen_actual !== null && closestEmbalse.volumen_actual !== undefined ? Number(closestEmbalse.volumen_actual) : null;
-            const cap = closestEmbalse.capacidad_nmn !== null && closestEmbalse.capacidad_nmn !== undefined ? Number(closestEmbalse.capacidad_nmn) : null;
-            const pct = closestEmbalse.porcentaje_llenado !== null && closestEmbalse.porcentaje_llenado !== undefined ? Number(closestEmbalse.porcentaje_llenado) : (vol !== null && cap ? (vol / cap * 100) : null);
-            const cota = closestEmbalse.cota_actual !== null && closestEmbalse.cota_actual !== undefined ? Number(closestEmbalse.cota_actual) : null;
-            const cotaV = closestEmbalse.cota_vertido !== null && closestEmbalse.cota_vertido !== undefined ? Number(closestEmbalse.cota_vertido) : null;
+            const vol = closestEmbalse.volumen_actual_hm3 !== undefined && closestEmbalse.volumen_actual_hm3 !== null ? Number(closestEmbalse.volumen_actual_hm3) : null;
+            const cap = closestEmbalse.capacidad_total_hm3 !== undefined && closestEmbalse.capacidad_total_hm3 !== null ? Number(closestEmbalse.capacidad_total_hm3) : null;
+            const pct = closestEmbalse.porcentaje_llenado !== undefined && closestEmbalse.porcentaje_llenado !== null ? Number(closestEmbalse.porcentaje_llenado) : (vol !== null && cap ? (vol / cap) * 100 : null);
+            const varVol = closestEmbalse.variacion_24h_hm3 !== undefined && closestEmbalse.variacion_24h_hm3 !== null ? Number(closestEmbalse.variacion_24h_hm3) : null;
 
-            // Color del badge según peligrosidad de desbordamiento: <35% verde, 35-70% amarillo, >=70% rojo
-            let badgeBg = "#10b981";
+            let pctColor = "#10b981";
             if (pct !== null) {
-              if (pct >= 70) badgeBg = "#ef4444";
-              else if (pct >= 35) badgeBg = "#f59e0b";
-              else badgeBg = "#10b981";
+              if (pct < 20) pctColor = "#ef4444";
+              else if (pct < 40) pctColor = "#f97316";
+              else if (pct < 70) pctColor = "#f59e0b";
             }
 
-            const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
             const volText = vol !== null ? `${vol.toFixed(2)} hm³` : "-- hm³";
-            const capText = cap !== null ? `${cap.toFixed(1)} hm³` : "-- hm³";
-            const cotaText = cota !== null ? `${cota.toFixed(1)} m` : "-- m";
-            const cotaVText = cotaV !== null ? `(Vertido: ${cotaV.toFixed(1)} m)` : '';
+            const capText = cap !== null ? `${cap.toFixed(2)} hm³` : "-- hm³";
+            const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
+            const horaText = closestEmbalse.ultima_hora ? `· ${closestEmbalse.ultima_hora}` : '';
+            const varText = varVol !== null ? `${varVol >= 0 ? '+' : ''}${varVol.toFixed(2)} hm³ (24h)` : null;
             const metaLoc = `${closestEmbalse.poblacion || '--'} (${closestEmbalse.provincia || ''}) · ${closestEmbalse.subcuenca || ''}`;
 
             sections.push({
               type: "embalse",
-              title: "Embalse (SAIH Júcar)",
-              headerColor: "#0ea5e9",
-              icon: "🌊",
+              title: "Embalse / Presa (SAIH)",
+              headerColor: "#6366f1",
+              icon: "🏞️",
               name: `${closestEmbalse.nombre}`,
-              badge: `${pctText} lleno`,
-              badgeBg: badgeBg,
+              badge: `${pctText}`,
+              badgeBg: pctColor,
               badgeColor: "#ffffff",
               details: `
-                <div class="unified-caudal-block">
-                  <div style="margin-top:2px; font-size:0.82rem;">Volumen: <strong style="color:#38bdf8; font-size:1.08em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
-                  <div style="font-size:0.72rem; color:#cbd5e1; margin-top:2px;">Cota nivel: <strong>${cotaText}</strong> <span style="color:#94a3b8; font-size:0.70rem;">${cotaVText}</span></div>
-                  <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestEmbalse.codigo || '--'}</div>
+                <div class="unified-embalse-block">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                    <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
+                    <div style="font-weight:700; color:${pctColor}; font-size:0.95rem;">${pctText}</div>
+                  </div>
+                  ${varText ? `<div style="font-size:0.72rem; color:${varVol >= 0 ? '#34d399' : '#f87171'}; margin-top:2px;">Variación: ${varText}</div>` : ''}
+                  <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestEmbalse.codigo || '--'} ${horaText}</div>
                 </div>
               `
             });
@@ -482,27 +553,26 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.3.c Pluviómetros / Lluvia (SAIH Júcar)
-      if (activeStates["saih_lluvias"] && activeStates["saih_lluvias"].active) {
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar)
+      if (this.layerManager.isLayerOnMap("saih_lluvias")) {
         const lluviasGroup = this.layerManager.layers["saih_lluvias"];
         if (lluviasGroup) {
           let closestPluvio = null;
-          let minScreenDist = 20; // Radio de captura 20px en pantalla
-
-          const mousePt = this.map.latLngToContainerPoint(latlng);
-
-          const checkLayer = (layer) => {
-            if (layer.getLatLng && layer.feature && layer.feature.properties) {
-              const markerPt = this.map.latLngToContainerPoint(layer.getLatLng());
-              const screenDist = Math.hypot(markerPt.x - mousePt.x, markerPt.y - mousePt.y);
-              if (screenDist < minScreenDist) {
-                minScreenDist = screenDist;
-                closestPluvio = layer.feature.properties;
-              }
-            }
-          };
+          let minPixDist = 18; // Tolerancia fina para pluviómetros
 
           lluviasGroup.eachLayer((child) => {
+            const checkLayer = (l) => {
+              if (l.getLatLng && l.feature && l.feature.properties) {
+                const ptPix = this.map.latLngToContainerPoint(l.getLatLng());
+                const mousePix = this.map.latLngToContainerPoint(latlng);
+                const pixDist = Math.hypot(ptPix.x - mousePix.x, ptPix.y - mousePix.y);
+                if (pixDist <= minPixDist) {
+                  minPixDist = pixDist;
+                  closestPluvio = l.feature.properties;
+                }
+              }
+            };
+
             if (child.eachLayer) {
               child.eachLayer(checkLayer);
             } else {
@@ -511,32 +581,30 @@ export class MultiLayerInspector {
           });
 
           if (closestPluvio) {
-            const r1h = closestPluvio.lluvia_1h !== null && closestPluvio.lluvia_1h !== undefined ? Number(closestPluvio.lluvia_1h) : 0;
-            const r4h = closestPluvio.lluvia_4h !== null && closestPluvio.lluvia_4h !== undefined ? Number(closestPluvio.lluvia_4h) : 0;
-            const r12h = closestPluvio.lluvia_12h !== null && closestPluvio.lluvia_12h !== undefined ? Number(closestPluvio.lluvia_12h) : 0;
-            const r24h = closestPluvio.lluvia_24h !== null && closestPluvio.lluvia_24h !== undefined ? Number(closestPluvio.lluvia_24h) : 0;
+            const r1h = closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0;
+            const r4h = closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0;
+            const r12h = closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0;
+            const r24h = closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0;
 
-            let badgeBg = "#64748b";
-            if (r24h >= 100 || r1h >= 20) badgeBg = "#ef4444";
-            else if (r24h >= 60 || r1h >= 10) badgeBg = "#f97316";
-            else if (r24h >= 30 || r1h >= 5) badgeBg = "#eab308";
-            else if (r24h >= 10) badgeBg = "#0284c7";
-            else if (r24h > 0 || r1h > 0) badgeBg = "#38bdf8";
+            let badgeBg = "#38bdf8";
+            if (r1h >= 30 || r4h >= 60) badgeBg = "#ef4444";
+            else if (r1h >= 15 || r4h >= 30) badgeBg = "#f97316";
+            else if (r1h >= 5 || r4h >= 10) badgeBg = "#f59e0b";
 
-            const badgeText = r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : `0.0 mm`;
-            const metaLoc = `${closestPluvio.poblacion || '--'} (${closestPluvio.provincia || ''})`;
+            const metaLoc = `${closestPluvio.poblacion || '--'} (${closestPluvio.provincia || ''}) · ${closestPluvio.subcuenca || ''}`;
 
             sections.push({
               type: "lluvia",
-              title: "Pluviómetro (SAIH Júcar)",
-              headerColor: "#38bdf8",
+              title: "Pluviómetro (SAIH)",
+              headerColor: "#0284c7",
               icon: "🌧️",
               name: `${closestPluvio.nombre}`,
-              badge: badgeText,
+              badge: `${r1h.toFixed(1)} mm (1h)`,
               badgeBg: badgeBg,
               badgeColor: "#ffffff",
               details: `
-                <div class="unified-caudal-block">
+                <div class="unified-lluvia-block">
+                  <div style="font-size:0.72rem; color:#cbd5e1; margin-bottom:2px;">Lluvia acumulada:</div>
                   <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 6px; border-radius: 6px; text-align: center;">
                     <div>
                       <div style="font-size:0.65rem; color:#94a3b8;">1 hora</div>
@@ -563,9 +631,42 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.4 Modelos Numéricos (AROME, ICON, ECMWF)
-      ["arome_precip", "icon_d2", "ecmwf_ifs"].forEach((modelId) => {
-        if (activeStates[modelId] && activeStates[modelId].active) {
+      // 2.6 Modelos Numéricos (ECMWF IFS, AROME, ICON)
+      if (this.layerManager.isLayerOnMap("ecmwf_ifs")) {
+        const ecmwfPixel = this._getInstantEcmwfPixel(latlng.lat, latlng.lng);
+        const def = CONFIG.overlayLayers.prediction.find((p) => p.id === "ecmwf_ifs");
+        const step = (this.layerManager && this.layerManager.currentEcmwfStep) || 3;
+        const type = (this.layerManager && this.layerManager.currentEcmwfType) || 'total';
+        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo';
+
+        if (ecmwfPixel) {
+          sections.push({
+            type: "model",
+            title: "ECMWF IFS (Open Data)",
+            headerColor: "#059669",
+            icon: "🌐",
+            name: `${typeLabel} (+${step}h)`,
+            badge: ecmwfPixel.validText || `+${step}h`,
+            badgeBg: "#059669",
+            details: `
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
+                <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
+                <span style="font-size: 0.90rem; font-weight: 700; color: ${ecmwfPixel.color};">
+                  ${ecmwfPixel.mm > 0 ? ecmwfPixel.mm.toFixed(1) : '0.0'} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span>
+                </span>
+              </div>
+              <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${ecmwfPixel.color}; margin-right: 4px;"></span>
+                ${ecmwfPixel.label}
+              </div>
+            `
+          });
+        }
+      }
+
+      // Otros modelos numéricos (AROME, ICON placeholders)
+      ["arome_precip", "icon_d2"].forEach((modelId) => {
+        if (this.layerManager.isLayerOnMap(modelId)) {
           const modelGroup = this.layerManager.layers[modelId];
           if (modelGroup) {
             let modelHit = null;
@@ -654,7 +755,9 @@ export class MultiLayerInspector {
     this._clearCuencaHover();
 
     this._currentHoveredCuenca = layer;
-    if (layer && layer.setStyle) {
+    if (this.cuencasLayer && typeof this.cuencasLayer.setHoverHighlight === 'function' && layer && layer.feature) {
+      this.cuencasLayer.setHoverHighlight(layer.feature, systemColor);
+    } else if (layer && layer.setStyle) {
       const isFav = layer.feature && StorageManager.isFavorite(layer.feature.id);
       layer.setStyle({
         ...CONFIG.styles.cuencaHover,
@@ -667,7 +770,9 @@ export class MultiLayerInspector {
 
   _clearCuencaHover() {
     if (this._currentHoveredCuenca) {
-      if (this.cuencasLayer && this.cuencasLayer.getFeatureStyle) {
+      if (this.cuencasLayer && typeof this.cuencasLayer.clearHoverHighlight === 'function') {
+        this.cuencasLayer.clearHoverHighlight();
+      } else if (this.cuencasLayer && this.cuencasLayer.getFeatureStyle) {
         const originalStyle = this.cuencasLayer.getFeatureStyle(this._currentHoveredCuenca.feature);
         this._currentHoveredCuenca.setStyle(originalStyle);
       }

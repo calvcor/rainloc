@@ -16,6 +16,9 @@ export class CuencasLayer {
     this.selectedFeatureId = null;
     this.activeLayer = null;
     this.layersById = {};
+    this.hoverHighlightLayer = null;
+    this.selectedHighlightLayer = null;
+    this._hoveredFeatureId = null;
     
     // Cargar opacidad y visibilidad de preferencias guardadas o por defecto
     const savedPrefs = StorageManager.load();
@@ -40,13 +43,15 @@ export class CuencasLayer {
         if (this.map.hasLayer(this.geoJsonLayer)) {
           this.map.removeLayer(this.geoJsonLayer);
         }
+        this.clearHoverHighlight();
+        this.clearSelectedHighlight();
       }
     }
   }
 
   /**
    * Actualiza la opacidad global de todas las geometrías (bordes y relleno) en tiempo real
-   * La cuenca favorita mantiene su borde dorado siempre al 100% de opacidad
+   * La cuenca favorita mantiene su borde dorado siempre al 100% de opacidad, pero su interior sí responde a la opacidad
    * @param {number} opacity Valor entre 0.0 y 1.0
    */
   setFillOpacity(opacity) {
@@ -55,7 +60,7 @@ export class CuencasLayer {
     if (this.geoJsonLayer) {
       this.geoJsonLayer.eachLayer((layer) => {
         const feature = layer.feature;
-        if (feature && this.selectedFeatureId !== feature.id) {
+        if (feature) {
           const isFav = StorageManager.isFavorite(feature.id);
           layer.setStyle({
             opacity: isFav ? 1.0 : this.currentFillOpacity,
@@ -63,6 +68,10 @@ export class CuencasLayer {
           });
         }
       });
+    }
+    if (this.selectedHighlightLayer && this.selectedFeatureId && this.layersById[this.selectedFeatureId]) {
+      const item = this.layersById[this.selectedFeatureId];
+      this.setSelectedHighlight(item.feature);
     }
   }
 
@@ -73,13 +82,17 @@ export class CuencasLayer {
     if (!this.geoJsonLayer) return;
     this.geoJsonLayer.eachLayer((layer) => {
       const feature = layer.feature;
-      if (feature && this.selectedFeatureId !== feature.id) {
+      if (feature) {
         layer.setStyle(this.getFeatureStyle(feature));
         if (StorageManager.isFavorite(feature.id)) {
           layer.bringToFront();
         }
       }
     });
+    if (this.selectedFeatureId && this.layersById[this.selectedFeatureId]) {
+      const item = this.layersById[this.selectedFeatureId];
+      this._selectFeature(item.feature, item.layer);
+    }
   }
 
   /**
@@ -163,9 +176,18 @@ export class CuencasLayer {
 
     // Si hay una cuenca favorita guardada, traerla al frente para que su borde dorado destaque
     const savedFavId = StorageManager.load().favoriteBasinId;
-    if (savedFavId && this.layersById[savedFavId]) {
-      this.layersById[savedFavId].layer.bringToFront();
+    if (savedFavId) {
+      Object.values(this.layersById).forEach(({ feature, layer }) => {
+        if (StorageManager.isFavorite(feature.id)) {
+          layer.bringToFront();
+        }
+      });
     }
+
+    // Limpiar resalte de selección cuando se cierra el popup
+    this.map.on('popupclose', () => {
+      this.clearSelection();
+    });
 
     // Registrar en el control de capas para futura gestión de overlays
     this.mapManager.addOverlayLayer(this.geoJsonLayer, 'Cuencas y Subsistemas (CHJ)');
@@ -195,30 +217,56 @@ export class CuencasLayer {
   }
 
   /**
+   * Resalta dinámicamente la cuenca en el panel de hover de máxima prioridad (por encima de todo)
+   */
+  setHoverHighlight(feature, systemColor) {
+    if (!feature || !this.isVisible) return;
+    if (this._hoveredFeatureId === feature.id && this.hoverHighlightLayer) return;
+
+    this.clearHoverHighlight();
+    this._hoveredFeatureId = feature.id;
+
+    const props = feature.properties || {};
+    const sistema = props.NomSistExp || 'Default';
+    const color = systemColor || CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'] || '#38bdf8';
+    const isFav = StorageManager.isFavorite(feature.id);
+
+    this.hoverHighlightLayer = L.geoJSON(feature, {
+      pane: 'cuencasHoverPane',
+      interactive: false,
+      style: () => ({
+        ...CONFIG.styles.cuencaHover,
+        color: isFav ? '#fbbf24' : color,
+        opacity: 1.0,
+        fillColor: color,
+        fillOpacity: Math.min(1.0, this.currentFillOpacity + 0.35)
+      })
+    }).addTo(this.map);
+  }
+
+  /**
+   * Limpia el resalte de hover
+   */
+  clearHoverHighlight(featureId = null) {
+    if (featureId && this._hoveredFeatureId !== featureId) {
+      return;
+    }
+    if (this.hoverHighlightLayer) {
+      this.map.removeLayer(this.hoverHighlightLayer);
+      this.hoverHighlightLayer = null;
+    }
+    this._hoveredFeatureId = null;
+  }
+
+  /**
    * Manejador de evento mouseover (resalte dinámico de cuenca y actualización de UI)
    */
   _onMouseOver(e, feature, layer) {
-    const targetLayer = e.target;
     const props = feature.properties || {};
     const sistema = props.NomSistExp || 'Default';
     const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
-    const isFav = StorageManager.isFavorite(feature.id);
 
-    // Si no está seleccionada fija, aplicar estilo hover dinámico
-    if (this.selectedFeatureId !== feature.id) {
-      targetLayer.setStyle({
-        ...CONFIG.styles.cuencaHover,
-        color: isFav ? '#fbbf24' : systemColor,
-        opacity: 1.0,
-        fillColor: systemColor,
-        fillOpacity: Math.min(1.0, this.currentFillOpacity + 0.3)
-      });
-    }
-
-    // Traer al frente para que el borde resaltado no quede solapado
-    if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
-      targetLayer.bringToFront();
-    }
+    this.setHoverHighlight(feature, systemColor);
 
     // Notificar al panel flotante de interfaz de usuario
     if (this.uiManager) {
@@ -230,15 +278,10 @@ export class CuencasLayer {
    * Manejador de evento mouseout (restauración inmediata del estilo original)
    */
   _onMouseOut(e, feature, layer) {
-    const targetLayer = e.target;
-
-    // Restaurar estilo exacto solo si no es la cuenca actualmente fijada por click
-    if (this.selectedFeatureId !== feature.id) {
-      targetLayer.setStyle(this.getFeatureStyle(feature));
-    }
+    this.clearHoverHighlight(feature.id);
 
     // Resetear información en el panel HUD
-    if (this.uiManager) {
+    if (this.uiManager && this._hoveredFeatureId === null) {
       this.uiManager.resetHoverInfo();
     }
   }
@@ -373,26 +416,83 @@ export class CuencasLayer {
   }
 
   /**
-   * Resalta visualmente una cuenca seleccionada
+   * Resalta visualmente una cuenca seleccionada en el panel prioritario
    */
-  _selectFeature(feature, layer) {
-    if (this.activeLayer && this.selectedFeatureId) {
-      this.geoJsonLayer.resetStyle(this.activeLayer);
-    }
-    this.selectedFeatureId = feature.id;
-    this.activeLayer = layer;
-    layer.setStyle(CONFIG.styles.cuencaSelected);
+  setSelectedHighlight(feature) {
+    this.clearSelectedHighlight();
+    if (!feature || !this.isVisible) return;
+
+    const props = feature.properties || {};
+    const sistema = props.NomSistExp || 'Default';
+    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
+    const isFav = StorageManager.isFavorite(feature.id);
+
+    const selectStyle = {
+      ...CONFIG.styles.cuencaSelected,
+      color: isFav ? '#f59e0b' : '#ffffff',
+      weight: 4.2,
+      opacity: 1.0,
+      fillColor: systemColor,
+      fillOpacity: Math.min(1.0, this.currentFillOpacity + 0.35)
+    };
+
+    this.selectedHighlightLayer = L.geoJSON(feature, {
+      pane: 'cuencasHoverPane',
+      interactive: false,
+      style: () => selectStyle
+    }).addTo(this.map);
   }
 
   /**
-   * Limpia la selección actual
+   * Limpia el resalte de selección
+   */
+  clearSelectedHighlight() {
+    if (this.selectedHighlightLayer) {
+      this.map.removeLayer(this.selectedHighlightLayer);
+      this.selectedHighlightLayer = null;
+    }
+  }
+
+  /**
+   * Resalta visualmente una cuenca seleccionada
+   */
+  _selectFeature(feature, layer) {
+    if (this.activeLayer && this.selectedFeatureId && this.activeLayer !== layer) {
+      if (this.activeLayer.feature) {
+        this.activeLayer.setStyle(this.getFeatureStyle(this.activeLayer.feature));
+      }
+    }
+    this.selectedFeatureId = feature.id;
+    this.activeLayer = layer;
+
+    const props = feature.properties || {};
+    const sistema = props.NomSistExp || 'Default';
+    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
+    const isFav = StorageManager.isFavorite(feature.id);
+
+    const selectStyle = {
+      ...CONFIG.styles.cuencaSelected,
+      color: isFav ? '#f59e0b' : '#ffffff',
+      weight: 4.2,
+      opacity: 1.0,
+      fillColor: systemColor,
+      fillOpacity: Math.min(1.0, this.currentFillOpacity + 0.35)
+    };
+
+    layer.setStyle(selectStyle);
+    this.setSelectedHighlight(feature);
+  }
+
+  /**
+   * Limpia la selección actual y restaura el estilo original
    */
   clearSelection() {
-    if (this.activeLayer) {
-      this.geoJsonLayer.resetStyle(this.activeLayer);
+    if (this.activeLayer && this.activeLayer.feature) {
+      this.activeLayer.setStyle(this.getFeatureStyle(this.activeLayer.feature));
       this.activeLayer = null;
       this.selectedFeatureId = null;
     }
+    this.clearSelectedHighlight();
   }
 }
 

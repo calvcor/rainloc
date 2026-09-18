@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -18,8 +18,17 @@ export class LayerManager {
     this.showRadarLightning = Boolean(prefs.showRadarLightning);
     this.lightningEventSource = null;
     this.radarEventSource = null;
+    this.ecmwfEventSource = null;
     this.lightningGroup = L.layerGroup();
     this.currentRadarMode = 'composite';
+
+    // ECMWF IFS NWP Model State
+    this.currentEcmwfStep = 3;
+    this.currentEcmwfType = 'total'; // 'total' | 'interval'
+    this.ecmwfMetadata = null;
+    this.ecmwfPlaybackInterval = null;
+    this.isEcmwfPlaying = false;
+    this.ecmwfCanvasData = null;
   }
 
   /**
@@ -43,6 +52,9 @@ export class LayerManager {
     // Iniciar conexión SSE en tiempo real para el radar (actualización instantánea push)
     this._startRadarSSE();
 
+    // Iniciar conexión SSE en tiempo real para el modelo ECMWF IFS (aviso reactivo de nuevos pasos)
+    this._startEcmwfSSE();
+
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
     this.startAutoRefresh(refreshSec);
@@ -52,8 +64,20 @@ export class LayerManager {
    * Registra y monta la capa Leaflet para una definición de capa
    */
   _registerLayerDefinition(def, isSavedActive, savedOpacity) {
-    const isActive = (isSavedActive !== undefined) ? Boolean(isSavedActive) : def.defaultActive;
+    const prefs = StorageManager.load();
+    const currentTab = prefs.activeTab || 'realtime';
+
+    let isActive = (isSavedActive !== undefined) ? Boolean(isSavedActive) : def.defaultActive;
     const opacity = (savedOpacity !== undefined) ? parseFloat(savedOpacity) : def.defaultOpacity;
+
+    // Regla: En predicción solo 1 modelo puede estar activo
+    if (def.type === 'prediction' && isActive) {
+      const alreadyHasPred = Object.values(this.layerStates).some(s => s.type === 'prediction' && s.active);
+      if (alreadyHasPred) {
+        isActive = false;
+        StorageManager.setLayerActive(def.id, false);
+      }
+    }
 
     this.layerStates[def.id] = {
       id: def.id,
@@ -63,13 +87,17 @@ export class LayerManager {
       type: def.type
     };
 
-    // Crear la instancia Leaflet correspondiente (preparada con placeholders funcionales para Hito 2 y 3)
+    // Crear la instancia Leaflet correspondiente
     const leafletLayer = this._createLeafletLayer(def, opacity);
     this.layers[def.id] = leafletLayer;
 
-    // Si está activa según preferencias guardadas, añadir al mapa
-    if (isActive && leafletLayer) {
-      leafletLayer.addTo(this.map);
+    // Montar en el mapa según la pestaña activa actual
+    if (leafletLayer && isActive) {
+      if (currentTab === 'realtime' && def.type === 'realtime') {
+        leafletLayer.addTo(this.map);
+      } else if (currentTab === 'prediction' && def.type === 'prediction') {
+        leafletLayer.addTo(this.map);
+      }
     }
   }
 
@@ -77,35 +105,27 @@ export class LayerManager {
    * Genera la capa Leaflet para cada feed temático
    */
   _createLeafletLayer(def, opacity) {
-    // Grupo de capas Leaflet para poder acoplar fuentes WMS, TileLayers o GeoJSON
     const layerGroup = L.layerGroup();
 
-    // Capa de Avisos AEMET (Meteoalerta) en vivo desde el Backend API
     if (def.id === 'aemet_warnings') {
       this._loadAemetWarnings(layerGroup, opacity);
     } 
     else if (def.id === 'radar') {
-      // Capa de Radar en tiempo casi real (OPERA Composite o Estación única)
       this._loadRadarLayer(layerGroup, opacity);
     }
-    else if (def.id === 'lightning') {
-      // Capa de Rayos y Descargas Eléctricas en tiempo real (Blitzortung Live)
-      this._loadLightningLayer(layerGroup, opacity);
-    }
     else if (def.id === 'saih_caudales') {
-      // Capa de Caudales en Ríos en tiempo real (SAIH Júcar)
       this._loadCaudalesLayer(layerGroup, opacity);
     }
     else if (def.id === 'saih_embalses') {
-      // Capa de Embalses y Presas en tiempo real (SAIH Júcar)
       this._loadEmbalsesLayer(layerGroup, opacity);
     }
     else if (def.id === 'saih_lluvias') {
-      // Capa de Pluviómetros / Lluvia en tiempo real (SAIH Júcar)
       this._loadLluviasLayer(layerGroup, opacity);
     }
-    else if (def.id.startsWith('arome') || def.id.startsWith('icon') || def.id.startsWith('ecmwf')) {
-      // Modelos numéricos de predicción
+    else if (def.id === 'ecmwf_ifs') {
+      this._loadEcmwfLayer(layerGroup, opacity);
+    }
+    else if (def.id.startsWith('arome') || def.id.startsWith('icon')) {
       const demoModel = L.rectangle([[38.5, -1.2], [40.2, 0.4]], {
         color: def.color,
         weight: 1.5,
@@ -119,64 +139,197 @@ export class LayerManager {
     return layerGroup;
   }
 
+  /**
+   * Comprueba si una capa específica está actualmente montada y visible en el mapa Leaflet
+   */
+  isLayerOnMap(layerId) {
+    const layer = this.layers[layerId];
+    return Boolean(layer && this.map && this.map.hasLayer(layer));
+  }
+
+  _showLayerOnMap(layerId) {
+    const layer = this.layers[layerId];
+    if (layer && this.map && !this.map.hasLayer(layer)) {
+      this.map.addLayer(layer);
+    }
+  }
+
+  _hideLayerFromMap(layerId) {
+    const layer = this.layers[layerId];
+    if (layer && this.map && this.map.hasLayer(layer)) {
+      this.map.removeLayer(layer);
+    }
+  }
+
+  /**
+   * Gestiona el cambio de pestaña entre Tiempo Real y Predicción
+   * - Al ir a Predicción: oculta todas las capas de tiempo real y muestra la predicción activa (si hay).
+   * - Al volver a Tiempo Real: oculta la predicción y restaura todas las capas de tiempo real con su configuración previa.
+   */
+  onTabChange(tabId) {
+    if (tabId === 'prediction') {
+      // 1. Ocultar del mapa todas las capas de tiempo real
+      CONFIG.overlayLayers.realtime.forEach(def => {
+        this._hideLayerFromMap(def.id);
+      });
+      if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
+        this.map.removeLayer(this.lightningGroup);
+      }
+
+      // 2. Mostrar la capa de predicción activa (garantizando exclusividad de una única predicción)
+      let activePredId = null;
+      CONFIG.overlayLayers.prediction.forEach(def => {
+        const state = this.layerStates[def.id];
+        if (state && state.active && !activePredId) {
+          activePredId = def.id;
+          this._showLayerOnMap(def.id);
+        } else {
+          this._hideLayerFromMap(def.id);
+          if (state && state.active) {
+            state.active = false;
+            StorageManager.setLayerActive(def.id, false);
+            if (this.uiManager) this.uiManager.updateLayerCardActiveState(def.id, false);
+          }
+        }
+      });
+    } else {
+      // 1. Ocultar del mapa cualquier modelo de predicción
+      CONFIG.overlayLayers.prediction.forEach(def => {
+        this._hideLayerFromMap(def.id);
+      });
+      if (this.isEcmwfPlaying) {
+        this.pauseEcmwfPlayback();
+      }
+
+      // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
+      CONFIG.overlayLayers.realtime.forEach(def => {
+        const state = this.layerStates[def.id];
+        if (state && state.active) {
+          this._showLayerOnMap(def.id);
+          if (def.id === 'radar' && this.showRadarLightning && this.lightningGroup) {
+            if (!this.map.hasLayer(this.lightningGroup)) {
+              this.map.addLayer(this.lightningGroup);
+            }
+          }
+        } else {
+          this._hideLayerFromMap(def.id);
+        }
+        if (this.uiManager && state) {
+          this.uiManager.updateLayerCardActiveState(def.id, state.active);
+        }
+      });
+    }
+  }
 
   /**
    * Conmuta la visibilidad de una capa (activar/desactivar)
-   * @param {string} layerId 
-   * @param {boolean} active 
+   * Aplica reglas de negocio:
+   * 1. Las capas de predicción son mutuamente excluyentes (solo una a la vez).
+   * 2. Al activar una predicción se ocultan todas las capas de tiempo real.
+   * 3. Al activar una capa de tiempo real se oculta cualquier predicción.
    */
   toggleLayer(layerId, active) {
-    const layer = this.layers[layerId];
-    if (!layer) return;
+    const isPrediction = CONFIG.overlayLayers.prediction.some(p => p.id === layerId);
+    const isRealtime = CONFIG.overlayLayers.realtime.some(r => r.id === layerId);
 
-    if (active) {
-      if (!this.map.hasLayer(layer)) {
-        this.map.addLayer(layer);
-      }
-    } else {
-      if (this.map.hasLayer(layer)) {
-        this.map.removeLayer(layer);
-      }
-    }
-
-    if (this.layerStates[layerId]) {
-      this.layerStates[layerId].active = active;
-    }
-
-    StorageManager.setLayerActive(layerId, active);
-
-    if (layerId === 'saih_caudales') {
+    if (isPrediction) {
       if (active) {
-        if (!this._caudalesPollInterval) {
-          this._caudalesPollInterval = setInterval(() => {
-            if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
-              const op = this.layerStates['saih_caudales'].opacity || 0.95;
-              this._loadCaudalesLayer(this.layers['saih_caudales'], op);
-            }
-          }, 5 * 60 * 1000);
-        }
-      } else {
-        if (this._caudalesPollInterval) {
-          clearInterval(this._caudalesPollInterval);
-          this._caudalesPollInterval = null;
-        }
-      }
-    }
-
-    if (layerId === 'radar') {
-      if (active) {
-        if (this.showRadarLightning) {
-          if (!this.map.hasLayer(this.lightningGroup)) {
-            this.lightningGroup.addTo(this.map);
-          }
-          this.reloadLightningLayer();
-          this._startLightningSSE();
-        }
-      } else {
-        if (this.map.hasLayer(this.lightningGroup)) {
+        // Regla 1: Desactivar del mapa todas las capas de tiempo real
+        CONFIG.overlayLayers.realtime.forEach(r => {
+          this._hideLayerFromMap(r.id);
+        });
+        if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
           this.map.removeLayer(this.lightningGroup);
         }
-        this._stopLightningSSE();
+
+        // Regla 2: Solo una predicción activa a la vez
+        CONFIG.overlayLayers.prediction.forEach(p => {
+          if (p.id !== layerId) {
+            this._hideLayerFromMap(p.id);
+            if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
+            StorageManager.setLayerActive(p.id, false);
+            if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
+            if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
+              this.pauseEcmwfPlayback();
+            }
+          }
+        });
+
+        // Activar la predicción seleccionada
+        this._showLayerOnMap(layerId);
+        if (this.layerStates[layerId]) this.layerStates[layerId].active = true;
+        StorageManager.setLayerActive(layerId, true);
+        if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, true);
+      } else {
+        this._hideLayerFromMap(layerId);
+        if (this.layerStates[layerId]) this.layerStates[layerId].active = false;
+        StorageManager.setLayerActive(layerId, false);
+        if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, false);
+        if (layerId === 'ecmwf_ifs' && this.isEcmwfPlaying) {
+          this.pauseEcmwfPlayback();
+        }
+      }
+      return;
+    }
+
+    if (isRealtime) {
+      if (active) {
+        // Ocultar cualquier modelo de predicción
+        CONFIG.overlayLayers.prediction.forEach(p => {
+          this._hideLayerFromMap(p.id);
+          if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
+          StorageManager.setLayerActive(p.id, false);
+          if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
+          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
+            this.pauseEcmwfPlayback();
+          }
+        });
+
+        this._showLayerOnMap(layerId);
+      } else {
+        this._hideLayerFromMap(layerId);
+      }
+
+      if (this.layerStates[layerId]) {
+        this.layerStates[layerId].active = active;
+      }
+      StorageManager.setLayerActive(layerId, active);
+      if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, active);
+
+      // Efectos secundarios de capas SAIH y Radar
+      if (layerId === 'saih_caudales') {
+        if (active) {
+          if (!this._caudalesPollInterval) {
+            this._caudalesPollInterval = setInterval(() => {
+              if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
+                const op = this.layerStates['saih_caudales'].opacity || 0.95;
+                this._loadCaudalesLayer(this.layers['saih_caudales'], op);
+              }
+            }, 5 * 60 * 1000);
+          }
+        } else {
+          if (this._caudalesPollInterval) {
+            clearInterval(this._caudalesPollInterval);
+            this._caudalesPollInterval = null;
+          }
+        }
+      }
+
+      if (layerId === 'radar') {
+        if (active) {
+          if (this.showRadarLightning) {
+            if (!this.map.hasLayer(this.lightningGroup)) {
+              this.lightningGroup.addTo(this.map);
+            }
+            this.reloadLightningLayer();
+            this._startLightningSSE();
+          }
+        } else {
+          if (this.map.hasLayer(this.lightningGroup)) {
+            this.map.removeLayer(this.lightningGroup);
+          }
+          this._stopLightningSSE();
+        }
       }
     }
   }
@@ -293,6 +446,7 @@ export class LayerManager {
 
       // 1. Imagen raster de reflectividad con renderizado nítido de píxeles/celdas
       const imageOverlay = L.imageOverlay(imgUrl, bounds, {
+        pane: 'radarPane',
         opacity: opacity,
         interactive: false,
         crossOrigin: 'anonymous',
@@ -345,6 +499,167 @@ export class LayerManager {
     if (!radarGroup) return;
     const opacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 0.75;
     this._loadRadarLayer(radarGroup, opacity);
+  }
+
+  /**
+   * Carga la capa del modelo ECMWF IFS (Precipitación acumulada / Intervalos 3h) mediante L.imageOverlay
+   */
+  async _loadEcmwfLayer(layerGroup, opacity) {
+    try {
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
+      if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+      const metadata = await metaResp.json();
+      this.ecmwfMetadata = metadata;
+
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('ecmwf_ifs', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      // Si el paso actual no está entre los disponibles, seleccionar el primero
+      if (!availSteps.includes(this.currentEcmwfStep)) {
+        this.currentEcmwfStep = availSteps[0];
+      }
+
+      const step = this.currentEcmwfStep;
+      const type = this.currentEcmwfType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp en la tarjeta UI con la salida del modelo y estado de actualización
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('ecmwf_ifs', formatEcmwfTimestamp(metadata));
+      }
+
+      if (this.uiManager && this.uiManager.updateEcmwfPlayerUI) {
+        this.uiManager.updateEcmwfPlayerUI(metadata, step, type, this.isEcmwfPlaying);
+      }
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      const imgUrl = `${CONFIG.apiBaseUrl}/models/ecmwf/image?step=${step}&type=${type}&_t=${Date.now()}`;
+
+      layerGroup.clearLayers();
+
+      const imageOverlay = L.imageOverlay(imgUrl, bounds, {
+        pane: 'modelsPane',
+        opacity: opacity,
+        interactive: false,
+        crossOrigin: 'anonymous',
+        className: 'ecmwf-raster-overlay'
+      });
+
+      imageOverlay.on('error', () => {
+        console.warn(`La imagen ECMWF IFS para paso +${step}h no pudo ser cargada.`);
+      });
+
+      // Canvas en memoria para consulta 0ms en cursor / inspector
+      this.ecmwfCanvasData = null;
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = offscreenImg.naturalWidth;
+          canvas.height = offscreenImg.naturalHeight;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(offscreenImg, 0, 0);
+          this.ecmwfCanvasData = {
+            ctx: ctx,
+            width: offscreenImg.naturalWidth,
+            height: offscreenImg.naturalHeight,
+            bounds: bounds,
+            step: step,
+            type: type,
+            validText: timeLabel
+          };
+        } catch (err) {
+          console.warn('Canvas raster ECMWF inaccesible para lectura local:', err);
+        }
+      };
+      offscreenImg.src = imgUrl;
+
+      layerGroup.addLayer(imageOverlay);
+      this.currentEcmwfOverlay = imageOverlay;
+      this.currentEcmwfBounds = bounds;
+
+    } catch (err) {
+      console.warn('Error al cargar ECMWF IFS desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo ECMWF IFS
+   */
+  setEcmwfStep(step, type = null) {
+    this.currentEcmwfStep = parseInt(step, 10);
+    if (type) {
+      this.currentEcmwfType = type;
+    }
+    this.reloadEcmwfLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval)
+   */
+  setEcmwfType(type) {
+    this.currentEcmwfType = type;
+    this.reloadEcmwfLayer();
+  }
+
+  /**
+   * Recarga la capa ECMWF con los parámetros activos
+   */
+  reloadEcmwfLayer() {
+    const ecmwfGroup = this.layers['ecmwf_ifs'];
+    if (!ecmwfGroup) return;
+    const opacity = (this.layerStates['ecmwf_ifs'] && this.layerStates['ecmwf_ifs'].opacity) || 0.65;
+    this._loadEcmwfLayer(ecmwfGroup, opacity);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de ECMWF IFS
+   */
+  toggleEcmwfPlayback() {
+    if (this.isEcmwfPlaying) {
+      this.pauseEcmwfPlayback();
+    } else {
+      this.startEcmwfPlayback();
+    }
+  }
+
+  startEcmwfPlayback() {
+    if (this.isEcmwfPlaying) return;
+    this.isEcmwfPlaying = true;
+    if (this.uiManager && this.uiManager.updateEcmwfPlayState) {
+      this.uiManager.updateEcmwfPlayState(true);
+    }
+
+    this.ecmwfPlaybackInterval = setInterval(() => {
+      if (!this.ecmwfMetadata || !this.ecmwfMetadata.available_steps || this.ecmwfMetadata.available_steps.length === 0) {
+        this.pauseEcmwfPlayback();
+        return;
+      }
+
+      const steps = this.ecmwfMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentEcmwfStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setEcmwfStep(steps[nextIdx]);
+    }, 1200);
+  }
+
+  pauseEcmwfPlayback() {
+    this.isEcmwfPlaying = false;
+    if (this.ecmwfPlaybackInterval) {
+      clearInterval(this.ecmwfPlaybackInterval);
+      this.ecmwfPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateEcmwfPlayState) {
+      this.uiManager.updateEcmwfPlayState(false);
+    }
   }
 
   /**
@@ -520,6 +835,7 @@ export class LayerManager {
     }
 
     const marker = L.circleMarker([strike.lat, strike.lon], {
+      pane: 'lluviasPane',
       radius: radius,
       color: color,
       weight: weight,
@@ -641,6 +957,81 @@ export class LayerManager {
     if (this.radarEventSource) {
       this.radarEventSource.close();
       this.radarEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de ECMWF IFS
+   */
+  _startEcmwfSSE() {
+    if (this.ecmwfEventSource) {
+      return;
+    }
+
+    const sseUrl = `${CONFIG.apiBaseUrl}/models/ecmwf/stream`;
+    try {
+      this.ecmwfEventSource = new EventSource(sseUrl);
+
+      this.ecmwfEventSource.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'ecmwf_update' || data.event === 'ecmwf_init')) {
+            console.log('🌐 Notificación SSE ECMWF IFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.ecmwfMetadata = metadata;
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentEcmwfStep)) {
+                this.currentEcmwfStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('ecmwf_ifs', formatEcmwfTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateEcmwfPlayerUI) {
+                this.uiManager.updateEcmwfPlayerUI(
+                  metadata,
+                  this.currentEcmwfStep,
+                  this.currentEcmwfType || 'total',
+                  this.isEcmwfPlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('ecmwf_ifs')) {
+                this.reloadEcmwfLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de ECMWF:', e);
+        }
+      };
+
+      this.ecmwfEventSource.onerror = (err) => {
+        console.warn('Stream SSE de ECMWF IFS desconectado. Intentando reconexión en 5s...', err);
+        this._stopEcmwfSSE();
+        setTimeout(() => this._startEcmwfSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para ECMWF IFS:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de ECMWF IFS
+   */
+  _stopEcmwfSSE() {
+    if (this.ecmwfEventSource) {
+      this.ecmwfEventSource.close();
+      this.ecmwfEventSource = null;
     }
   }
 

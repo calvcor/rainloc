@@ -3,6 +3,10 @@
  * Constantes geográficas, estilos cartográficos y metadatos de la cuenca CHJ.
  */
 
+const apiBase = (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http'))
+  ? ((window.location.port === '' || window.location.port === '80') ? '/api/v1' : `http://${window.location.hostname}:8000/api/v1`)
+  : '/api/v1';
+
 export const CONFIG = {
   // Centro geográfico de la Comunitat Valenciana y zoom óptimo
   map: {
@@ -13,21 +17,23 @@ export const CONFIG = {
     maxBounds: null // Permite desplazamiento libre sin restricciones
   },
 
-
   // API Backend URL (FastAPI): Detecta si se accede tras Nginx/Docker en puerto 80 (usando ruta relativa) o en desarrollo directo
-  apiBaseUrl: (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http'))
-    ? ((window.location.port === '' || window.location.port === '80') ? '/api/v1' : `http://${window.location.hostname}:8000/api/v1`)
-    : '/api/v1',
+  apiBaseUrl: apiBase,
 
-  // Rutas candidatas para el GeoJSON de cuencas/subsistemas (prioriza Backend API con fallback local)
+  // Rutas candidatas para el GeoJSON de cuencas/subsistemas y CCAA (prioriza Backend API con fallback local)
   dataSources: {
     subsistemasGeoJson: [
-      '/api/v1/cuencas',
-      'http://localhost:8000/api/v1/cuencas',
+      `${apiBase}/cuencas`,
       './subsistemas.optimized.geojson',
       './subsistemas.geojson',
       './data/subsistemas.geojson',
       './data/cuencas.geojson'
+    ],
+    ccaaGeoJson: [
+      `${apiBase}/ccaa`,
+      `${apiBase}/cuencas/ccaa`,
+      './ccaa.geojson',
+      './data/ccaa.geojson'
     ]
   },
 
@@ -218,9 +224,9 @@ export const CONFIG = {
       },
       {
         id: 'ecmwf_ifs',
-        name: 'Modelo ECMWF-IFS (9 km)',
-        subtitle: 'Previsión global probabilística',
-        description: 'Referencia global del Centro Europeo para predicción a medio plazo (1-5 días).',
+        name: 'Modelo ECMWF-IFS (0.25°)',
+        subtitle: 'Previsión global determinista (10 días)',
+        description: 'Referencia global del Centro Europeo para predicción a medio plazo (ECMWF Open Data, hasta 240h).',
         type: 'model',
         defaultActive: false,
         defaultOpacity: 0.65,
@@ -334,4 +340,104 @@ export function formatMadridTime(dateInput) {
   }
   return full;
 }
+
+/**
+ * Formatea un instante temporal de predicción en lenguaje natural en tiempo local (Europe/Madrid)
+ * Ejemplo: "Miércoles, 23 de septiembre a las 16h" o "Jueves, 24 de septiembre a las 18:30 h"
+ * @param {Date|string|number} dateInput 
+ * @returns {string}
+ */
+export function formatPredictionInstant(dateInput) {
+  if (!dateInput) return '';
+  let dateObj = (dateInput instanceof Date) ? dateInput : new Date(dateInput);
+  if (isNaN(dateObj.getTime())) return String(dateInput);
+
+  try {
+    const formatter = new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    const parts = formatter.formatToParts(dateObj);
+    const partMap = {};
+    parts.forEach(p => { partMap[p.type] = p.value; });
+
+    const weekday = partMap.weekday ? (partMap.weekday.charAt(0).toUpperCase() + partMap.weekday.slice(1)) : '';
+    const day = partMap.day || '';
+    const month = partMap.month || '';
+    const hour = partMap.hour || '';
+    const minute = partMap.minute || '00';
+
+    const timeStr = (minute && minute !== '00') ? `${hour}:${minute} h` : `${hour}h`;
+    return `${weekday}, ${day} de ${month} a las ${timeStr}`;
+  } catch (err) {
+    return dateObj.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+  }
+}
+
+/**
+ * Formatea la salida y estado del ciclo ECMWF IFS para la tarjeta de capa
+ * Mostrando la run (0z, 6z, 12z, 18z) y, si está actualizando, hasta qué paso ha llegado.
+ * @param {Object} metadata
+ * @returns {string}
+ */
+export function formatEcmwfTimestamp(metadata) {
+  if (!metadata) return 'Salida modelo: <strong>Sincronizando...</strong>';
+
+  const availSteps = metadata.available_steps || [];
+  const maxStep = metadata.max_step !== undefined ? metadata.max_step : (availSteps.length > 0 ? Math.max(...availSteps) : 0);
+
+  // Extraer run limpia (0z, 6z, 12z, 18z)
+  let run = metadata.run;
+  if (!run && metadata.cycle_str) {
+    const parts = metadata.cycle_str.split('_');
+    if (parts.length > 1) run = parts[1].toLowerCase();
+  }
+  if (!run && metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const h = d.getUTCHours();
+      run = `${h}z`;
+    } catch (e) {}
+  }
+  if (run) {
+    run = run.replace(/^0(\d)z$/, '$1z').toLowerCase();
+  } else {
+    run = '0z';
+  }
+
+  // Formatear fecha del ciclo en hora local (Europe/Madrid)
+  let dateText = '';
+  if (metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      dateText = `${day}/${month}`;
+    } catch (e) {
+      dateText = metadata.cycle;
+    }
+  } else if (metadata.cycle_str) {
+    const p = metadata.cycle_str.split('_')[0];
+    if (p && p.length === 8) {
+      dateText = `${p.substring(6, 8)}/${p.substring(4, 6)}`;
+    } else {
+      dateText = metadata.cycle_str;
+    }
+  }
+
+  const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 240 && metadata.status !== 'complete'));
+
+  if (isUpdating && maxStep > 0) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
+  }
+
+  return `Salida modelo: <strong>${dateText} (${run})</strong>`;
+}
+
 

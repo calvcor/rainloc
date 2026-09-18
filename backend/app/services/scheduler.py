@@ -8,18 +8,21 @@ from app.config import settings
 from app.services.aemet_atom import aemet_atom_service
 from app.services.radar_worker import radar_service
 from app.services.lightning_service import lightning_service
+from app.services.ecmwf_worker import ecmwf_worker
 
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar y rayos."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos y modelos NWP."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
         self._radar_task: Optional[asyncio.Task] = None
+        self._ecmwf_task: Optional[asyncio.Task] = None
         self._running: bool = False
         self.aemet_interval: int = settings.AEMET_REFRESH_INTERVAL_SECONDS
         self.radar_interval: int = settings.RADAR_POLL_INTERVAL_SECONDS
+        self.ecmwf_interval: int = getattr(settings, "ECMWF_POLL_INTERVAL_SECONDS", 1800)
 
     async def _aemet_loop(self):
         try:
@@ -54,16 +57,34 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de radar: {e}")
 
+    async def _ecmwf_loop(self):
+        # Primera comprobación y sincronización de ECMWF al iniciar
+        try:
+            await ecmwf_worker.sync_ecmwf_forecast()
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando ECMWF IFS: {e}")
+
+        while self._running:
+            try:
+                await asyncio.sleep(self.ecmwf_interval)
+                if self._running:
+                    await ecmwf_worker.sync_ecmwf_forecast()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de ECMWF IFS: {e}")
+
     def start(self):
         if not self._running:
             self._running = True
             self._aemet_task = asyncio.create_task(self._aemet_loop())
             self._radar_task = asyncio.create_task(self._radar_loop())
+            self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos Blitzortung).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + ECMWF IFS).")
 
     def stop(self):
         if self._running:
@@ -72,6 +93,8 @@ class BackgroundScheduler:
                 self._aemet_task.cancel()
             if self._radar_task and not self._radar_task.done():
                 self._radar_task.cancel()
+            if self._ecmwf_task and not self._ecmwf_task.done():
+                self._ecmwf_task.cancel()
             lightning_service.stop()
             logger.info("BackgroundScheduler detenido.")
 

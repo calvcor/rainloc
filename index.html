@@ -59,7 +59,7 @@
           </span>
         </div>
 
-        <!-- Control de Opacidad de Cuencas -->
+        <!-- Control de Opacidad de Cuencas (al lado de Cuencas) -->
         <div class="opacity-control" id="cuencas-opacity-container" title="Ajustar opacidad de las cuencas (bordes y relleno)">
           <label for="opacity-slider" class="opacity-label">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -69,6 +69,21 @@
             Opacidad: <span id="opacity-val">25%</span>
           </label>
           <input type="range" id="opacity-slider" min="0" max="100" value="25" step="5" class="slider-glass">
+        </div>
+
+        <!-- Toggle de Visibilidad de Límites Autonómicos CCAA -->
+        <div class="cuencas-toggle-control" title="Mostrar u ocultar los límites autonómicos (CCAA) en el mapa">
+          <label class="toggle-switch-ui" for="toggle-ccaa-visibility">
+            <input type="checkbox" id="toggle-ccaa-visibility" checked>
+            <span class="toggle-switch-slider"></span>
+          </label>
+          <span class="toggle-switch-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+              <line x1="4" y1="22" x2="4" y2="15"></line>
+            </svg>
+            CCAA
+          </span>
         </div>
 
         <span id="status-badge" class="badge badge-info">
@@ -90,6 +105,25 @@
 
     <!-- Visor de Mapa Cartográfico -->
     <main id="map" role="region" aria-label="Visor de mapa"></main>
+
+    <!-- Banner Flotante Superior: Instante Exacto de la Predicción (A la derecha del menú de capas) -->
+    <div id="prediction-time-banner" class="prediction-time-banner" style="display: none;" aria-live="polite">
+      <div class="prediction-time-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+      </div>
+      <div class="prediction-time-content">
+        <div class="prediction-time-row">
+          <span class="prediction-time-label" id="prediction-banner-model">ECMWF IFS (+3h)</span>
+          <span class="prediction-type-tag" id="prediction-banner-mode">Acumulado Total</span>
+        </div>
+        <span class="prediction-time-exact" id="prediction-banner-exact-time">--</span>
+      </div>
+    </div>
 
     <!-- Contenedor Lateral Izquierdo: Menú de Capas + Panel de Demarcación -->
     <div class="left-sidebar-container">

@@ -9,10 +9,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
 RADAR_CACHE_DIR = DATA_DIR / "radar_cache"
+ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
 
 # Asegurar directorios
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Catálogo de radares españoles (estaciones individuales en openradar-24h)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
@@ -49,6 +51,8 @@ try:
         SUBSISTEMAS_OPTIMIZED_FILE: Path = BASE_DIR / "subsistemas.optimized.geojson"
         SUBSISTEMAS_FILE: Path = BASE_DIR / "subsistemas.geojson"
         CUENCAS_FILE: Path = BASE_DIR / "data" / "cuencas.geojson"
+        CCAA_FILE: Path = BASE_DIR / "ccaa.geojson"
+        CCAA_DATA_FILE: Path = BASE_DIR / "data" / "ccaa.geojson"
         
         # Almacenamiento del estado del tiempo y caché
         WEATHER_STATE_FILE: Path = DATA_DIR / "weather_state.json"
@@ -67,6 +71,11 @@ try:
         ORD_MQTT_USER: str = "everyone"
         RADAR_POLL_INTERVAL_SECONDS: int = 300  # 5 minutos
         RADAR_CACHE_TTL_HOURS: int = 24
+
+        # ECMWF IFS Open Data
+        ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
+        ECMWF_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos
+        ECMWF_MAX_STEPS: int = 240  # Pasos hasta +240h (10 días)
 
         class Config:
             env_file = ".env"
@@ -87,6 +96,7 @@ except ImportError:
         CUENCAS_FILE: Path = BASE_DIR / "data" / "cuencas.geojson"
         WEATHER_STATE_FILE: Path = DATA_DIR / "weather_state.json"
         RADAR_CACHE_DIR: Path = RADAR_CACHE_DIR
+        ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
@@ -97,5 +107,7 @@ except ImportError:
         ORD_MQTT_USER: str = os.getenv("ORD_MQTT_USER", "everyone")
         RADAR_POLL_INTERVAL_SECONDS: int = int(os.getenv("RADAR_POLL_INTERVAL_SECONDS", "300"))
         RADAR_CACHE_TTL_HOURS: int = 24
+        ECMWF_POLL_INTERVAL_SECONDS: int = 1800
+        ECMWF_MAX_STEPS: int = 240
 
 settings = Settings()
