@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dockerignore
+venv/
+backend/venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.DS_Store
+*.log
+backend/data/radar_cache/

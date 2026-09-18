@@ -85,11 +85,30 @@ RainLoc/
 
 ## 🚀 Instalación y Puesta en Marcha
 
-### Requisitos Previos
-- **Python 3.10+**
-- Navegador web moderno con soporte para ES Modules (Chrome, Firefox, Safari, Edge).
+### 🐳 Despliegue Rápido con Docker Compose (Recomendado)
 
-### 1. Iniciar el Backend
+Todo el sistema (Frontend Nginx + Backend FastAPI) se despliega con un único comando exponiendo **únicamente el puerto 80**:
+
+```bash
+# Construir e iniciar los contenedores en segundo plano
+docker compose up -d --build
+```
+
+Una vez levantado:
+- 🌐 **Aplicación Web**: [http://localhost](http://localhost) (Puerto 80)
+- 📖 **Documentación Swagger / API**: [http://localhost/docs](http://localhost/docs)
+- 🩺 **Health check**: [http://localhost/health](http://localhost/health)
+
+Para detener los contenedores:
+```bash
+docker compose down
+```
+
+---
+
+### 💻 Despliegue Manual en Desarrollo
+
+#### 1. Iniciar el Backend
 
 ```bash
 # 1. Acceder al directorio backend

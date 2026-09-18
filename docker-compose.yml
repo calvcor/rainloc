@@ -1,0 +1,34 @@
+services:
+  # Servidor Backend FastAPI (Uvicorn)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: rainloc-backend
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=False
+    # El puerto 8000 NO se publica en el host. Solo es accesible internamente por Nginx.
+    expose:
+      - "8000"
+    volumes:
+      - backend_data:/app/backend/data
+
+  # Servidor Web y Reverse Proxy (Nginx)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rainloc-web
+    restart: unless-stopped
+    # Único puerto expuesto hacia el exterior: Puerto 80 HTTP
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:
+    driver: local

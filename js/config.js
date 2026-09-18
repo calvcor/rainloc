@@ -14,12 +14,15 @@ export const CONFIG = {
   },
 
 
-  // API Backend URL (FastAPI)
-  apiBaseUrl: 'http://localhost:8000/api/v1',
+  // API Backend URL (FastAPI): Detecta si se accede tras Nginx/Docker en puerto 80 (usando ruta relativa) o en desarrollo directo
+  apiBaseUrl: (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http'))
+    ? ((window.location.port === '' || window.location.port === '80') ? '/api/v1' : `http://${window.location.hostname}:8000/api/v1`)
+    : '/api/v1',
 
   // Rutas candidatas para el GeoJSON de cuencas/subsistemas (prioriza Backend API con fallback local)
   dataSources: {
     subsistemasGeoJson: [
+      '/api/v1/cuencas',
       'http://localhost:8000/api/v1/cuencas',
       './subsistemas.optimized.geojson',
       './subsistemas.geojson',
