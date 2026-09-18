@@ -42,6 +42,10 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el radar (actualización instantánea push)
     this._startRadarSSE();
+
+    // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
+    const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
+    this.startAutoRefresh(refreshSec);
   }
 
   /**
@@ -218,7 +222,7 @@ export class LayerManager {
    * Carga asíncrona de avisos AEMET en vivo desde el Backend API
    */
   async _loadAemetWarnings(layerGroup, initialOpacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/warnings/aemet`;
+    const apiUrl = `${CONFIG.apiBaseUrl}/warnings/aemet?_t=${Date.now()}`;
     try {
       const resp = await fetch(apiUrl);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -679,8 +683,12 @@ export class LayerManager {
       this._refreshTimer = null;
     }
 
-    // Refresco periódico secundario (cada 5 min)
+    const sec = Math.max(30, intervalSec || 300);
+    console.log(`⏱️ Autorrefresco de capas SAIH/AEMET activado cada ${sec}s (${Math.round(sec / 60)} min).`);
+
+    // Refresco periódico secundario (cada 5 min = 300s por defecto)
     this._refreshTimer = setInterval(() => {
+      console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET...');
       if (this.layerStates['aemet_warnings'] && this.layerStates['aemet_warnings'].active) {
         this.reloadAemetWarnings();
       }
@@ -693,7 +701,7 @@ export class LayerManager {
       if (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
         this.reloadLluviasLayer();
       }
-    }, (intervalSec || 300) * 1000);
+    }, sec * 1000);
   }
 
 
@@ -702,7 +710,7 @@ export class LayerManager {
    * Carga asíncrona de estaciones de medición de caudal del SAIH Júcar (CHJ)
    */
   async _loadCaudalesLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/caudales?format=geojson`;
+    const apiUrl = `${CONFIG.apiBaseUrl}/saih/caudales?format=geojson&_t=${Date.now()}`;
     const fallbackUrls = [
       './data/saih_aforos.geojson',
       './saih_aforos.geojson',
@@ -1286,7 +1294,7 @@ export class LayerManager {
    * Carga asíncrona de estaciones de embalses y presas del SAIH Júcar (CHJ)
    */
   async _loadEmbalsesLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/embalses?format=geojson`;
+    const apiUrl = `${CONFIG.apiBaseUrl}/saih/embalses?format=geojson&_t=${Date.now()}`;
     const fallbackUrls = [
       './data/saih_embalses.geojson',
       './saih_embalses.geojson',
@@ -1400,7 +1408,7 @@ export class LayerManager {
    * Carga asíncrona de estaciones pluviométricas / lluvia del SAIH Júcar (CHJ)
    */
   async _loadLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/lluvias?format=geojson`;
+    const apiUrl = `${CONFIG.apiBaseUrl}/saih/lluvias?format=geojson&_t=${Date.now()}`;
     const fallbackUrls = [
       './data/saih_lluvias.geojson',
       './saih_lluvias.geojson',
