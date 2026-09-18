@@ -1,0 +1,41 @@
+# Entornos virtuales de Python
+venv/
+backend/venv/
+.venv/
+env/
+ENV/
+
+# Archivos de entorno y variables secretas
+.env
+.env.*
+!.env.example
+
+# Caché y compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Caché temporal de datos dinámicos (radar / descargas)
+backend/data/radar_cache/
+*.log
+
+# Archivos de sistema operativo y editores
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencias Node (si se añaden en el futuro)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

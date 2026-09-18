@@ -1,0 +1,2612 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.206736,
+          38.903287
+        ]
+      },
+      "properties": {
+        "id_variable": "14099",
+        "codigo": "9L01",
+        "nombre": "AZUD FONT D'EN CARRÓS",
+        "variable": "CAUDAL RIO SERPIS SOBRE EL AZUD",
+        "tipo": "Af",
+        "id_estacion": "349",
+        "lat": 38.903287,
+        "lon": -0.206736,
+        "poblacion": "Villalonga",
+        "provincia": "Valencia",
+        "subcuenca": "Serpis",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 50,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.438711,
+          39.484076
+        ]
+      },
+      "properties": {
+        "id_variable": "14450",
+        "codigo": "0E02",
+        "nombre": "AZUD REPARTIMENT",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "222",
+        "lat": 39.484076,
+        "lon": -0.438711,
+        "poblacion": "Quart de Poblet",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 100,
+          "naranja": 500,
+          "rojo": 1000
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.258222,
+          40.11561
+        ]
+      },
+      "properties": {
+        "id_variable": "2690",
+        "codigo": "3A04",
+        "nombre": "EA 103 TORREALTA",
+        "variable": "CAUDAL RÍO TÚRIA",
+        "tipo": "Af",
+        "id_estacion": "372",
+        "lat": 40.11561,
+        "lon": -1.258222,
+        "poblacion": "Torrebaja",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 1.601,
+        "caudal": 1.601,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 35,
+          "rojo": 50
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.288622,
+          40.108029
+        ]
+      },
+      "properties": {
+        "id_variable": "2683",
+        "codigo": "3R01",
+        "nombre": "EA 104 LOS SANTOS",
+        "variable": "CAUDAL RÍO EBRÓN",
+        "tipo": "Af",
+        "id_estacion": "411",
+        "lat": 40.108029,
+        "lon": -1.288622,
+        "poblacion": "Castielfabib",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.862,
+        "caudal": 0.862,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 5,
+          "naranja": 10,
+          "rojo": 20
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.115283,
+          39.561089
+        ]
+      },
+      "properties": {
+        "id_variable": "2716",
+        "codigo": "4E02",
+        "nombre": "EA 107 SALIDA ALARCÓN",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "484",
+        "lat": 39.561089,
+        "lon": -2.115283,
+        "poblacion": "Alarcón",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 5.296,
+        "caudal": 5.296,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 50,
+          "rojo": 75
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.95504,
+          39.718811
+        ]
+      },
+      "properties": {
+        "id_variable": "13617",
+        "codigo": "6A02",
+        "nombre": "EA 120 CALLES",
+        "variable": "CAUDAL RÍO TUÉJAR",
+        "tipo": "Af",
+        "id_estacion": "399",
+        "lat": 39.718811,
+        "lon": -0.95504,
+        "poblacion": "Calles",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.624,
+        "caudal": 0.624,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 25,
+          "rojo": 50
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8482,
+          40.22194
+        ]
+      },
+      "properties": {
+        "id_variable": "2689",
+        "codigo": "5A04",
+        "nombre": "EA 126 MOLINO DE JUAN ROMERO",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "400",
+        "lat": 40.22194,
+        "lon": -1.8482,
+        "poblacion": "Beamud",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 0.886,
+        "caudal": 0.886,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 75,
+          "rojo": 125
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.08624,
+          39.463436
+        ]
+      },
+      "properties": {
+        "id_variable": "2696",
+        "codigo": "4L02",
+        "nombre": "EA 129 EL PICAZO",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "355",
+        "lat": 39.463436,
+        "lon": -2.08624,
+        "poblacion": "El Picazo",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 3.718,
+        "caudal": 3.718,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 25,
+          "naranja": 40,
+          "rojo": 50
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.506022,
+          39.530157
+        ]
+      },
+      "properties": {
+        "id_variable": "12962",
+        "codigo": "5E01",
+        "nombre": "EA 130 SALIDA CONTRERAS",
+        "variable": "CAUDAL RÍO CABRIEL",
+        "tipo": "Af",
+        "id_estacion": "482",
+        "lat": 39.530157,
+        "lon": -1.506022,
+        "poblacion": "Minglanilla",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 1.862,
+        "caudal": 1.862,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 25,
+          "naranja": 75,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.019305,
+          39.212775
+        ]
+      },
+      "properties": {
+        "id_variable": "15280",
+        "codigo": "7A07",
+        "nombre": "EA 132 EL CARRASCO",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "401",
+        "lat": 39.212775,
+        "lon": -2.019305,
+        "poblacion": "La Roda",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 2.645,
+        "caudal": 2.645,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 50,
+          "rojo": 70
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.605378,
+          40.11538
+        ]
+      },
+      "properties": {
+        "id_variable": "2725",
+        "codigo": "2E02",
+        "nombre": "EA 134 LOS CANTOS",
+        "variable": "CAUDAL RÍO MIJARES",
+        "tipo": "Af",
+        "id_estacion": "454",
+        "lat": 40.11538,
+        "lon": -0.605378,
+        "poblacion": "Puebla de Arenoso",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 2.945,
+        "caudal": 2.945,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 125,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.25374,
+          38.89599
+        ]
+      },
+      "properties": {
+        "id_variable": "2687",
+        "codigo": "7P16",
+        "nombre": "EA 137 TÍRIEZ",
+        "variable": "CAUDAL RÍO LEZUZA",
+        "tipo": "Af",
+        "id_estacion": "363",
+        "lat": 38.89599,
+        "lon": -2.25374,
+        "poblacion": "Tiriez",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 0.111,
+        "caudal": 0.111,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 8,
+          "naranja": 20,
+          "rojo": 50
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.119022,
+          38.902141
+        ]
+      },
+      "properties": {
+        "id_variable": "2679",
+        "codigo": "7R03",
+        "nombre": "EA 138 BALAZOTE",
+        "variable": "CAUDAL RÍO DON JUAN",
+        "tipo": "Af",
+        "id_estacion": "415",
+        "lat": 38.902141,
+        "lon": -2.119022,
+        "poblacion": "Balazote",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 0.184,
+        "caudal": 0.184,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 5,
+          "naranja": 10,
+          "rojo": 15
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.635125,
+          39.738829
+        ]
+      },
+      "properties": {
+        "id_variable": "12799",
+        "codigo": "5R01",
+        "nombre": "EA 139 VÍLLORA",
+        "variable": "CAUDAL RÍO CABRIEL",
+        "tipo": "Af",
+        "id_estacion": "416",
+        "lat": 39.738829,
+        "lon": -1.635125,
+        "poblacion": "Víllora",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 7.142,
+        "caudal": 7.142,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 75,
+          "naranja": 125,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.57613,
+          40.41697
+        ]
+      },
+      "properties": {
+        "id_variable": "2737",
+        "codigo": "3A02",
+        "nombre": "EA 14 TRAMACASTILLA",
+        "variable": "CAUDAL RÍO GUADALAVIAR",
+        "tipo": "Af",
+        "id_estacion": "272",
+        "lat": 40.41697,
+        "lon": -1.57613,
+        "poblacion": "Tramacastilla",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.603,
+        "caudal": 0.603,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 15,
+          "rojo": 25
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.704163,
+          39.720321
+        ]
+      },
+      "properties": {
+        "id_variable": "2680",
+        "codigo": "4R03",
+        "nombre": "EA 140 RIO HUÉRCEMES",
+        "variable": "CAUDAL RÍO GUADAZAÓN",
+        "tipo": "Af",
+        "id_estacion": "412",
+        "lat": 39.720321,
+        "lon": -1.704163,
+        "poblacion": "Huércemes",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 0.5,
+        "caudal": 0.5,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 40,
+          "rojo": 80
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.571494,
+          39.750734
+        ]
+      },
+      "properties": {
+        "id_variable": "2681",
+        "codigo": "4R02",
+        "nombre": "EA 141 SAN MARTÍN",
+        "variable": "CAUDAL RÍO SAN MARTÍN",
+        "tipo": "Af",
+        "id_estacion": "413",
+        "lat": 39.750734,
+        "lon": -1.571494,
+        "poblacion": "Víllora",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 0.03,
+        "caudal": 0.03,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 40,
+          "rojo": 70
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.425331,
+          39.196482
+        ]
+      },
+      "properties": {
+        "id_variable": "12836",
+        "codigo": "7R01",
+        "nombre": "EA 144 ALCALÁ DEL JÚCAR",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "308",
+        "lat": 39.196482,
+        "lon": -1.425331,
+        "poblacion": "Alcalá del Júcar",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 3.369,
+        "caudal": 3.369,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 30,
+          "naranja": 40,
+          "rojo": 70
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.539845,
+          40.087143
+        ]
+      },
+      "properties": {
+        "id_variable": "2726",
+        "codigo": "2E02",
+        "nombre": "EA 145 SALIDA DE ARENÓS",
+        "variable": "CAUDAL RÍO MIJARES",
+        "tipo": "Af",
+        "id_estacion": "455",
+        "lat": 40.087143,
+        "lon": -0.539845,
+        "poblacion": "Montanejos",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 4.406,
+        "caudal": 4.406,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 70
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.905673,
+          39.663128
+        ]
+      },
+      "properties": {
+        "id_variable": "12905",
+        "codigo": "6E02",
+        "nombre": "EA 147 SALIDA LORIGUILLA",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "483",
+        "lat": 39.663128,
+        "lon": -0.905673,
+        "poblacion": "Chulilla",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 1.275,
+        "caudal": 1.275,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 60,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.545017,
+          39.894056
+        ]
+      },
+      "properties": {
+        "id_variable": "2720",
+        "codigo": "0E01",
+        "nombre": "EA 148 JÉRICA",
+        "variable": "CAUDAL RÍO PALANCIA",
+        "tipo": "Af",
+        "id_estacion": "474",
+        "lat": 39.894056,
+        "lon": -0.545017,
+        "poblacion": "Jérica",
+        "provincia": "Castellón",
+        "subcuenca": "Palancia y Los Valles",
+        "ultimo_caudal": 0.021,
+        "caudal": 0.021,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 25,
+          "naranja": 50,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.29066,
+          40.39403
+        ]
+      },
+      "properties": {
+        "id_variable": "2688",
+        "codigo": "3A05",
+        "nombre": "EA 149 GEA DE ALBARRACÍN",
+        "variable": "CAUDAL RÍO GUADALAVIAR",
+        "tipo": "Af",
+        "id_estacion": "402",
+        "lat": 40.39403,
+        "lon": -1.29066,
+        "poblacion": "Gea de Albarracín",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.517,
+        "caudal": 0.517,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 20,
+          "rojo": 30
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.111431,
+          40.342994
+        ]
+      },
+      "properties": {
+        "id_variable": "12927",
+        "codigo": "3A03",
+        "nombre": "EA 15 TERUEL TURIA",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "273",
+        "lat": 40.342994,
+        "lon": -1.111431,
+        "poblacion": "Teruel",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.84,
+        "caudal": 0.84,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 40,
+          "rojo": 50
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.146097,
+          39.840159
+        ]
+      },
+      "properties": {
+        "id_variable": "13670",
+        "codigo": "6A01",
+        "nombre": "EA 18 ZAGRA",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "296",
+        "lat": 39.840159,
+        "lon": -1.146097,
+        "poblacion": "Tuéjar",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 3.315,
+        "caudal": 3.315,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 30,
+          "naranja": 50,
+          "rojo": 75
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.505614,
+          39.521141
+        ]
+      },
+      "properties": {
+        "id_variable": "1523",
+        "codigo": "0R06",
+        "nombre": "EA 25 AGUAS POTABLES",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "438",
+        "lat": 39.521141,
+        "lon": -0.505614,
+        "poblacion": "Manises",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 2.961,
+        "caudal": 2.961,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 100,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.121257,
+          40.357144
+        ]
+      },
+      "properties": {
+        "id_variable": "12924",
+        "codigo": "3A03",
+        "nombre": "EA 27 TERUEL ALFAMBRA",
+        "variable": "CAUDAL RÍO ALFAMBRA",
+        "tipo": "Af",
+        "id_estacion": "487",
+        "lat": 40.357144,
+        "lon": -1.121257,
+        "poblacion": "Teruel",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.178,
+        "caudal": 0.178,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 25,
+          "rojo": 35
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.975627,
+          40.61434
+        ]
+      },
+      "properties": {
+        "id_variable": "13683",
+        "codigo": "3A01",
+        "nombre": "EA 28 VILLALBA ALTA",
+        "variable": "CAUDAL RÍO ALFAMBRA",
+        "tipo": "Af",
+        "id_estacion": "271",
+        "lat": 40.61434,
+        "lon": -0.975627,
+        "poblacion": "Perales del Alfambra",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.139,
+        "caudal": 0.139,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 5,
+          "naranja": 20,
+          "rojo": 40
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.495248,
+          38.891665
+        ]
+      },
+      "properties": {
+        "id_variable": "12827",
+        "codigo": "7A03",
+        "nombre": "EA 29 MONTAVERNER",
+        "variable": "CAUDAL RÍO ALBAIDA",
+        "tipo": "Af",
+        "id_estacion": "301",
+        "lat": 38.891665,
+        "lon": -0.495248,
+        "poblacion": "Montaverner",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 0.214,
+        "caudal": 0.214,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 120,
+          "rojo": 250
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.773717,
+          40.163265
+        ]
+      },
+      "properties": {
+        "id_variable": "13526",
+        "codigo": "2E01",
+        "nombre": "EA 30 EL TERDE",
+        "variable": "CAUDAL RÍO MIJARES",
+        "tipo": "Af",
+        "id_estacion": "527",
+        "lat": 40.163265,
+        "lon": -0.773717,
+        "poblacion": "Sarrión",
+        "provincia": "Teruel",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.113,
+        "caudal": 0.113,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 50,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.14275,
+          40.07302
+        ]
+      },
+      "properties": {
+        "id_variable": "2736",
+        "codigo": "4A01",
+        "nombre": "EA 32 CUENCA",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "282",
+        "lat": 40.07302,
+        "lon": -2.14275,
+        "poblacion": "Cuenca",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 2.363,
+        "caudal": 2.363,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 70,
+          "naranja": 110,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.74951,
+          39.137511
+        ]
+      },
+      "properties": {
+        "id_variable": "2691",
+        "codigo": "7A05",
+        "nombre": "EA 36 LOS FRAILES",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "380",
+        "lat": 39.137511,
+        "lon": -1.74951,
+        "poblacion": "Valdeganga",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 1.804,
+        "caudal": 1.804,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 50,
+          "rojo": 70
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.645105,
+          39.125687
+        ]
+      },
+      "properties": {
+        "id_variable": "13080",
+        "codigo": "7E04",
+        "nombre": "EA 42 SALIDA DE TOUS",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "485",
+        "lat": 39.125687,
+        "lon": -0.645105,
+        "poblacion": "Tous",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 5.165,
+        "caudal": 5.165,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 150,
+          "rojo": 250
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.121999,
+          39.959696
+        ]
+      },
+      "properties": {
+        "id_variable": "2700",
+        "codigo": "1E07",
+        "nombre": "EA 5 LA PRESA DE VILA-REAL",
+        "variable": "CAUDAL RÍO MIJARES",
+        "tipo": "Af",
+        "id_estacion": "476",
+        "lat": 39.959696,
+        "lon": -0.121999,
+        "poblacion": "Vila-Real",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 1.737,
+        "caudal": 1.737,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 150,
+          "rojo": 300
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.116467,
+          39.477989
+        ]
+      },
+      "properties": {
+        "id_variable": "13403",
+        "codigo": "5A02",
+        "nombre": "EA 60 REQUENA",
+        "variable": "CAUDAL RÍO MAGRO",
+        "tipo": "Af",
+        "id_estacion": "379",
+        "lat": 39.477989,
+        "lon": -1.116467,
+        "poblacion": "Requena",
+        "provincia": "Valencia",
+        "subcuenca": "Magro",
+        "ultimo_caudal": 0.083,
+        "caudal": 0.083,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 30,
+          "rojo": 60
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.283202,
+          38.87065
+        ]
+      },
+      "properties": {
+        "id_variable": "2697",
+        "codigo": "9A31",
+        "nombre": "EA 71 VILLALONGA",
+        "variable": "CAUDAL RÍO SERPIS",
+        "tipo": "Af",
+        "id_estacion": "429",
+        "lat": 38.87065,
+        "lon": -0.283202,
+        "poblacion": "Villalonga",
+        "provincia": "Valencia",
+        "subcuenca": "Serpis",
+        "ultimo_caudal": 0.88,
+        "caudal": 0.88,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 50,
+          "rojo": 75
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.514634,
+          39.88348
+        ]
+      },
+      "properties": {
+        "id_variable": "12810",
+        "codigo": "0E01",
+        "nombre": "EA 74 FUENTE DEL BAÑO",
+        "variable": "CAUDAL RÍO PALANCIA",
+        "tipo": "Af",
+        "id_estacion": "475",
+        "lat": 39.88348,
+        "lon": -0.514634,
+        "poblacion": "Navajas",
+        "provincia": "Castellón",
+        "subcuenca": "Palancia y Los Valles",
+        "ultimo_caudal": 0.275,
+        "caudal": 0.275,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 120
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.34501,
+          39.818301
+        ]
+      },
+      "properties": {
+        "id_variable": "14051",
+        "codigo": "4R04",
+        "nombre": "EA 87 MARIMOTA",
+        "variable": "CAUDAL RÍO MARIMOTA",
+        "tipo": "Af",
+        "id_estacion": "417",
+        "lat": 39.818301,
+        "lon": -2.34501,
+        "poblacion": "Belmontejo",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 0.174,
+        "caudal": 0.174,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 20,
+          "rojo": 30
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.409489,
+          39.188193
+        ]
+      },
+      "properties": {
+        "id_variable": "13070",
+        "codigo": "7A02",
+        "nombre": "EA 89 HUERTO MULET",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "310",
+        "lat": 39.188193,
+        "lon": -0.409489,
+        "poblacion": "Algemesí",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 19.304,
+        "caudal": 19.304,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 200,
+          "naranja": 300,
+          "rojo": 400
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.710945,
+          39.940142
+        ]
+      },
+      "properties": {
+        "id_variable": "2735",
+        "codigo": "5A01",
+        "nombre": "EA 90 PAJARONCILLO",
+        "variable": "CAUDAL RÍO CABRIEL",
+        "tipo": "Af",
+        "id_estacion": "288",
+        "lat": 39.940142,
+        "lon": -1.710945,
+        "poblacion": "Pajaroncillo",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 2.908,
+        "caudal": 2.908,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 100,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.28834,
+          39.85224
+        ]
+      },
+      "properties": {
+        "id_variable": "2695",
+        "codigo": "4A02",
+        "nombre": "EA 91 SAN LORENZO DE LA PARRILLA",
+        "variable": "CAUDAL RÍO JÚCAR",
+        "tipo": "Af",
+        "id_estacion": "362",
+        "lat": 39.85224,
+        "lon": -2.28834,
+        "poblacion": "San Lorenzo de la Parrilla",
+        "provincia": "Cuenca",
+        "subcuenca": "Júcar Alto",
+        "ultimo_caudal": 3.22,
+        "caudal": 3.22,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 100,
+          "naranja": 200,
+          "rojo": 400
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.825293,
+          39.343979
+        ]
+      },
+      "properties": {
+        "id_variable": "16915",
+        "codigo": "0R01",
+        "nombre": "EA 93 MACASTRE",
+        "variable": "CAUDAL RÍO MAGRO",
+        "tipo": "Af",
+        "id_estacion": "791",
+        "lat": 39.343979,
+        "lon": -0.825293,
+        "poblacion": "Yátova",
+        "provincia": "Valencia",
+        "subcuenca": "Magro",
+        "ultimo_caudal": 0.192,
+        "caudal": 0.192,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 5,
+          "naranja": 30,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.19589,
+          40.3593
+        ]
+      },
+      "properties": {
+        "id_variable": "13952",
+        "codigo": "3R02",
+        "nombre": "EA 96 SALIDA DE ARQUILLO",
+        "variable": "CAUDAL RÍO GUADALAVIAR",
+        "tipo": "Af",
+        "id_estacion": "354",
+        "lat": 40.3593,
+        "lon": -1.19589,
+        "poblacion": "Teruel",
+        "provincia": "Teruel",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 0.213,
+        "caudal": 0.213,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 20,
+          "rojo": 30
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.224251,
+          38.725164
+        ]
+      },
+      "properties": {
+        "id_variable": "2693",
+        "codigo": "7A04",
+        "nombre": "EA 97 MONTEMAYOR",
+        "variable": "CAUDAL RÍO MIRÓN (S. PEDRO)",
+        "tipo": "Af",
+        "id_estacion": "373",
+        "lat": 38.725164,
+        "lon": -2.224251,
+        "poblacion": "Casas de Lazaro",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 0.31,
+        "caudal": 0.31,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 6,
+          "naranja": 20,
+          "rojo": 35
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.277262,
+          38.823125
+        ]
+      },
+      "properties": {
+        "id_variable": "2749",
+        "codigo": "7R07",
+        "nombre": "EA 98 RÍO JARDÍN",
+        "variable": "CAUDAL RÍO JARDÍN",
+        "tipo": "Af",
+        "id_estacion": "479",
+        "lat": 38.823125,
+        "lon": -2.277262,
+        "poblacion": "Alcaraz",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 0.646,
+        "caudal": 0.646,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 3,
+          "naranja": 5,
+          "rojo": 7
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.239324,
+          40.671359
+        ]
+      },
+      "properties": {
+        "id_variable": "12812",
+        "codigo": "1E01",
+        "nombre": "EA 99 SALIDA ULLDECONA",
+        "variable": "CAUDAL RÍO CENIA",
+        "tipo": "Af",
+        "id_estacion": "478",
+        "lat": 40.671359,
+        "lon": 0.239324,
+        "poblacion": "La Pobla de Benifassà",
+        "provincia": "Castellón",
+        "subcuenca": "Cenia - Maestrazgo",
+        "ultimo_caudal": 0.452,
+        "caudal": 0.452,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 75,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.377903,
+          39.784353
+        ]
+      },
+      "properties": {
+        "id_variable": "16682",
+        "codigo": "0E04",
+        "nombre": "EMBALSE DE ALGAR",
+        "variable": "CAUDAL SALIDA RÍO PALANCIA",
+        "tipo": "Em",
+        "id_estacion": "381",
+        "lat": 39.784353,
+        "lon": -0.377903,
+        "poblacion": "Algar de Palancia",
+        "provincia": "Castellón",
+        "subcuenca": "Palancia y Los Valles",
+        "ultimo_caudal": 0.214,
+        "caudal": 0.214,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 100,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.265238,
+          38.533318
+        ]
+      },
+      "properties": {
+        "id_variable": "13898",
+        "codigo": "8E01",
+        "nombre": "EMBALSE DE AMADORIO",
+        "variable": "CAUDAL SALIDA RÍO AMADORIO",
+        "tipo": "Em",
+        "id_estacion": "331",
+        "lat": 38.533318,
+        "lon": -0.265238,
+        "poblacion": "Vila Joiosa",
+        "provincia": "Alicante",
+        "subcuenca": "Marina Baja",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 20,
+          "rojo": 40
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.678803,
+          40.211886
+        ]
+      },
+      "properties": {
+        "id_variable": "16690",
+        "codigo": "2E04",
+        "nombre": "EMBALSE DE BALAGUERAS",
+        "variable": "CAUDAL SALIDA RÍO PALOMAREJAS",
+        "tipo": "Em",
+        "id_estacion": "419",
+        "lat": 40.211886,
+        "lon": -0.678803,
+        "poblacion": "Rubielos de Mora",
+        "provincia": "Teruel",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 3,
+          "naranja": 10,
+          "rojo": 50
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.476888,
+          38.939715
+        ]
+      },
+      "properties": {
+        "id_variable": "13728",
+        "codigo": "7E10",
+        "nombre": "EMBALSE DE BELLÚS",
+        "variable": "CAUDAL SALIDA RÍO ALBAIDA",
+        "tipo": "Em",
+        "id_estacion": "328",
+        "lat": 38.939715,
+        "lon": -0.476888,
+        "poblacion": "Bellús",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 1.412,
+        "caudal": 1.412,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 60,
+          "rojo": 120
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.098778,
+          39.726453
+        ]
+      },
+      "properties": {
+        "id_variable": "16693",
+        "codigo": "6E01",
+        "nombre": "EMBALSE DE BENAGÉBER",
+        "variable": "CAUDAL SALIDA RÍO TURIA",
+        "tipo": "Em",
+        "id_estacion": "293",
+        "lat": 39.726453,
+        "lon": -1.098778,
+        "poblacion": "Benagéber",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Alto",
+        "ultimo_caudal": 4.312,
+        "caudal": 4.312,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 100
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.35611,
+          38.814898
+        ]
+      },
+      "properties": {
+        "id_variable": "16699",
+        "codigo": "9E01",
+        "nombre": "EMBALSE DE BENIARRÉS",
+        "variable": "CAUDAL SALIDA RÍO SERPIS",
+        "tipo": "Em",
+        "id_estacion": "346",
+        "lat": 38.814898,
+        "lon": -0.35611,
+        "poblacion": "Beniarrés",
+        "provincia": "Alicante",
+        "subcuenca": "Serpis",
+        "ultimo_caudal": 0.831,
+        "caudal": 0.831,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 50,
+          "rojo": 75
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.864392,
+          39.340462
+        ]
+      },
+      "properties": {
+        "id_variable": "16696",
+        "codigo": "7E03",
+        "nombre": "EMBALSE DE FORATA",
+        "variable": "CAUDAL SALIDA RÍO MAGRO",
+        "tipo": "Em",
+        "id_estacion": "303",
+        "lat": 39.340462,
+        "lon": -0.864392,
+        "poblacion": "Yátova",
+        "provincia": "Valencia",
+        "subcuenca": "Magro",
+        "ultimo_caudal": 0.034,
+        "caudal": 0.034,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 5,
+          "naranja": 30,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.192036,
+          38.679575
+        ]
+      },
+      "properties": {
+        "id_variable": "16698",
+        "codigo": "8E02",
+        "nombre": "EMBALSE DE GUADALEST",
+        "variable": "CAUDAL SALIDA RÍO GUADALEST",
+        "tipo": "Em",
+        "id_estacion": "332",
+        "lat": 38.679575,
+        "lon": -0.192036,
+        "poblacion": "Guadalest",
+        "provincia": "Alicante",
+        "subcuenca": "Marina Baja",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 25,
+          "rojo": 60
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.09684,
+          38.78777
+        ]
+      },
+      "properties": {
+        "id_variable": "13141",
+        "codigo": "9O01",
+        "nombre": "EMBALSE DE ISBERT",
+        "variable": "CAUDAL SALIDA RÍO GIRONA",
+        "tipo": "Em",
+        "id_estacion": "347",
+        "lat": 38.78777,
+        "lon": -0.09684,
+        "poblacion": "Vall de Laguart",
+        "provincia": "Alicante",
+        "subcuenca": "Marina Alta",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 20,
+          "rojo": 30
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.217345,
+          40.098225
+        ]
+      },
+      "properties": {
+        "id_variable": "16684",
+        "codigo": "1E02",
+        "nombre": "EMBALSE DE L'ALCORA",
+        "variable": "CAUDAL SALIDA RÍO ALCORA",
+        "tipo": "Em",
+        "id_estacion": "244",
+        "lat": 40.098225,
+        "lon": -0.217345,
+        "poblacion": "Alcora",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.16191,
+          40.02824
+        ]
+      },
+      "properties": {
+        "id_variable": "16688",
+        "codigo": "1E06",
+        "nombre": "EMBALSE DE MARÍA CRISTINA",
+        "variable": "CAUDAL SALIDA RAMBLA DE LA VIUDA",
+        "tipo": "Em",
+        "id_estacion": "248",
+        "lat": 40.02824,
+        "lon": -0.16191,
+        "poblacion": "Alcora",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 150,
+          "rojo": 300
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.743654,
+          40.281506
+        ]
+      },
+      "properties": {
+        "id_variable": "16701",
+        "codigo": "2E03",
+        "nombre": "EMBALSE DE MORA",
+        "variable": "CAUDAL SALIDA RÍO DE MORA",
+        "tipo": "Em",
+        "id_estacion": "435",
+        "lat": 40.281506,
+        "lon": -0.743654,
+        "poblacion": "Mora de Rubielos",
+        "provincia": "Teruel",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.06,
+        "caudal": 0.06,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 3,
+          "naranja": 10,
+          "rojo": 20
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.233189,
+          40.010508
+        ]
+      },
+      "properties": {
+        "id_variable": "16687",
+        "codigo": "1E05",
+        "nombre": "EMBALSE DE SICHAR",
+        "variable": "CAUDAL SALIDA RÍO MIJARES",
+        "tipo": "Em",
+        "id_estacion": "247",
+        "lat": 40.010508,
+        "lon": -0.233189,
+        "poblacion": "Onda",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 2.651,
+        "caudal": 2.651,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 60,
+          "rojo": 100
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.308858,
+          38.911499
+        ]
+      },
+      "properties": {
+        "id_variable": "16702",
+        "codigo": "7E14",
+        "nombre": "EMBALSE DE TERRATEIG",
+        "variable": "CAUDAL SALIDA RÍO VERNISSA",
+        "tipo": "Em",
+        "id_estacion": "431",
+        "lat": 38.911499,
+        "lon": -0.308858,
+        "poblacion": "Terrateig",
+        "provincia": "Valencia",
+        "subcuenca": "Serpis",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 25,
+          "naranja": 50,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.81805,
+          40.254071
+        ]
+      },
+      "properties": {
+        "id_variable": "16700",
+        "codigo": "2P02",
+        "nombre": "EMBALSE DE VALBONA",
+        "variable": "CAUDAL SALIDA RÍO VALBONA",
+        "tipo": "Em",
+        "id_estacion": "264",
+        "lat": 40.254071,
+        "lon": -0.81805,
+        "poblacion": "Valbona",
+        "provincia": "Teruel",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 2,
+          "naranja": 10,
+          "rojo": 20
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.140643,
+          40.245342
+        ]
+      },
+      "properties": {
+        "id_variable": "13707",
+        "codigo": "1O04",
+        "nombre": "MC ATZENETA DEL MAESTRAT",
+        "variable": "CAUDAL RÍO MONLEÓN",
+        "tipo": "Af",
+        "id_estacion": "374",
+        "lat": 40.245342,
+        "lon": -0.140643,
+        "poblacion": "Atzeneta del Maestrat",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.582353,
+          38.958039
+        ]
+      },
+      "properties": {
+        "id_variable": "13102",
+        "codigo": "7R06",
+        "nombre": "MC CANALS",
+        "variable": "CAUDAL RÍO CAÑOLES",
+        "tipo": "Af",
+        "id_estacion": "425",
+        "lat": 38.958039,
+        "lon": -0.582353,
+        "poblacion": "Canals",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 0.415,
+        "caudal": 0.415,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 75,
+          "rojo": 250
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.472426,
+          39.606762
+        ]
+      },
+      "properties": {
+        "id_variable": "13792",
+        "codigo": "0O01",
+        "nombre": "MC CARRAIXET BÉTERA",
+        "variable": "CAUDAL BARRANCO DE CARRAIXET",
+        "tipo": "Af",
+        "id_estacion": "224",
+        "lat": 39.606762,
+        "lon": -0.472426,
+        "poblacion": "Bétera",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 120,
+          "rojo": 300
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.301468,
+          40.468164
+        ]
+      },
+      "properties": {
+        "id_variable": "13420",
+        "codigo": "1O02",
+        "nombre": "MC CERVERA DEL MAESTRE",
+        "variable": "CAUDAL RÍO CERVERA",
+        "tipo": "Af",
+        "id_estacion": "361",
+        "lat": 40.468164,
+        "lon": 0.301468,
+        "poblacion": "Cervera del Maestre",
+        "provincia": "Castellón",
+        "subcuenca": "Cenia - Maestrazgo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 100,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.622251,
+          39.019261
+        ]
+      },
+      "properties": {
+        "id_variable": "2701",
+        "codigo": "7O03",
+        "nombre": "MC ESTUBENY",
+        "variable": "CAUDAL RÍO SELLENT",
+        "tipo": "Af",
+        "id_estacion": "312",
+        "lat": 39.019261,
+        "lon": -0.622251,
+        "poblacion": "Estubeny",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 0.056,
+        "caudal": 0.056,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 35,
+          "naranja": 100,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.188356,
+          38.840196
+        ]
+      },
+      "properties": {
+        "id_variable": "13566",
+        "codigo": "9O02",
+        "nombre": "MC GALLINERA L'ATZÚBIA",
+        "variable": "CAUDAL RAMBLA GALLINERA",
+        "tipo": "Af",
+        "id_estacion": "348",
+        "lat": 38.840196,
+        "lon": -0.188356,
+        "poblacion": "L'Atzúbia",
+        "provincia": "Alicante",
+        "subcuenca": "Marina Alta",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 50,
+          "rojo": 100
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.471047,
+          39.200988
+        ]
+      },
+      "properties": {
+        "id_variable": "14551",
+        "codigo": "7C01",
+        "nombre": "MC GUADASSUAR",
+        "variable": "CAUDAL RÍO MAGRO",
+        "tipo": "Af",
+        "id_estacion": "326",
+        "lat": 39.200988,
+        "lon": -0.471047,
+        "poblacion": "Guadassuar",
+        "provincia": "Valencia",
+        "subcuenca": "Magro",
+        "ultimo_caudal": 0.592,
+        "caudal": 0.592,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 30,
+          "naranja": 150,
+          "rojo": 300
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.336926,
+          40.608557
+        ]
+      },
+      "properties": {
+        "id_variable": "14761",
+        "codigo": "1P01",
+        "nombre": "MC LA SÈNIA",
+        "variable": "CAUDAL RÍO CENIA",
+        "tipo": "Af",
+        "id_estacion": "251",
+        "lat": 40.608557,
+        "lon": 0.336926,
+        "poblacion": "La Senia",
+        "provincia": "Tarragona",
+        "subcuenca": "Cenia - Maestrazgo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 75,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.49574,
+          39.041257
+        ]
+      },
+      "properties": {
+        "id_variable": "2443",
+        "codigo": "7O04",
+        "nombre": "MC MANUEL",
+        "variable": "CAUDAL RÍO ALBAIDA",
+        "tipo": "Af",
+        "id_estacion": "313",
+        "lat": 39.041257,
+        "lon": -0.49574,
+        "poblacion": "Manuel",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 1.144,
+        "caudal": 1.144,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 50,
+          "naranja": 150,
+          "rojo": 250
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.762334,
+          38.870689
+        ]
+      },
+      "properties": {
+        "id_variable": "13722",
+        "codigo": "7O01",
+        "nombre": "MC MOIXENT",
+        "variable": "CAUDAL RÍO CANYOLES",
+        "tipo": "Af",
+        "id_estacion": "311",
+        "lat": 38.870689,
+        "lon": -0.762334,
+        "poblacion": "Moixent",
+        "provincia": "Valencia",
+        "subcuenca": "Júcar Bajo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 30,
+          "naranja": 50,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.662289,
+          39.628032
+        ]
+      },
+      "properties": {
+        "id_variable": "13896",
+        "codigo": "0O02",
+        "nombre": "MC RAMBLA CASTELLANA",
+        "variable": "CAUDAL RAMBLA CASTELLANA",
+        "tipo": "Af",
+        "id_estacion": "225",
+        "lat": 39.628032,
+        "lon": -0.662289,
+        "poblacion": "Pedralba",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 35,
+          "naranja": 80,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.584076,
+          39.473413
+        ]
+      },
+      "properties": {
+        "id_variable": "13873",
+        "codigo": "0O04",
+        "nombre": "MC RAMBLA POYO N-III",
+        "variable": "CAUDAL RAMBLA DE POYO",
+        "tipo": "Af",
+        "id_estacion": "227",
+        "lat": 39.473413,
+        "lon": -0.584076,
+        "poblacion": "Riba-roja",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 0.036,
+        "caudal": 0.036,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 30,
+          "naranja": 70,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.630912,
+          39.628434
+        ]
+      },
+      "properties": {
+        "id_variable": "13897",
+        "codigo": "0O02",
+        "nombre": "MC RAMBLA PRIMERA",
+        "variable": "CAUDAL RAMBLA PRIMERA",
+        "tipo": "Af",
+        "id_estacion": "539",
+        "lat": 39.628434,
+        "lon": -0.630912,
+        "poblacion": "Llíria",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 0.232,
+        "caudal": 0.232,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 100,
+          "naranja": 200,
+          "rojo": 300
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.815677,
+          38.541388
+        ]
+      },
+      "properties": {
+        "id_variable": "16767",
+        "codigo": "8R03",
+        "nombre": "MC SAX",
+        "variable": "CAUDAL RÍO VINALOPÓ",
+        "tipo": "Af",
+        "id_estacion": "794",
+        "lat": 38.541388,
+        "lon": -0.815677,
+        "poblacion": "Sax",
+        "provincia": "Alicante",
+        "subcuenca": "Vinalopó - Alacantí",
+        "ultimo_caudal": 0.009,
+        "caudal": 0.009,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 20,
+          "rojo": 30
+        },
+        "tiene_ficha": false,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.333918,
+          40.559459
+        ]
+      },
+      "properties": {
+        "id_variable": "13431",
+        "codigo": "1O03",
+        "nombre": "MC TRAIGUERA",
+        "variable": "CAUDAL RÍO SERVOL",
+        "tipo": "Af",
+        "id_estacion": "364",
+        "lat": 40.559459,
+        "lon": 0.333918,
+        "poblacion": "Traiguera",
+        "provincia": "Castellón",
+        "subcuenca": "Cenia - Maestrazgo",
+        "ultimo_caudal": 0.048,
+        "caudal": 0.048,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 10,
+          "naranja": 100,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.079201,
+          40.19803
+        ]
+      },
+      "properties": {
+        "id_variable": "13917",
+        "codigo": "1O01",
+        "nombre": "MC VALL D'ALBA",
+        "variable": "CAUDAL RAMBLA DE LA VIUDA",
+        "tipo": "Af",
+        "id_estacion": "358",
+        "lat": 40.19803,
+        "lon": -0.079201,
+        "poblacion": "Vall d'Alba",
+        "provincia": "Castellón",
+        "subcuenca": "Mijares - Plana de Castellón",
+        "ultimo_caudal": 0.0,
+        "caudal": 0.0,
+        "ultima_hora": "19:40",
+        "umbrales": {
+          "amarillo": 15,
+          "naranja": 200,
+          "rojo": 400
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.246415,
+          38.935961
+        ]
+      },
+      "properties": {
+        "id_variable": "13568",
+        "codigo": "9O03",
+        "nombre": "MC VERNISSA",
+        "variable": "CAUDAL RÍO VERNISSA",
+        "tipo": "Af",
+        "id_estacion": "344",
+        "lat": 38.935961,
+        "lon": -0.246415,
+        "poblacion": "Rótova",
+        "provincia": "Valencia",
+        "subcuenca": "Serpis",
+        "ultimo_caudal": 0.143,
+        "caudal": 0.143,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 20,
+          "naranja": 50,
+          "rojo": 200
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.620202,
+          39.581437
+        ]
+      },
+      "properties": {
+        "id_variable": "12808",
+        "codigo": "0O03",
+        "nombre": "MC VILAMARXANT",
+        "variable": "CAUDAL RÍO TURIA",
+        "tipo": "Af",
+        "id_estacion": "226",
+        "lat": 39.581437,
+        "lon": -0.620202,
+        "poblacion": "Vilamarxant",
+        "provincia": "Valencia",
+        "subcuenca": "Turia Bajo",
+        "ultimo_caudal": 5.362,
+        "caudal": 5.362,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 40,
+          "naranja": 80,
+          "rojo": 150
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.334939,
+          39.330686
+        ]
+      },
+      "properties": {
+        "id_variable": "12901",
+        "codigo": "5O01",
+        "nombre": "MC VILLATOYA",
+        "variable": "CAUDAL RÍO CABRIEL",
+        "tipo": "Af",
+        "id_estacion": "365",
+        "lat": 39.330686,
+        "lon": -1.334939,
+        "poblacion": "Villatoya",
+        "provincia": "Albacete",
+        "subcuenca": "Júcar Medio",
+        "ultimo_caudal": 8.512,
+        "caudal": 8.512,
+        "ultima_hora": "19:45",
+        "umbrales": {
+          "amarillo": 75,
+          "naranja": 200,
+          "rojo": 400
+        },
+        "tiene_ficha": true,
+        "unidad": "m³/s"
+      }
+    }
+  ]
+}

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RainLoc - Visor de Cuencas Hidrográficas (CHJ)</title>
+  <meta name="description" content="Visor SIG para monitorización y anticipación de episodios de lluvias torrenciales en las cuencas de la Comunitat Valenciana (CHJ).">
+
+  <!-- Favicon SVG -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌧️</text></svg>">
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS 1.9.4 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="">
+
+  <!-- Estilos de la aplicación -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- Header / Barra Superior -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+            <path d="M16 14v6"></path>
+            <path d="M8 14v6"></path>
+            <path d="M12 16v6"></path>
+          </svg>
+        </div>
+        <div class="brand-titles">
+          <h1 class="brand-title">RainLoc GIS</h1>
+          <span class="brand-subtitle">Monitorización de Cuencas &bull; Comunitat Valenciana (CHJ)</span>
+        </div>
+      </div>
+
+      <div class="header-status-area">
+        <!-- Toggle de Visibilidad de Cuencas -->
+        <div class="cuencas-toggle-control" title="Mostrar u ocultar la capa de cuencas en el mapa">
+          <label class="toggle-switch-ui" for="toggle-cuencas-visibility">
+            <input type="checkbox" id="toggle-cuencas-visibility" checked>
+            <span class="toggle-switch-slider"></span>
+          </label>
+          <span class="toggle-switch-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              <line x1="8" y1="2" x2="8" y2="18"></line>
+              <line x1="16" y1="6" x2="16" y2="22"></line>
+            </svg>
+            Cuencas
+          </span>
+        </div>
+
+        <!-- Control de Opacidad de Cuencas -->
+        <div class="opacity-control" id="cuencas-opacity-container" title="Ajustar opacidad de las cuencas (bordes y relleno)">
+          <label for="opacity-slider" class="opacity-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor"></path>
+            </svg>
+            Opacidad: <span id="opacity-val">25%</span>
+          </label>
+          <input type="range" id="opacity-slider" min="0" max="100" value="25" step="5" class="slider-glass">
+        </div>
+
+        <span id="status-badge" class="badge badge-info">
+          <span class="status-dot"></span> Cargando cuencas...
+        </span>
+        <span id="features-count" class="features-stats">Iniciando...</span>
+        <button id="btn-favorite-basin" class="btn-glass btn-fav-badge" style="display: none;" title="Centrar en cuenca favorita">
+          <!-- Contenido generado dinámicamente -->
+        </button>
+        <button id="btn-reset-view" class="btn-glass" title="Reestablecer vista a Comunitat Valenciana">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <path d="M3 3v5h5"></path>
+          </svg>
+          Centrar
+        </button>
+      </div>
+    </header>
+
+    <!-- Visor de Mapa Cartográfico -->
+    <main id="map" role="region" aria-label="Visor de mapa"></main>
+
+    <!-- Contenedor Lateral Izquierdo: Menú de Capas + Panel de Demarcación -->
+    <div class="left-sidebar-container">
+      <!-- Menú de Selección de Información (Tiempo Real / Predicción) -->
+      <aside id="layer-control-panel" class="layer-control-panel" aria-label="Menú de información meteorológica">
+        <div class="panel-tabs" role="tablist">
+          <button type="button" class="panel-tab-btn active" data-tab="realtime" role="tab" aria-selected="true" aria-controls="tab-content-realtime">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="2"></circle>
+              <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path>
+            </svg>
+            Tiempo Real
+          </button>
+          <button type="button" class="panel-tab-btn" data-tab="prediction" role="tab" aria-selected="false" aria-controls="tab-content-prediction">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            Predicción
+          </button>
+        </div>
+
+        <!-- Contenido de las pestañas -->
+        <div class="panel-tab-content active" id="tab-content-realtime" role="tabpanel">
+          <div class="panel-section-header">
+            <span class="section-title">Capas de Observación</span>
+            <span class="section-hint">Simultáneas</span>
+          </div>
+          <div class="layer-list" id="realtime-layer-list">
+            <!-- Generado dinámicamente -->
+          </div>
+        </div>
+
+        <div class="panel-tab-content" id="tab-content-prediction" role="tabpanel" style="display: none;">
+          <div class="panel-section-header">
+            <span class="section-title">Modelos Numéricos</span>
+            <span class="section-hint">Alta resolución</span>
+          </div>
+          <div class="layer-list" id="prediction-layer-list">
+            <!-- Generado dinámicamente -->
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Leyenda de Sistemas Hidrológicos -->
+    <aside id="map-legend" class="map-legend" aria-label="Leyenda de cuencas"></aside>
+
+    <!-- Coordenadas del cursor en tiempo real -->
+    <!-- Modal de Evolución de Caudales (SAIH Júcar) -->
+    <div id="caudal-modal-backdrop" class="caudal-modal-backdrop" style="display: none;" aria-hidden="true">
+      <div class="caudal-modal" role="dialog" aria-modal="true" aria-labelledby="caudal-modal-title">
+        <!-- Barra de selección de elementos próximos (Caudal <-> Embalse) -->
+        <div id="caudal-modal-proximity-tabs" class="saih-proximity-tab-bar" style="display: none;"></div>
+
+        <header class="caudal-modal-header">
+          <div class="caudal-modal-title-group">
+            <div class="caudal-modal-badges">
+              <span id="caudal-modal-alert-badge" class="caudal-status-badge">Normal</span>
+              <span id="caudal-modal-subcuenca-badge" class="caudal-subcuenca-badge">Cuenca</span>
+            </div>
+            <h2 id="caudal-modal-title" class="caudal-modal-title">Estación de Caudal</h2>
+            <span id="caudal-modal-subtitle" class="caudal-modal-subtitle">Río · Municipio</span>
+          </div>
+          <button id="caudal-modal-close" class="btn-modal-close" aria-label="Cerrar modal" title="Cerrar (Esc)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </header>
+
+        <div class="caudal-modal-stats-bar">
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Caudal Actual</span>
+            <span id="caudal-stat-current" class="caudal-stat-val">-- m³/s</span>
+            <span id="caudal-stat-time" class="caudal-stat-sub">Última lectura: --</span>
+          </div>
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Máximo Periodo</span>
+            <span id="caudal-stat-max" class="caudal-stat-val">-- m³/s</span>
+            <span id="caudal-stat-max-time" class="caudal-stat-sub">Pico registrado</span>
+          </div>
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Mínimo Periodo</span>
+            <span id="caudal-stat-min" class="caudal-stat-val">-- m³/s</span>
+            <span id="caudal-stat-avg" class="caudal-stat-sub">Media: -- m³/s</span>
+          </div>
+          <div class="caudal-stat-card caudal-thresholds-summary">
+            <span class="caudal-stat-label">Avisos y Umbrales</span>
+            <div class="threshold-chips">
+              <span id="th-chip-yellow" class="th-chip chip-yellow" title="Umbral Amarillo (Aviso)">🟡 --</span>
+              <span id="th-chip-orange" class="th-chip chip-orange" title="Umbral Naranja (Peligro)">🟠 --</span>
+              <span id="th-chip-red" class="th-chip chip-red" title="Umbral Rojo (Desbordamiento)">🔴 --</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="caudal-modal-chart-controls">
+          <span class="chart-controls-title">Evolución temporal del caudal:</span>
+          <div class="time-range-buttons" id="caudal-range-buttons" role="group" aria-label="Rango temporal">
+            <button type="button" class="btn-range" data-hours="12">12h</button>
+            <button type="button" class="btn-range active" data-hours="24">24h</button>
+            <button type="button" class="btn-range" data-hours="48">48h</button>
+            <button type="button" class="btn-range" data-hours="168">7 días</button>
+          </div>
+        </div>
+
+        <div class="caudal-modal-chart-body">
+          <div id="caudal-chart-canvas-container" class="caudal-chart-canvas-container">
+            <!-- Gráfica SVG generada dinámicamente con líneas de umbral horizontales -->
+          </div>
+        </div>
+
+        <footer class="caudal-modal-footer">
+          <span class="caudal-source-tag">Fuente: SAIH Confederación Hidrográfica del Júcar (CHJ) &bull; Datos cada 5 min</span>
+          <a id="caudal-saih-link" href="https://saih.chj.es" target="_blank" rel="noopener noreferrer" class="caudal-external-link">
+            Ver ficha SAIH
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Modal de Evolución de Embalses (SAIH Júcar) -->
+    <div id="embalse-modal-backdrop" class="caudal-modal-backdrop" style="display: none;" aria-hidden="true">
+      <div class="caudal-modal" role="dialog" aria-modal="true" aria-labelledby="embalse-modal-title">
+        <!-- Barra de selección de elementos próximos (Caudal <-> Embalse) -->
+        <div id="embalse-modal-proximity-tabs" class="saih-proximity-tab-bar" style="display: none;"></div>
+
+        <header class="caudal-modal-header">
+          <div class="caudal-modal-title-group">
+            <div class="caudal-modal-badges">
+              <span id="embalse-modal-pct-badge" class="caudal-status-badge" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">--% Lleno</span>
+              <span id="embalse-modal-subcuenca-badge" class="caudal-subcuenca-badge">Subcuenca</span>
+            </div>
+            <h2 id="embalse-modal-title" class="caudal-modal-title">Embalse</h2>
+            <span id="embalse-modal-subtitle" class="caudal-modal-subtitle">Río · Municipio</span>
+          </div>
+          <button id="embalse-modal-close" class="btn-modal-close" aria-label="Cerrar modal" title="Cerrar (Esc)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </header>
+
+        <div class="caudal-modal-stats-bar">
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Volumen Actual</span>
+            <span id="embalse-stat-vol" class="caudal-stat-val" style="color: #38bdf8;">-- hm³</span>
+            <span id="embalse-stat-time" class="caudal-stat-sub">Última lectura: --</span>
+          </div>
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Capacidad NMN</span>
+            <span id="embalse-stat-cap" class="caudal-stat-val">-- hm³</span>
+            <span id="embalse-stat-pct-sub" class="caudal-stat-sub">Reserva: --%</span>
+          </div>
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Cota de Agua</span>
+            <span id="embalse-stat-cota" class="caudal-stat-val">-- m</span>
+            <span id="embalse-stat-cota-vertido" class="caudal-stat-sub">Vertido: -- m</span>
+          </div>
+          <div class="caudal-stat-card">
+            <span class="caudal-stat-label">Caudales (Entrada / Aliviado)</span>
+            <div style="display: flex; flex-direction: column; gap: 2px; margin-top: 2px;">
+              <span id="embalse-stat-caudal-in" style="font-size: 0.78rem; font-weight: 700; color: #10b981;">⬇ Entrada: -- m³/s</span>
+              <span id="embalse-stat-caudal-out" style="font-size: 0.78rem; font-weight: 700; color: #38bdf8;">⬆ Aliviado: -- m³/s</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="caudal-modal-chart-controls">
+          <span class="chart-controls-title">Evolución del volumen embalsado (hm³):</span>
+          <div class="time-range-buttons" id="embalse-range-buttons" role="group" aria-label="Rango temporal">
+            <button type="button" class="btn-range" data-hours="12">12h</button>
+            <button type="button" class="btn-range active" data-hours="24">24h</button>
+            <button type="button" class="btn-range" data-hours="48">48h</button>
+            <button type="button" class="btn-range" data-hours="168">7 días</button>
+          </div>
+        </div>
+
+        <div class="caudal-modal-chart-body">
+          <div id="embalse-chart-canvas-container" class="caudal-chart-canvas-container">
+            <!-- Gráfica SVG generada dinámicamente con línea de Capacidad NMN -->
+          </div>
+        </div>
+
+        <footer class="caudal-modal-footer">
+          <span class="caudal-source-tag">Fuente: SAIH Confederación Hidrográfica del Júcar (CHJ) &bull; Datos cada 5 min</span>
+          <a id="embalse-saih-link" href="https://saih.chj.es/mapa-embalses" target="_blank" rel="noopener noreferrer" class="caudal-external-link">
+            Ver en SAIH
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS 1.9.4 -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+          crossorigin=""></script>
+
+  <!-- Módulo ES6 Principal -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

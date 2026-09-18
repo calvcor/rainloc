@@ -1,0 +1,22 @@
+{
+  "name": "rainloc-gis",
+  "version": "1.0.0",
+  "description": "Herramienta GIS web para monitorizar y anticipar el impacto de lluvias torrenciales en las cuencas de la Comunitat Valenciana (CHJ)",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve -l 3000 .",
+    "serve": "python3 -m http.server 8080",
+    "start": "npx serve -l 3000 ."
+  },
+  "keywords": [
+    "gis",
+    "leaflet",
+    "chj",
+    "hydrology",
+    "weather",
+    "rainfall",
+    "valencia"
+  ],
+  "author": "RainLoc Team",
+  "license": "MIT"
+}
