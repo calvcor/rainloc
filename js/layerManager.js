@@ -267,8 +267,8 @@ export class LayerManager {
    */
   async _loadRadarLayer(layerGroup, opacity) {
     try {
-      // 1. Obtener metadatos del radar
-      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata`);
+      // 1. Obtener metadatos del radar (con cache busting para forzar metadatos actualizados)
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
       if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
       const metadata = await metaResp.json();
       this.radarMetadata = metadata;

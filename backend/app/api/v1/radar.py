@@ -83,13 +83,16 @@ async def stream_radar():
     """
     async def event_generator():
         async for event in radar_service.subscribe_stream():
-            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("event") == "ping":
+                yield ": ping\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"
         }

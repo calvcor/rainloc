@@ -164,22 +164,31 @@ class RadarService:
         self._subscribers: Set[asyncio.Queue] = set()
 
     def notify_radar_update(self, timestep: str, bounds: Any = None):
-        """Notifica de forma inmediata a todos los clientes SSE conectados de una nueva imagen."""
+        """Notifica de forma inmediata y thread-safe a todos los clientes SSE conectados de una nueva imagen."""
         payload = {
             "event": "radar_update",
             "timestep": timestep,
             "bounds": bounds or self.state.get("composite_bounds"),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        dead_subscribers = set()
         for q in list(self._subscribers):
             try:
-                q.put_nowait(payload)
+                loop = getattr(q, "_loop", None)
+                if loop and loop.is_running():
+                    loop.call_soon_threadsafe(q.put_nowait, payload)
+                else:
+                    q.put_nowait(payload)
             except Exception:
-                pass
+                dead_subscribers.add(q)
+        for q in dead_subscribers:
+            self._subscribers.discard(q)
 
     async def subscribe_stream(self) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generador asíncrono para clientes SSE."""
+        """Generador asíncrono para clientes SSE con keep-alive periódico."""
+        loop = asyncio.get_running_loop()
         q = asyncio.Queue(maxsize=20)
+        q._loop = loop
         self._subscribers.add(q)
         try:
             # Enviar el estado actual inmediatamente al conectar
@@ -192,8 +201,13 @@ class RadarService:
             yield initial_payload
 
             while True:
-                data = await q.get()
-                yield data
+                try:
+                    # Esperar hasta 25s por un nuevo evento o emitir un heartbeat keep-alive
+                    data = await asyncio.wait_for(q.get(), timeout=25.0)
+                    yield data
+                except asyncio.TimeoutError:
+                    # Enviar ping de mantenimiento de conexión SSE
+                    yield {"event": "ping", "timestamp": datetime.now(timezone.utc).isoformat()}
         finally:
             self._subscribers.discard(q)
 
