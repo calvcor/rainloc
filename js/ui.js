@@ -1083,6 +1083,9 @@ export class UIManager {
 
     const slider = document.getElementById('timeline-step-slider');
     if (slider) {
+      let _sliderRaf = null;
+      let _pendingVal = null;
+
       const handleSliderChange = (rawVal) => {
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
@@ -1097,6 +1100,22 @@ export class UIManager {
       };
 
       slider.addEventListener('input', (e) => {
+        _pendingVal = parseInt(e.target.value, 10);
+        if (_sliderRaf) return;
+        _sliderRaf = requestAnimationFrame(() => {
+          _sliderRaf = null;
+          if (_pendingVal !== null) {
+            handleSliderChange(_pendingVal);
+            _pendingVal = null;
+          }
+        });
+      });
+
+      slider.addEventListener('change', (e) => {
+        if (_sliderRaf) {
+          cancelAnimationFrame(_sliderRaf);
+          _sliderRaf = null;
+        }
         handleSliderChange(parseInt(e.target.value, 10));
       });
 

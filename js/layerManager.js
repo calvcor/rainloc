@@ -588,45 +588,71 @@ export class LayerManager {
     const curIdx = this.radarTimeline.findIndex(t => t.timestep === currentTimestep);
     if (curIdx === -1) return;
 
-    // Precargar 6 siguientes y 3 anteriores
-    const targetIndices = [
-      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5, curIdx + 6,
-      curIdx - 1, curIdx - 2, curIdx - 3
-    ];
+  /**
+   * Helper para reutilizar un único canvas de sondeo (probe) compartido para el cursor inspector en escritorio
+   */
+  _updateSharedProbeCanvas(offscreenImg, bounds, stepOrTimestep, validText, extraProps = {}) {
+    // En móviles / pantallas táctiles sin puntero hover, evitar crear canvas por completo
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: none)').matches) {
+      return null;
+    }
+    try {
+      if (!this._sharedProbeCanvas) {
+        this._sharedProbeCanvas = document.createElement('canvas');
+      }
+      if (this._sharedProbeCanvas.width !== offscreenImg.naturalWidth) {
+        this._sharedProbeCanvas.width = offscreenImg.naturalWidth;
+      }
+      if (this._sharedProbeCanvas.height !== offscreenImg.naturalHeight) {
+        this._sharedProbeCanvas.height = offscreenImg.naturalHeight;
+      }
+      if (!this._sharedProbeCtx) {
+        this._sharedProbeCtx = this._sharedProbeCanvas.getContext('2d', { willReadFrequently: true });
+      }
+      this._sharedProbeCtx.clearRect(0, 0, this._sharedProbeCanvas.width, this._sharedProbeCanvas.height);
+      this._sharedProbeCtx.drawImage(offscreenImg, 0, 0);
+      return {
+        ctx: this._sharedProbeCtx,
+        width: offscreenImg.naturalWidth,
+        height: offscreenImg.naturalHeight,
+        bounds: bounds,
+        timestep: stepOrTimestep,
+        step: stepOrTimestep,
+        validText: validText,
+        ...extraProps
+      };
+    } catch (e) {
+      return null;
+    }
+  }
 
-    const bounds = this.currentRadarBounds || [[35.0, -10.0], [44.5, 5.0]];
+  /**
+   * Precarga fotogramas contiguos en la caché de red del navegador (sin crear canvas)
+   */
+  _preloadRadarSteps(currentStep) {
+    if (!this.radarTimeline || this.radarTimeline.length === 0) return;
+    const curIdx = this.radarTimeline.findIndex(t => t.timestep === currentStep);
+    if (curIdx === -1) return;
+
+    if (!this._radarPreloadSet) this._radarPreloadSet = new Set();
+
+    // Precargar 3 siguientes y 1 anterior en la caché HTTP
+    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
 
     targetIndices.forEach(idx => {
       if (idx >= 0 && idx < this.radarTimeline.length) {
         const item = this.radarTimeline[idx];
         const key = item.timestep;
-        if (!this._radarImageCache.has(key)) {
+        if (!this._radarPreloadSet.has(key)) {
+          this._radarPreloadSet.add(key);
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          const imgUrl = this._getRadarImageUrl(key);
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
-              const ctx = canvas.getContext('2d', { willReadFrequently: true });
-              ctx.drawImage(img, 0, 0);
-              this._radarImageCache.set(key, {
-                img: img,
-                canvasData: {
-                  ctx: ctx,
-                  width: img.naturalWidth,
-                  height: img.naturalHeight,
-                  bounds: bounds,
-                  timestep: key,
-                  validText: item.valid_time_local
-                }
-              });
-            } catch (e) {
-              // Ignore
-            }
-          };
-          img.src = imgUrl;
+          img.src = this._getRadarImageUrl(key);
+
+          if (this._radarPreloadSet.size > 40) {
+            const first = this._radarPreloadSet.values().next().value;
+            this._radarPreloadSet.delete(first);
+          }
         }
       }
     });
@@ -677,14 +703,8 @@ export class LayerManager {
       this.currentRadarBounds = bounds;
       this.currentRadarMode = 'composite';
 
-      const cacheKey = currentStep || 'latest';
       const imgUrl = this._getRadarImageUrl(currentStep);
       const requestId = ++this._radarStepRequestId;
-
-      const cached = this._radarImageCache.get(cacheKey);
-      if (cached && cached.canvasData) {
-        this.radarCanvasData = cached.canvasData;
-      }
 
       const swapOverlay = () => {
         if (requestId !== this._radarStepRequestId) return;
@@ -712,29 +732,12 @@ export class LayerManager {
       offscreenImg.onload = () => {
         if (requestId !== this._radarStepRequestId) return;
 
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = offscreenImg.naturalWidth;
-          canvas.height = offscreenImg.naturalHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(offscreenImg, 0, 0);
-          const canvasData = {
-            ctx: ctx,
-            width: offscreenImg.naturalWidth,
-            height: offscreenImg.naturalHeight,
-            bounds: bounds,
-            mode: 'composite',
-            timestep: currentStep,
-            validText: timeText
-          };
-          this.radarCanvasData = canvasData;
-          this._radarImageCache.set(cacheKey, {
-            img: offscreenImg,
-            canvasData: canvasData
-          });
-        } catch (err) {
-          // Ignore canvas context
+        // Actualizar canvas único de inspección bajo demanda (solo en escritorio)
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, currentStep, timeText, { mode: 'composite' });
+        if (probeData) {
+          this.radarCanvasData = probeData;
         }
+
         swapOverlay();
       };
       offscreenImg.onerror = () => {
@@ -743,6 +746,11 @@ export class LayerManager {
         }
       };
       offscreenImg.src = imgUrl;
+
+      // Si ya está en caché del navegador, continuar
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
 
     } catch (err) {
       console.warn('Error al cargar radar desde backend API:', err);
@@ -847,55 +855,34 @@ export class LayerManager {
   /**
    * Precarga pasos adyacentes en la memoria del navegador para transiciones instantáneas y fluidas
    */
+  /**
+   * Precarga pasos adyacentes de ECMWF en la memoria del navegador para transiciones fluidas
+   */
   _preloadEcmwfSteps(currentStep, type) {
     if (!this.ecmwfMetadata || !this.ecmwfMetadata.available_steps) return;
     const steps = this.ecmwfMetadata.available_steps;
     const curIdx = steps.indexOf(currentStep);
     if (curIdx === -1) return;
 
-    // Precargar los 5 siguientes y los 2 anteriores
-    const targetIndices = [
-      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5,
-      curIdx - 1, curIdx - 2
-    ];
+    if (!this._ecmwfPreloadSet) this._ecmwfPreloadSet = new Set();
 
-    const bbox = this.ecmwfMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
-    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+    // Precargar los 3 siguientes y el anterior en la caché HTTP
+    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
 
     targetIndices.forEach(idx => {
       if (idx >= 0 && idx < steps.length) {
         const step = steps[idx];
         const key = `${type}_${step}`;
-        if (!this._ecmwfImageCache.has(key)) {
+        if (!this._ecmwfPreloadSet.has(key)) {
+          this._ecmwfPreloadSet.add(key);
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          const imgUrl = this._getEcmwfImageUrl(step, type);
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
-              const ctx = canvas.getContext('2d', { willReadFrequently: true });
-              ctx.drawImage(img, 0, 0);
-              const stepInfo = (this.ecmwfMetadata.steps || []).find(s => s.step === step);
-              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
-              this._ecmwfImageCache.set(key, {
-                img: img,
-                canvasData: {
-                  ctx: ctx,
-                  width: img.naturalWidth,
-                  height: img.naturalHeight,
-                  bounds: bounds,
-                  step: step,
-                  type: type,
-                  validText: validText
-                }
-              });
-            } catch (e) {
-              // Ignore canvas context errors
-            }
-          };
-          img.src = imgUrl;
+          img.src = this._getEcmwfImageUrl(step, type);
+
+          if (this._ecmwfPreloadSet.size > 30) {
+            const first = this._ecmwfPreloadSet.values().next().value;
+            this._ecmwfPreloadSet.delete(first);
+          }
         }
       }
     });
@@ -911,7 +898,7 @@ export class LayerManager {
         if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
         const metadata = await metaResp.json();
         this.ecmwfMetadata = metadata;
-        this._ecmwfImageCache.clear();
+        if (this._ecmwfPreloadSet) this._ecmwfPreloadSet.clear();
       }
 
       const metadata = this.ecmwfMetadata;
@@ -948,19 +935,12 @@ export class LayerManager {
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
       this.currentEcmwfBounds = bounds;
 
-      const cacheKey = `${type}_${step}`;
       const imgUrl = this._getEcmwfImageUrl(step, type);
       const requestId = ++this._ecmwfStepRequestId;
 
-      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
-      const cached = this._ecmwfImageCache.get(cacheKey);
-      if (cached && cached.canvasData) {
-        this.ecmwfCanvasData = cached.canvasData;
-      }
-
       // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
       const swapOverlay = () => {
-        if (requestId !== this._ecmwfStepRequestId) return; // Petición obsoleta descartada
+        if (requestId !== this._ecmwfStepRequestId) return;
 
         const newOverlay = L.imageOverlay(imgUrl, bounds, {
           pane: 'modelsPane',
@@ -970,7 +950,6 @@ export class LayerManager {
           className: 'ecmwf-raster-overlay'
         });
 
-        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
         layerGroup.addLayer(newOverlay);
         const oldOverlay = this.currentEcmwfOverlay;
         if (oldOverlay && oldOverlay !== newOverlay) {
@@ -978,7 +957,6 @@ export class LayerManager {
         }
         this.currentEcmwfOverlay = newOverlay;
 
-        // Disparar precarga de pasos contiguos
         this._preloadEcmwfSteps(step, type);
       };
 
@@ -988,28 +966,9 @@ export class LayerManager {
       offscreenImg.onload = () => {
         if (requestId !== this._ecmwfStepRequestId) return;
 
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = offscreenImg.naturalWidth;
-          canvas.height = offscreenImg.naturalHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(offscreenImg, 0, 0);
-          const canvasData = {
-            ctx: ctx,
-            width: offscreenImg.naturalWidth,
-            height: offscreenImg.naturalHeight,
-            bounds: bounds,
-            step: step,
-            type: type,
-            validText: timeLabel
-          };
-          this.ecmwfCanvasData = canvasData;
-          this._ecmwfImageCache.set(cacheKey, {
-            img: offscreenImg,
-            canvasData: canvasData
-          });
-        } catch (err) {
-          console.warn('Canvas raster ECMWF inaccesible para lectura local:', err);
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'ecmwf', type: type });
+        if (probeData) {
+          this.ecmwfCanvasData = probeData;
         }
 
         swapOverlay();
@@ -1022,7 +981,6 @@ export class LayerManager {
 
       offscreenImg.src = imgUrl;
 
-      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
         offscreenImg.onload();
       }
@@ -1127,55 +1085,34 @@ export class LayerManager {
   /**
    * Precarga pasos adyacentes de GFS en la memoria del navegador para transiciones instantáneas y fluidas
    */
+  /**
+   * Precarga pasos adyacentes de GFS en la memoria del navegador para transiciones fluidas
+   */
   _preloadGfsSteps(currentStep, type) {
     if (!this.gfsMetadata || !this.gfsMetadata.available_steps) return;
     const steps = this.gfsMetadata.available_steps;
     const curIdx = steps.indexOf(currentStep);
     if (curIdx === -1) return;
 
-    // Precargar los 5 siguientes y los 2 anteriores
-    const targetIndices = [
-      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5,
-      curIdx - 1, curIdx - 2
-    ];
+    if (!this._gfsPreloadSet) this._gfsPreloadSet = new Set();
 
-    const bbox = this.gfsMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
-    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+    // Precargar los 3 siguientes y el anterior en la caché HTTP
+    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
 
     targetIndices.forEach(idx => {
       if (idx >= 0 && idx < steps.length) {
         const step = steps[idx];
         const key = `${type}_${step}`;
-        if (!this._gfsImageCache.has(key)) {
+        if (!this._gfsPreloadSet.has(key)) {
+          this._gfsPreloadSet.add(key);
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          const imgUrl = this._getGfsImageUrl(step, type);
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
-              const ctx = canvas.getContext('2d', { willReadFrequently: true });
-              ctx.drawImage(img, 0, 0);
-              const stepInfo = (this.gfsMetadata.steps || []).find(s => s.step === step);
-              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
-              this._gfsImageCache.set(key, {
-                img: img,
-                canvasData: {
-                  ctx: ctx,
-                  width: img.naturalWidth,
-                  height: img.naturalHeight,
-                  bounds: bounds,
-                  step: step,
-                  type: type,
-                  validText: validText
-                }
-              });
-            } catch (e) {
-              // Ignore canvas context errors
-            }
-          };
-          img.src = imgUrl;
+          img.src = this._getGfsImageUrl(step, type);
+
+          if (this._gfsPreloadSet.size > 30) {
+            const first = this._gfsPreloadSet.values().next().value;
+            this._gfsPreloadSet.delete(first);
+          }
         }
       }
     });
@@ -1191,7 +1128,7 @@ export class LayerManager {
         if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
         const metadata = await metaResp.json();
         this.gfsMetadata = metadata;
-        this._gfsImageCache.clear();
+        if (this._gfsPreloadSet) this._gfsPreloadSet.clear();
       }
 
       const metadata = this.gfsMetadata;
@@ -1228,19 +1165,12 @@ export class LayerManager {
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
       this.currentGfsBounds = bounds;
 
-      const cacheKey = `${type}_${step}`;
       const imgUrl = this._getGfsImageUrl(step, type);
       const requestId = ++this._gfsStepRequestId;
 
-      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
-      const cached = this._gfsImageCache.get(cacheKey);
-      if (cached && cached.canvasData) {
-        this.gfsCanvasData = cached.canvasData;
-      }
-
       // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
       const swapOverlay = () => {
-        if (requestId !== this._gfsStepRequestId) return; // Petición obsoleta descartada
+        if (requestId !== this._gfsStepRequestId) return;
 
         const newOverlay = L.imageOverlay(imgUrl, bounds, {
           pane: 'modelsPane',
@@ -1250,7 +1180,6 @@ export class LayerManager {
           className: 'ecmwf-raster-overlay'
         });
 
-        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
         layerGroup.addLayer(newOverlay);
         const oldOverlay = this.currentGfsOverlay;
         if (oldOverlay && oldOverlay !== newOverlay) {
@@ -1258,7 +1187,6 @@ export class LayerManager {
         }
         this.currentGfsOverlay = newOverlay;
 
-        // Disparar precarga de pasos contiguos
         this._preloadGfsSteps(step, type);
       };
 
@@ -1268,40 +1196,24 @@ export class LayerManager {
       offscreenImg.onload = () => {
         if (requestId !== this._gfsStepRequestId) return;
 
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = offscreenImg.naturalWidth;
-          canvas.height = offscreenImg.naturalHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(offscreenImg, 0, 0);
-          const canvasData = {
-            ctx: ctx,
-            width: offscreenImg.naturalWidth,
-            height: offscreenImg.naturalHeight,
-            bounds: bounds,
-            step: step,
-            type: type,
-            validText: timeLabel
-          };
-          this.gfsCanvasData = canvasData;
-          this._gfsImageCache.set(cacheKey, {
-            img: offscreenImg,
-            canvasData: canvasData
-          });
-        } catch (e) {
-          // Ignore
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'gfs', type: type });
+        if (probeData) {
+          this.gfsCanvasData = probeData;
         }
 
         swapOverlay();
       };
 
       offscreenImg.onerror = () => {
-        if (requestId === this._gfsStepRequestId) {
-          swapOverlay();
-        }
+        if (requestId !== this._gfsStepRequestId) return;
+        console.warn(`La imagen GFS para paso +${step}h no pudo ser cargada.`);
       };
 
       offscreenImg.src = imgUrl;
+
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
 
     } catch (err) {
       console.warn('Error cargando capa NOAA GFS:', err);
@@ -1401,11 +1313,16 @@ export class LayerManager {
   /**
    * Precarga pasos adyacentes de AROME en la memoria del navegador para transiciones instantáneas y fluidas
    */
+  /**
+   * Precarga pasos adyacentes de AROME en la memoria del navegador para transiciones fluidas
+   */
   _preloadAromeSteps(currentStep, type) {
     if (!this.aromeMetadata || !this.aromeMetadata.available_steps) return;
     const steps = this.aromeMetadata.available_steps;
     const idx = steps.indexOf(currentStep);
     if (idx === -1) return;
+
+    if (!this._aromePreloadSet) this._aromePreloadSet = new Set();
 
     // Precargar los siguientes 3 pasos y el anterior
     const stepsToPreload = [];
@@ -1414,42 +1331,19 @@ export class LayerManager {
     if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
     if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
 
-    const bbox = this.aromeMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
-    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
-
     stepsToPreload.forEach(step => {
       for (const t of [type, (type === 'total' ? 'interval' : 'total')]) {
         const key = `${t}_${step}`;
-        if (!this._aromeImageCache.has(key)) {
+        if (!this._aromePreloadSet.has(key)) {
+          this._aromePreloadSet.add(key);
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          const imgUrl = this._getAromeImageUrl(step, t);
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
-              const ctx = canvas.getContext('2d', { willReadFrequently: true });
-              ctx.drawImage(img, 0, 0);
-              const stepInfo = (this.aromeMetadata.steps || []).find(s => s.step === step);
-              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
-              this._aromeImageCache.set(key, {
-                img: img,
-                canvasData: {
-                  ctx: ctx,
-                  width: img.naturalWidth,
-                  height: img.naturalHeight,
-                  bounds: bounds,
-                  step: step,
-                  type: t,
-                  validText: validText
-                }
-              });
-            } catch (e) {
-              // Ignore canvas context errors
-            }
-          };
-          img.src = imgUrl;
+          img.src = this._getAromeImageUrl(step, t);
+
+          if (this._aromePreloadSet.size > 30) {
+            const first = this._aromePreloadSet.values().next().value;
+            this._aromePreloadSet.delete(first);
+          }
         }
       }
     });
@@ -1465,7 +1359,7 @@ export class LayerManager {
         if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
         const metadata = await metaResp.json();
         this.aromeMetadata = metadata;
-        this._aromeImageCache.clear();
+        if (this._aromePreloadSet) this._aromePreloadSet.clear();
       }
 
       const metadata = this.aromeMetadata;
@@ -1502,19 +1396,12 @@ export class LayerManager {
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
       this.currentAromeBounds = bounds;
 
-      const cacheKey = `${type}_${step}`;
       const imgUrl = this._getAromeImageUrl(step, type);
       const requestId = ++this._aromeStepRequestId;
 
-      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
-      const cached = this._aromeImageCache.get(cacheKey);
-      if (cached && cached.canvasData) {
-        this.aromeCanvasData = cached.canvasData;
-      }
-
       // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
       const swapOverlay = () => {
-        if (requestId !== this._aromeStepRequestId) return; // Petición obsoleta descartada
+        if (requestId !== this._aromeStepRequestId) return;
 
         const newOverlay = L.imageOverlay(imgUrl, bounds, {
           pane: 'modelsPane',
@@ -1524,7 +1411,6 @@ export class LayerManager {
           className: 'arome-raster-overlay'
         });
 
-        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
         layerGroup.addLayer(newOverlay);
         const oldOverlay = this.currentAromeOverlay;
         if (oldOverlay && oldOverlay !== newOverlay) {
@@ -1532,7 +1418,6 @@ export class LayerManager {
         }
         this.currentAromeOverlay = newOverlay;
 
-        // Disparar precarga de pasos contiguos
         this._preloadAromeSteps(step, type);
       };
 
@@ -1542,28 +1427,9 @@ export class LayerManager {
       offscreenImg.onload = () => {
         if (requestId !== this._aromeStepRequestId) return;
 
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = offscreenImg.naturalWidth;
-          canvas.height = offscreenImg.naturalHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(offscreenImg, 0, 0);
-          const canvasData = {
-            ctx: ctx,
-            width: offscreenImg.naturalWidth,
-            height: offscreenImg.naturalHeight,
-            bounds: bounds,
-            step: step,
-            type: type,
-            validText: timeLabel
-          };
-          this.aromeCanvasData = canvasData;
-          this._aromeImageCache.set(cacheKey, {
-            img: offscreenImg,
-            canvasData: canvasData
-          });
-        } catch (err) {
-          console.warn('Canvas raster AROME inaccesible para lectura local:', err);
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'arome', type: type });
+        if (probeData) {
+          this.aromeCanvasData = probeData;
         }
 
         swapOverlay();
@@ -1576,7 +1442,6 @@ export class LayerManager {
 
       offscreenImg.src = imgUrl;
 
-      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
         offscreenImg.onload();
       }
