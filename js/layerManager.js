@@ -581,14 +581,6 @@ export class LayerManager {
   }
 
   /**
-   * Precarga fotogramas contiguos de radar para reproducción a 60 FPS sin parpadeo
-   */
-  _preloadRadarSteps(currentTimestep) {
-    if (!this.radarTimeline || this.radarTimeline.length === 0) return;
-    const curIdx = this.radarTimeline.findIndex(t => t.timestep === currentTimestep);
-    if (curIdx === -1) return;
-
-  /**
    * Helper para reutilizar un único canvas de sondeo (probe) compartido para el cursor inspector en escritorio
    */
   _updateSharedProbeCanvas(offscreenImg, bounds, stepOrTimestep, validText, extraProps = {}) {
