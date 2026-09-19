@@ -300,7 +300,12 @@ class AROMEWorker:
             meta["steps"] = sorted_steps
             max_step = max(avail) if avail else 0
             meta["max_step"] = max_step
-            raw_complete = (len(self.current_manifest.get("available_steps", [])) >= max_target)
+            raw_avail = list(self.current_manifest.get("available_steps", []))
+            raw_max_step = max(raw_avail) if raw_avail else 0
+            raw_complete = (len(raw_avail) >= max_target)
+            meta["raw_available_steps"] = raw_avail
+            meta["downloaded_max_step"] = raw_max_step
+            meta["raw_max_step"] = raw_max_step
             meta["is_complete"] = raw_complete
             meta["is_updating"] = self._is_syncing or (not raw_complete and self.current_manifest.get("status") != "complete")
             return meta

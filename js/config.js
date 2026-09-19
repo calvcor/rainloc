@@ -443,10 +443,19 @@ export function formatEcmwfTimestamp(metadata) {
     }
   }
 
-  const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 240 && metadata.status !== 'complete'));
+  const rawMax = metadata.downloaded_max_step !== undefined
+    ? metadata.downloaded_max_step
+    : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  if (isUpdating && maxStep > 0 && maxStep < 240) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
+  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
+  const isUpdating = Boolean(
+    metadata.is_updating ||
+    metadata.is_syncing ||
+    (rawMax !== null && rawMax > 0 && rawMax < 240 && metadata.status !== 'complete')
+  );
+
+  if (isUpdating && displayStep > 0 && displayStep < 240) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -503,10 +512,19 @@ export function formatGfsTimestamp(metadata) {
     }
   }
 
-  const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 384 && metadata.status !== 'complete'));
+  const rawMax = metadata.downloaded_max_step !== undefined
+    ? metadata.downloaded_max_step
+    : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  if (isUpdating && maxStep > 0 && maxStep < 384) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
+  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
+  const isUpdating = Boolean(
+    metadata.is_updating ||
+    metadata.is_syncing ||
+    (rawMax !== null && rawMax > 0 && rawMax < 384 && metadata.status !== 'complete')
+  );
+
+  if (isUpdating && displayStep > 0 && displayStep < 384) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -562,10 +580,19 @@ export function formatAromeTimestamp(metadata) {
     }
   }
 
-  const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 48 && metadata.status !== 'complete'));
+  const rawMax = metadata.downloaded_max_step !== undefined
+    ? metadata.downloaded_max_step
+    : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  if (isUpdating && maxStep > 0 && maxStep < 48) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
+  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
+  const isUpdating = Boolean(
+    metadata.is_updating ||
+    metadata.is_syncing ||
+    (rawMax !== null && rawMax > 0 && rawMax < 48 && metadata.status !== 'complete')
+  );
+
+  if (isUpdating && displayStep > 0 && displayStep < 48) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
