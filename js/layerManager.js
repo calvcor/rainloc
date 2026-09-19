@@ -2774,10 +2774,21 @@ export class LayerManager {
       tooltip.classList.remove('is-visible');
     };
 
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        onHoverMove(e.touches[0]);
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
     hitbox.addEventListener('mousemove', onHoverMove);
     hitbox.addEventListener('mouseenter', onHoverMove);
     hitbox.addEventListener('mouseleave', onHoverLeave);
     svgEl.addEventListener('mouseleave', onHoverLeave);
+    hitbox.addEventListener('touchstart', onTouchMove, { passive: false });
+    hitbox.addEventListener('touchmove', onTouchMove, { passive: false });
+    hitbox.addEventListener('touchend', onHoverLeave);
+    svgEl.addEventListener('touchend', onHoverLeave);
   }
 
   /**
@@ -3631,10 +3642,21 @@ export class LayerManager {
       tooltip.classList.remove('is-visible');
     };
 
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        onHoverMove(e.touches[0]);
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
     hitbox.addEventListener('mousemove', onHoverMove);
     hitbox.addEventListener('mouseenter', onHoverMove);
     hitbox.addEventListener('mouseleave', onHoverLeave);
     svgEl.addEventListener('mouseleave', onHoverLeave);
+    hitbox.addEventListener('touchstart', onTouchMove, { passive: false });
+    hitbox.addEventListener('touchmove', onTouchMove, { passive: false });
+    hitbox.addEventListener('touchend', onHoverLeave);
+    svgEl.addEventListener('touchend', onHoverLeave);
   }
 }
 
