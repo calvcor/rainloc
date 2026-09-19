@@ -234,6 +234,19 @@ export const CONFIG = {
         badgeType: 'info',
         color: '#059669',
         icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`
+      },
+      {
+        id: 'gfs_0p25',
+        name: 'Modelo GFS (0.25°)',
+        subtitle: 'Previsión global NOAA (16 días)',
+        description: 'Modelo global de la NOAA/NWS para predicción a medio y largo plazo (GFS Open Data, hasta +384h).',
+        type: 'model',
+        defaultActive: false,
+        defaultOpacity: 0.65,
+        badge: 'NOAA',
+        badgeType: 'info',
+        color: '#2563eb',
+        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`
       }
     ]
   },
@@ -432,6 +445,66 @@ export function formatEcmwfTimestamp(metadata) {
   }
 
   const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 240 && metadata.status !== 'complete'));
+
+  if (isUpdating && maxStep > 0) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
+  }
+
+  return `Salida modelo: <strong>${dateText} (${run})</strong>`;
+}
+
+/**
+ * Formatea la salida y estado del ciclo NOAA GFS para la tarjeta de capa
+ * Mostrando la run (0z, 6z, 12z, 18z) y, si está actualizando, hasta qué paso ha llegado (+384h).
+ * @param {Object} metadata
+ * @returns {string}
+ */
+export function formatGfsTimestamp(metadata) {
+  if (!metadata) return 'Salida modelo: <strong>Sincronizando...</strong>';
+
+  const availSteps = metadata.available_steps || [];
+  const maxStep = metadata.max_step !== undefined ? metadata.max_step : (availSteps.length > 0 ? Math.max(...availSteps) : 0);
+
+  // Extraer run limpia (0z, 6z, 12z, 18z)
+  let run = metadata.run;
+  if (!run && metadata.cycle_str) {
+    const parts = metadata.cycle_str.split('_');
+    if (parts.length > 1) run = parts[1].toLowerCase();
+  }
+  if (!run && metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const h = d.getUTCHours();
+      run = `${h}z`;
+    } catch (e) {}
+  }
+  if (run) {
+    run = run.replace(/^0(\d)z$/, '$1z').toLowerCase();
+  } else {
+    run = '0z';
+  }
+
+  // Formatear fecha del ciclo en hora local (Europe/Madrid)
+  let dateText = '';
+  if (metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      dateText = `${day}/${month}`;
+    } catch (e) {
+      dateText = metadata.cycle;
+    }
+  } else if (metadata.cycle_str) {
+    const p = metadata.cycle_str.split('_')[0];
+    if (p && p.length === 8) {
+      dateText = `${p.substring(6, 8)}/${p.substring(4, 6)}`;
+    } else {
+      dateText = metadata.cycle_str;
+    }
+  }
+
+  const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 384 && metadata.status !== 'complete'));
 
   if (isUpdating && maxStep > 0) {
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;

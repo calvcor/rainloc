@@ -10,11 +10,13 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
 RADAR_CACHE_DIR = DATA_DIR / "radar_cache"
 ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
+GFS_CACHE_DIR = DATA_DIR / "gfs_cache"
 
 # Asegurar directorios
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+GFS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Catálogo de radares españoles (estaciones individuales en openradar-24h)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
@@ -77,6 +79,11 @@ try:
         ECMWF_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos
         ECMWF_MAX_STEPS: int = 240  # Pasos hasta +240h (10 días)
 
+        # NOAA GFS (Global Forecast System) Open Data
+        GFS_CACHE_DIR: Path = GFS_CACHE_DIR
+        GFS_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos
+        GFS_MAX_STEPS: int = 384  # Pasos hasta +384h (16 días)
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -97,6 +104,7 @@ except ImportError:
         WEATHER_STATE_FILE: Path = DATA_DIR / "weather_state.json"
         RADAR_CACHE_DIR: Path = RADAR_CACHE_DIR
         ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
+        GFS_CACHE_DIR: Path = GFS_CACHE_DIR
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
@@ -109,5 +117,7 @@ except ImportError:
         RADAR_CACHE_TTL_HOURS: int = 24
         ECMWF_POLL_INTERVAL_SECONDS: int = 1800
         ECMWF_MAX_STEPS: int = 240
+        GFS_POLL_INTERVAL_SECONDS: int = 1800
+        GFS_MAX_STEPS: int = 384
 
 settings = Settings()

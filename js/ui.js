@@ -402,6 +402,74 @@ export class UIManager {
       `;
     }
 
+    // Sub-controles específicos para el Modelo NOAA GFS (Reproductor temporal hasta +384h y selector total/intervalo)
+    let gfsExtraControls = '';
+    if (layer.id === 'gfs_0p25') {
+      gfsExtraControls = `
+        <div class="ecmwf-subcontrols">
+          <!-- Selector de Modo: Acumulado Total vs Intervalo 3h -->
+          <div class="ecmwf-type-selector">
+            <button type="button" class="ecmwf-type-btn active" data-type="total" id="gfs-btn-total">
+              Acumulado Total
+            </button>
+            <button type="button" class="ecmwf-type-btn" data-type="interval" id="gfs-btn-interval">
+              Intervalo (3h / 6h)
+            </button>
+          </div>
+
+          <!-- Reproductor temporal interactivo -->
+          <div class="ecmwf-player-panel">
+            <div class="ecmwf-player-header">
+              <span class="ecmwf-player-title">Control de Previsión GFS</span>
+              <span class="ecmwf-max-pill" id="gfs-max-pill">Máx: -- mm</span>
+            </div>
+
+            <!-- Controles Play / Prev / Next -->
+            <div class="ecmwf-player-controls-row">
+              <button type="button" class="ecmwf-step-btn" id="gfs-prev-btn" title="Paso anterior (-3h)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+              </button>
+              <button type="button" class="ecmwf-play-btn" id="gfs-play-btn" title="Reproducir animación">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="gfs-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span id="gfs-play-text">Animar</span>
+              </button>
+              <button type="button" class="ecmwf-step-btn" id="gfs-next-btn" title="Paso siguiente (+3h)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+            </div>
+
+            <!-- Slider de pasos temporales hasta +384h (16 días) -->
+            <div class="ecmwf-slider-wrapper">
+              <input type="range" class="slider-glass ecmwf-step-slider" id="gfs-step-slider" min="3" max="384" step="3" value="3">
+              <div class="ecmwf-slider-labels">
+                <span>+3h</span>
+                <span>+120h (5d)</span>
+                <span>+240h (10d)</span>
+                <span>+384h (16d)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Leyenda de Precipitación -->
+          <div class="ecmwf-precip-legend">
+            <span class="precip-legend-title">Precipitación (mm):</span>
+            <div class="precip-bar">
+              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
+              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
+              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
+              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
+              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
+              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
+              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
+              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
+              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
+              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="layer-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
         <div class="layer-card-main">
@@ -429,6 +497,7 @@ export class UIManager {
           <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
           ${radarExtraControls}
           ${ecmwfExtraControls}
+          ${gfsExtraControls}
         </div>
       </div>
     `;
@@ -652,6 +721,109 @@ export class UIManager {
         }
       }, { passive: false });
     }
+
+    // =========================================================================
+    // Controles Interactivos para NOAA GFS
+    // =========================================================================
+    const gfsBtnTotal = document.getElementById('gfs-btn-total');
+    const gfsBtnInterval = document.getElementById('gfs-btn-interval');
+
+    if (gfsBtnTotal && gfsBtnInterval) {
+      gfsBtnTotal.addEventListener('click', () => {
+        gfsBtnTotal.classList.add('active');
+        gfsBtnInterval.classList.remove('active');
+        if (this.layerManager) {
+          this.layerManager.setGfsType('total');
+        }
+      });
+      gfsBtnInterval.addEventListener('click', () => {
+        gfsBtnInterval.classList.add('active');
+        gfsBtnTotal.classList.remove('active');
+        if (this.layerManager) {
+          this.layerManager.setGfsType('interval');
+        }
+      });
+    }
+
+    // Controles GFS: Botón Play / Pause
+    const gfsPlayBtn = document.getElementById('gfs-play-btn');
+    if (gfsPlayBtn) {
+      gfsPlayBtn.addEventListener('click', () => {
+        if (this.layerManager) {
+          this.layerManager.toggleGfsPlayback();
+        }
+      });
+    }
+
+    // Controles GFS: Paso Anterior (-3h)
+    const gfsPrevBtn = document.getElementById('gfs-prev-btn');
+    if (gfsPrevBtn) {
+      gfsPrevBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
+        const steps = this.layerManager.gfsMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentGfsStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        const prevIdx = (curIdx - 1 + steps.length) % steps.length;
+        this.layerManager.setGfsStep(steps[prevIdx]);
+      });
+    }
+
+    // Controles GFS: Paso Siguiente (+3h)
+    const gfsNextBtn = document.getElementById('gfs-next-btn');
+    if (gfsNextBtn) {
+      gfsNextBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
+        const steps = this.layerManager.gfsMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentGfsStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        const nextIdx = (curIdx + 1) % steps.length;
+        this.layerManager.setGfsStep(steps[nextIdx]);
+      });
+    }
+
+    // Controles GFS: Slider de pasos
+    const gfsSlider = document.getElementById('gfs-step-slider');
+    if (gfsSlider) {
+      const handleGfsSliderInput = (rawVal) => {
+        if (!this.layerManager) return;
+        const steps = (this.layerManager.gfsMetadata && this.layerManager.gfsMetadata.available_steps) || [];
+        if (steps.length === 0) return;
+
+        let closestStep = steps[0];
+        let minDiff = Infinity;
+        for (const s of steps) {
+          const diff = Math.abs(s - rawVal);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestStep = s;
+          }
+        }
+        this.layerManager.setGfsStep(closestStep);
+      };
+
+      gfsSlider.addEventListener('input', (e) => {
+        handleGfsSliderInput(parseInt(e.target.value, 10));
+      });
+
+      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
+      gfsSlider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
+        const steps = this.layerManager.gfsMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentGfsStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        if (e.deltaY > 0) {
+          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
+          this.layerManager.setGfsStep(steps[nextIdx]);
+        } else if (e.deltaY < 0) {
+          const prevIdx = Math.max(0, curIdx - 1);
+          this.layerManager.setGfsStep(steps[prevIdx]);
+        }
+      }, { passive: false });
+    }
   }
 
   /**
@@ -701,13 +873,68 @@ export class UIManager {
       this.predictionBannerMode.textContent = modeText;
     }
 
-    // Visibilidad del banner: solo visible si la capa de predicción está activa y visible en el mapa
+    // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isEcmwfActive = Boolean(this.layerManager && this.layerManager.isLayerOnMap('ecmwf_ifs'));
-      this.predictionBanner.style.display = isEcmwfActive ? 'flex' : 'none';
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateEcmwfPlayState(isPlaying);
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de NOAA GFS en la UI
+   */
+  updateGfsPlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('gfs-step-slider');
+    const maxPill = document.getElementById('gfs-max-pill');
+    const btnTotal = document.getElementById('gfs-btn-total');
+    const btnInterval = document.getElementById('gfs-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.textContent = `Máx: ${maxVal !== undefined ? maxVal : '--'} mm`;
+    }
+
+    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
+    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
+      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
+      this.predictionBannerExactTime.textContent = formattedInstant;
+    }
+    if (this.predictionBannerModel) {
+      this.predictionBannerModel.textContent = `NOAA GFS (+${currentStep}h)`;
+    }
+    if (this.predictionBannerMode) {
+      const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h');
+      this.predictionBannerMode.textContent = modeText;
+    }
+
+    // Visibilidad del banner: visible si alguna capa de predicción está activa
+    if (this.predictionBanner) {
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
+    }
+
+    this.updateGfsPlayState(isPlaying);
   }
 
   /**
@@ -717,6 +944,27 @@ export class UIManager {
     const playBtn = document.getElementById('ecmwf-play-btn');
     const playText = document.getElementById('ecmwf-play-text');
     const playIcon = document.getElementById('ecmwf-play-icon');
+
+    if (playBtn && playText && playIcon) {
+      if (isPlaying) {
+        playBtn.classList.add('playing');
+        playText.textContent = 'Pausa';
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        playBtn.classList.remove('playing');
+        playText.textContent = 'Animar';
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
+  }
+
+  /**
+   * Actualiza el estado visual del botón Play/Pausa de NOAA GFS
+   */
+  updateGfsPlayState(isPlaying) {
+    const playBtn = document.getElementById('gfs-play-btn');
+    const playText = document.getElementById('gfs-play-text');
+    const playIcon = document.getElementById('gfs-play-icon');
 
     if (playBtn && playText && playIcon) {
       if (isPlaying) {

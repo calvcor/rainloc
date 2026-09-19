@@ -26,7 +26,8 @@ export class StorageManager {
         'aemet_warnings': false,
         'arome_precip': false,
         'icon_d2': false,
-        'ecmwf_ifs': false
+        'ecmwf_ifs': false,
+        'gfs_0p25': false
       },
       layerOpacities: {
         'radar': 0.75,
@@ -36,7 +37,8 @@ export class StorageManager {
         'aemet_warnings': 0.85,
         'arome_precip': 0.75,
         'icon_d2': 0.70,
-        'ecmwf_ifs': 0.65
+        'ecmwf_ifs': 0.65,
+        'gfs_0p25': 0.65
       },
       radarMode: 'composite', // 'composite' | 'single'
       radarStationId: 'esbnv', // Estación por defecto (Valencia / Cullera)

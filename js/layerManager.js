@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -19,6 +19,7 @@ export class LayerManager {
     this.lightningEventSource = null;
     this.radarEventSource = null;
     this.ecmwfEventSource = null;
+    this.gfsEventSource = null;
     this.lightningGroup = L.layerGroup();
     this.currentRadarMode = 'composite';
 
@@ -32,6 +33,17 @@ export class LayerManager {
     this.currentEcmwfOverlay = null;
     this._ecmwfStepRequestId = 0;
     this._ecmwfImageCache = new Map();
+
+    // NOAA GFS NWP Model State
+    this.currentGfsStep = 3;
+    this.currentGfsType = 'total'; // 'total' | 'interval'
+    this.gfsMetadata = null;
+    this.gfsPlaybackInterval = null;
+    this.isGfsPlaying = false;
+    this.gfsCanvasData = null;
+    this.currentGfsOverlay = null;
+    this._gfsStepRequestId = 0;
+    this._gfsImageCache = new Map();
   }
 
   /**
@@ -57,6 +69,9 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el modelo ECMWF IFS (aviso reactivo de nuevos pasos)
     this._startEcmwfSSE();
+
+    // Iniciar conexión SSE en tiempo real para el modelo NOAA GFS (aviso reactivo de nuevos pasos)
+    this._startGfsSSE();
 
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
@@ -127,6 +142,9 @@ export class LayerManager {
     }
     else if (def.id === 'ecmwf_ifs') {
       this._loadEcmwfLayer(layerGroup, opacity);
+    }
+    else if (def.id === 'gfs_0p25') {
+      this._loadGfsLayer(layerGroup, opacity);
     }
     else if (def.id.startsWith('arome') || def.id.startsWith('icon')) {
       const demoModel = L.rectangle([[38.5, -1.2], [40.2, 0.4]], {
@@ -203,6 +221,9 @@ export class LayerManager {
       if (this.isEcmwfPlaying) {
         this.pauseEcmwfPlayback();
       }
+      if (this.isGfsPlaying) {
+        this.pauseGfsPlayback();
+      }
 
       // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
       CONFIG.overlayLayers.realtime.forEach(def => {
@@ -255,6 +276,9 @@ export class LayerManager {
             if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
               this.pauseEcmwfPlayback();
             }
+            if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
+              this.pauseGfsPlayback();
+            }
           }
         });
 
@@ -271,6 +295,9 @@ export class LayerManager {
         if (layerId === 'ecmwf_ifs' && this.isEcmwfPlaying) {
           this.pauseEcmwfPlayback();
         }
+        if (layerId === 'gfs_0p25' && this.isGfsPlaying) {
+          this.pauseGfsPlayback();
+        }
       }
       return;
     }
@@ -285,6 +312,9 @@ export class LayerManager {
           if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
           if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
             this.pauseEcmwfPlayback();
+          }
+          if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
+            this.pauseGfsPlayback();
           }
         });
 
@@ -773,6 +803,279 @@ export class LayerManager {
     }
   }
 
+  // =========================================================================
+  // NOAA GFS (Global Forecast System, 0.25°) Pipeline & Interactivity
+  // =========================================================================
+
+  /**
+   * Genera una URL estable para la imagen de un paso de GFS, aprovechando el caché del navegador
+   */
+  _getGfsImageUrl(step, type) {
+    const runId = (this.gfsMetadata && (this.gfsMetadata.run_id || this.gfsMetadata.run_timestamp || this.gfsMetadata.cycle_str)) || '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/gfs/image?step=${step}&type=${type}${runParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de GFS en la memoria del navegador para transiciones instantáneas y fluidas
+   */
+  _preloadGfsSteps(currentStep, type) {
+    if (!this.gfsMetadata || !this.gfsMetadata.available_steps) return;
+    const steps = this.gfsMetadata.available_steps;
+    const curIdx = steps.indexOf(currentStep);
+    if (curIdx === -1) return;
+
+    // Precargar los 5 siguientes y los 2 anteriores
+    const targetIndices = [
+      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5,
+      curIdx - 1, curIdx - 2
+    ];
+
+    const bbox = this.gfsMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+
+    targetIndices.forEach(idx => {
+      if (idx >= 0 && idx < steps.length) {
+        const step = steps[idx];
+        const key = `${type}_${step}`;
+        if (!this._gfsImageCache.has(key)) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const imgUrl = this._getGfsImageUrl(step, type);
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(img, 0, 0);
+              const stepInfo = (this.gfsMetadata.steps || []).find(s => s.step === step);
+              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+              this._gfsImageCache.set(key, {
+                img: img,
+                canvasData: {
+                  ctx: ctx,
+                  width: img.naturalWidth,
+                  height: img.naturalHeight,
+                  bounds: bounds,
+                  step: step,
+                  type: type,
+                  validText: validText
+                }
+              });
+            } catch (e) {
+              // Ignore canvas context errors
+            }
+          };
+          img.src = imgUrl;
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo NOAA GFS con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadGfsLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.gfsMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gfs/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.gfsMetadata = metadata;
+        this._gfsImageCache.clear();
+      }
+
+      const metadata = this.gfsMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('gfs_0p25', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      // Si el paso actual no está entre los disponibles, seleccionar el primero
+      if (!availSteps.includes(this.currentGfsStep)) {
+        this.currentGfsStep = availSteps[0];
+      }
+
+      const step = this.currentGfsStep;
+      const type = this.currentGfsType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI de inmediato
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('gfs_0p25', formatGfsTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateGfsPlayerUI) {
+        this.uiManager.updateGfsPlayerUI(metadata, step, type, this.isGfsPlaying);
+      }
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentGfsBounds = bounds;
+
+      const cacheKey = `${type}_${step}`;
+      const imgUrl = this._getGfsImageUrl(step, type);
+      const requestId = ++this._gfsStepRequestId;
+
+      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
+      const cached = this._gfsImageCache.get(cacheKey);
+      if (cached && cached.canvasData) {
+        this.gfsCanvasData = cached.canvasData;
+      }
+
+      // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
+      const swapOverlay = () => {
+        if (requestId !== this._gfsStepRequestId) return; // Petición obsoleta descartada
+
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'gfs-raster-overlay'
+        });
+
+        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentGfsOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentGfsOverlay = newOverlay;
+
+        // Disparar precarga de pasos contiguos
+        this._preloadGfsSteps(step, type);
+      };
+
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = () => {
+        if (requestId !== this._gfsStepRequestId) return;
+
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = offscreenImg.naturalWidth;
+          canvas.height = offscreenImg.naturalHeight;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(offscreenImg, 0, 0);
+          const canvasData = {
+            ctx: ctx,
+            width: offscreenImg.naturalWidth,
+            height: offscreenImg.naturalHeight,
+            bounds: bounds,
+            step: step,
+            type: type,
+            validText: timeLabel
+          };
+          this.gfsCanvasData = canvasData;
+          this._gfsImageCache.set(cacheKey, {
+            img: offscreenImg,
+            canvasData: canvasData
+          });
+        } catch (err) {
+          console.warn('Canvas raster GFS inaccesible para lectura local:', err);
+        }
+
+        swapOverlay();
+      };
+
+      offscreenImg.onerror = () => {
+        if (requestId !== this._gfsStepRequestId) return;
+        console.warn(`La imagen NOAA GFS para paso +${step}h no pudo ser cargada.`);
+      };
+
+      offscreenImg.src = imgUrl;
+
+      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
+
+    } catch (err) {
+      console.warn('Error al cargar NOAA GFS desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo NOAA GFS
+   */
+  setGfsStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentGfsType || 'total';
+    if (this.currentGfsStep === parsedStep && this.currentGfsType === targetType && this.currentGfsOverlay) {
+      return;
+    }
+    this.currentGfsStep = parsedStep;
+    this.currentGfsType = targetType;
+    this.reloadGfsLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de GFS
+   */
+  setGfsType(type) {
+    if (this.currentGfsType === type && this.currentGfsOverlay) return;
+    this.currentGfsType = type;
+    this.reloadGfsLayer();
+  }
+
+  /**
+   * Recarga la capa GFS con los parámetros activos
+   */
+  reloadGfsLayer(forceMetaFetch = false) {
+    const gfsGroup = this.layers['gfs_0p25'];
+    if (!gfsGroup) return;
+    const opacity = (this.layerStates['gfs_0p25'] && this.layerStates['gfs_0p25'].opacity) || 0.65;
+    this._loadGfsLayer(gfsGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de NOAA GFS
+   */
+  toggleGfsPlayback() {
+    if (this.isGfsPlaying) {
+      this.pauseGfsPlayback();
+    } else {
+      this.startGfsPlayback();
+    }
+  }
+
+  startGfsPlayback() {
+    if (this.isGfsPlaying) return;
+    this.isGfsPlaying = true;
+    if (this.uiManager && this.uiManager.updateGfsPlayState) {
+      this.uiManager.updateGfsPlayState(true);
+    }
+
+    this.gfsPlaybackInterval = setInterval(() => {
+      if (!this.gfsMetadata || !this.gfsMetadata.available_steps || this.gfsMetadata.available_steps.length === 0) {
+        this.pauseGfsPlayback();
+        return;
+      }
+
+      const steps = this.gfsMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentGfsStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setGfsStep(steps[nextIdx]);
+    }, 1200);
+  }
+
+  pauseGfsPlayback() {
+    this.isGfsPlaying = false;
+    if (this.gfsPlaybackInterval) {
+      clearInterval(this.gfsPlaybackInterval);
+      this.gfsPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateGfsPlayState) {
+      this.uiManager.updateGfsPlayState(false);
+    }
+  }
+
   /**
    * Cambia la configuración del radar (compuesto vs único / estación) y actualiza el mapa
    */
@@ -1143,6 +1446,82 @@ export class LayerManager {
     if (this.ecmwfEventSource) {
       this.ecmwfEventSource.close();
       this.ecmwfEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de NOAA GFS
+   */
+  _startGfsSSE() {
+    if (this.gfsEventSource) {
+      return;
+    }
+
+    const sseUrl = `${CONFIG.apiBaseUrl}/models/gfs/stream`;
+    try {
+      this.gfsEventSource = new EventSource(sseUrl);
+
+      this.gfsEventSource.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'gfs_update' || data.event === 'gfs_init')) {
+            console.log('🌐 Notificación SSE NOAA GFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gfs/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.gfsMetadata = metadata;
+              this._gfsImageCache.clear();
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentGfsStep)) {
+                this.currentGfsStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('gfs_0p25', formatGfsTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateGfsPlayerUI) {
+                this.uiManager.updateGfsPlayerUI(
+                  metadata,
+                  this.currentGfsStep,
+                  this.currentGfsType || 'total',
+                  this.isGfsPlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('gfs_0p25')) {
+                this.reloadGfsLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de GFS:', e);
+        }
+      };
+
+      this.gfsEventSource.onerror = (err) => {
+        console.warn('Stream SSE de NOAA GFS desconectado. Intentando reconexión en 5s...', err);
+        this._stopGfsSSE();
+        setTimeout(() => this._startGfsSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para NOAA GFS:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de NOAA GFS
+   */
+  _stopGfsSSE() {
+    if (this.gfsEventSource) {
+      this.gfsEventSource.close();
+      this.gfsEventSource = null;
     }
   }
 

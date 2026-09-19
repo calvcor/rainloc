@@ -172,6 +172,78 @@ export class MultiLayerInspector {
     }
   }
 
+  /**
+   * Obtiene la precipitación en mm instantáneamente (0ms) a partir del pixel en el canvas de NOAA GFS
+   */
+  _getInstantGfsPixel(lat, lng) {
+    if (!this.layerManager || !this.layerManager.gfsCanvasData) return null;
+    const { ctx, width, height, bounds, step, type, validText } = this.layerManager.gfsCanvasData;
+    if (!bounds || bounds.length < 2) return null;
+
+    const latMin = Math.min(bounds[0][0], bounds[1][0]);
+    const latMax = Math.max(bounds[0][0], bounds[1][0]);
+    const lonMin = Math.min(bounds[0][1], bounds[1][1]);
+    const lonMax = Math.max(bounds[0][1], bounds[1][1]);
+
+    if (lat < latMin || lat > latMax || lng < lonMin || lng > lonMax) return null;
+
+    const yPt = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 360)));
+    const yMin = Math.log(Math.tan(Math.PI / 4 + (latMin * Math.PI / 360)));
+    const yMax = Math.log(Math.tan(Math.PI / 4 + (latMax * Math.PI / 360)));
+
+    const x = Math.floor(((lng - lonMin) / (lonMax - lonMin)) * width);
+    const y = Math.floor(((yMax - yPt) / (yMax - yMin)) * height);
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+
+    try {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
+
+      if (a < 30) {
+        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
+      }
+
+      const palette = [
+        { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
+        { minMm: 150, mm: 180, label: '150 - 250 mm (Torrencial)', rgb: [217, 70, 239], color: '#d946ef' },
+        { minMm: 100, mm: 120, label: '100 - 150 mm (Muy Fuerte)', rgb: [239, 68, 68], color: '#ef4444' },
+        { minMm: 70, mm: 85, label: '70 - 100 mm (Muy Fuerte)', rgb: [249, 115, 22], color: '#f97316' },
+        { minMm: 40, mm: 55, label: '40 - 70 mm (Fuerte)', rgb: [250, 204, 21], color: '#facc15' },
+        { minMm: 20, mm: 30, label: '20 - 40 mm (Moderada)', rgb: [22, 163, 74], color: '#16a34a' },
+        { minMm: 10, mm: 15, label: '10 - 20 mm (Moderada)', rgb: [74, 222, 128], color: '#4ade80' },
+        { minMm: 3, mm: 6, label: '3 - 10 mm (Ligera)', rgb: [2, 132, 199], color: '#0284c7' },
+        { minMm: 1, mm: 2, label: '1 - 3 mm (Débil)', rgb: [56, 189, 248], color: '#38bdf8' },
+        { minMm: 0.1, mm: 0.5, label: '0.1 - 1 mm (Muy Débil)', rgb: [186, 230, 253], color: '#bae6fd' }
+      ];
+
+      let bestMatch = palette[palette.length - 1];
+      let minDistance = Infinity;
+
+      for (const p of palette) {
+        const dr = r - p.rgb[0];
+        const dg = g - p.rgb[1];
+        const db = b - p.rgb[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestMatch = p;
+        }
+      }
+
+      return {
+        mm: bestMatch.mm,
+        label: bestMatch.label,
+        color: bestMatch.color,
+        step,
+        type,
+        validText
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   _debouncedFetchDbz(lat, lng, mode, stationId) {
     if (this._dbzDebounceTimer) clearTimeout(this._dbzDebounceTimer);
     this._dbzDebounceTimer = setTimeout(async () => {
@@ -510,23 +582,44 @@ export class MultiLayerInspector {
           });
 
           if (closestEmbalse) {
-            const vol = closestEmbalse.volumen_actual_hm3 !== undefined && closestEmbalse.volumen_actual_hm3 !== null ? Number(closestEmbalse.volumen_actual_hm3) : null;
-            const cap = closestEmbalse.capacidad_total_hm3 !== undefined && closestEmbalse.capacidad_total_hm3 !== null ? Number(closestEmbalse.capacidad_total_hm3) : null;
-            const pct = closestEmbalse.porcentaje_llenado !== undefined && closestEmbalse.porcentaje_llenado !== null ? Number(closestEmbalse.porcentaje_llenado) : (vol !== null && cap ? (vol / cap) * 100 : null);
-            const varVol = closestEmbalse.variacion_24h_hm3 !== undefined && closestEmbalse.variacion_24h_hm3 !== null ? Number(closestEmbalse.variacion_24h_hm3) : null;
+            const vol = closestEmbalse.volumen_actual !== undefined && closestEmbalse.volumen_actual !== null
+              ? Number(closestEmbalse.volumen_actual)
+              : (closestEmbalse.volumen_actual_hm3 !== undefined && closestEmbalse.volumen_actual_hm3 !== null
+                  ? Number(closestEmbalse.volumen_actual_hm3)
+                  : (closestEmbalse.volumen !== undefined && closestEmbalse.volumen !== null
+                      ? Number(closestEmbalse.volumen)
+                      : null));
+
+            const cap = closestEmbalse.capacidad_nmn !== undefined && closestEmbalse.capacidad_nmn !== null
+              ? Number(closestEmbalse.capacidad_nmn)
+              : (closestEmbalse.capacidad_total_hm3 !== undefined && closestEmbalse.capacidad_total_hm3 !== null
+                  ? Number(closestEmbalse.capacidad_total_hm3)
+                  : (closestEmbalse.capacidad !== undefined && closestEmbalse.capacidad !== null
+                      ? Number(closestEmbalse.capacidad)
+                      : null));
+
+            const pct = closestEmbalse.porcentaje_llenado !== undefined && closestEmbalse.porcentaje_llenado !== null
+              ? Number(closestEmbalse.porcentaje_llenado)
+              : (closestEmbalse.porcentaje !== undefined && closestEmbalse.porcentaje !== null
+                  ? Number(closestEmbalse.porcentaje)
+                  : (vol !== null && cap ? (vol / cap * 100) : null));
+
+            const cota = closestEmbalse.cota_actual !== undefined && closestEmbalse.cota_actual !== null ? Number(closestEmbalse.cota_actual) : null;
+            const qIn = closestEmbalse.caudal_recibido !== undefined && closestEmbalse.caudal_recibido !== null ? Number(closestEmbalse.caudal_recibido) : null;
+            const qOut = closestEmbalse.caudal_salida !== undefined && closestEmbalse.caudal_salida !== null ? Number(closestEmbalse.caudal_salida) : null;
 
             let pctColor = "#10b981";
             if (pct !== null) {
-              if (pct < 20) pctColor = "#ef4444";
-              else if (pct < 40) pctColor = "#f97316";
-              else if (pct < 70) pctColor = "#f59e0b";
+              if (pct >= 70) pctColor = "#ef4444";
+              else if (pct >= 35) pctColor = "#f59e0b";
+              else pctColor = "#10b981";
             }
 
             const volText = vol !== null ? `${vol.toFixed(2)} hm³` : "-- hm³";
             const capText = cap !== null ? `${cap.toFixed(2)} hm³` : "-- hm³";
             const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
-            const horaText = closestEmbalse.ultima_hora ? `· ${closestEmbalse.ultima_hora}` : '';
-            const varText = varVol !== null ? `${varVol >= 0 ? '+' : ''}${varVol.toFixed(2)} hm³ (24h)` : null;
+            const horaText = closestEmbalse.ultima_hora ? `· ${String(closestEmbalse.ultima_hora).replace('T', ' ').substring(0, 16)}` : '';
+            const cotaText = cota !== null ? `Cota: ${cota.toFixed(2)} m` : '';
             const metaLoc = `${closestEmbalse.poblacion || '--'} (${closestEmbalse.provincia || ''}) · ${closestEmbalse.subcuenca || ''}`;
 
             sections.push({
@@ -544,7 +637,12 @@ export class MultiLayerInspector {
                     <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
                     <div style="font-weight:700; color:${pctColor}; font-size:0.95rem;">${pctText}</div>
                   </div>
-                  ${varText ? `<div style="font-size:0.72rem; color:${varVol >= 0 ? '#34d399' : '#f87171'}; margin-top:2px;">Variación: ${varText}</div>` : ''}
+                  ${cotaText || qIn !== null || qOut !== null ? `
+                    <div style="font-size:0.72rem; color:#94a3b8; margin-top:2px; display:flex; justify-content:space-between;">
+                      <span>${cotaText}</span>
+                      ${qIn !== null || qOut !== null ? `<span>Entrada: ${qIn !== null ? qIn.toFixed(2) : '--'} | Salida: ${qOut !== null ? qOut.toFixed(2) : '--'} m³/s</span>` : ''}
+                    </div>
+                  ` : ''}
                   <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestEmbalse.codigo || '--'} ${horaText}</div>
                 </div>
               `
@@ -658,6 +756,38 @@ export class MultiLayerInspector {
               <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
                 <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${ecmwfPixel.color}; margin-right: 4px;"></span>
                 ${ecmwfPixel.label}
+              </div>
+            `
+          });
+        }
+      }
+
+      if (this.layerManager.isLayerOnMap("gfs_0p25")) {
+        const gfsPixel = this._getInstantGfsPixel(latlng.lat, latlng.lng);
+        const def = CONFIG.overlayLayers.prediction.find((p) => p.id === "gfs_0p25");
+        const step = (this.layerManager && this.layerManager.currentGfsStep) || 3;
+        const type = (this.layerManager && this.layerManager.currentGfsType) || 'total';
+        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo';
+
+        if (gfsPixel) {
+          sections.push({
+            type: "model",
+            title: "NOAA GFS (0.25°)",
+            headerColor: "#2563eb",
+            icon: "🌐",
+            name: `${typeLabel} (+${step}h)`,
+            badge: gfsPixel.validText || `+${step}h`,
+            badgeBg: "#2563eb",
+            details: `
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
+                <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
+                <span style="font-size: 0.90rem; font-weight: 700; color: ${gfsPixel.color};">
+                  ${gfsPixel.mm > 0 ? gfsPixel.mm.toFixed(1) : '0.0'} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span>
+                </span>
+              </div>
+              <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${gfsPixel.color}; margin-right: 4px;"></span>
+                ${gfsPixel.label}
               </div>
             `
           });
