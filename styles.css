@@ -1688,9 +1688,12 @@ html, body {
   color: #fff !important;
   padding: 0 !important;
   pointer-events: none;
-  min-width: 250px;
-  max-width: 320px;
-  overflow: hidden;
+  min-width: 260px;
+  max-width: min(390px, calc(100vw - 32px));
+  box-sizing: border-box;
+  overflow: visible;
+  word-break: normal;
+  overflow-wrap: break-word;
   /* IMPORTANTE: No usar transform en la animación del tooltip de Leaflet,
      porque anula el translate3d(x,y) de Leaflet y fuerza x=0 (borde izquierdo) */
   transition: none !important;

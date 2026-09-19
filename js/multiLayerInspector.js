@@ -464,11 +464,22 @@ export class MultiLayerInspector {
       
       let hydroDetails = null;
       if (isModelOnMap && activeModel && this.layerManager) {
+        const shortModelNames = {
+          ecmwf: 'ECMWF IFS',
+          gfs: 'NOAA GFS',
+          arome: 'AROME'
+        };
+        const shortModel = shortModelNames[activeModel] || activeModel.toUpperCase();
         const cacheKey = `${activeModel}_${cuencaFound.feature.id}`;
         if (this.layerManager._basinHydroCache && this.layerManager._basinHydroCache.has(cacheKey)) {
           const hData = this.layerManager._basinHydroCache.get(cacheKey);
           if (hData) {
-            hydroDetails = `Volumen previsto (${hData.model_name || activeModel.toUpperCase()}): <strong style="color:#38bdf8;">${hData.total_accumulated_hm3.toFixed(2)} hm³</strong>`;
+            hydroDetails = `
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 6px;">
+                <span style="color: #94a3b8; font-size: 0.72rem;">Volumen previsto (${shortModel}):</span>
+                <span style="font-weight: 700; color: #38bdf8; font-size: 0.82rem;">${hData.total_accumulated_hm3.toFixed(2)} <span style="font-size: 0.68rem; font-weight: 400; color: #94a3b8;">hm³</span></span>
+              </div>
+            `;
           }
         } else {
           // Precalentar caché en background
@@ -476,9 +487,9 @@ export class MultiLayerInspector {
         }
       }
 
-      let detailsContent = superfText ? `Superficie: ${superfText}` : null;
+      let detailsContent = superfText ? `Superficie: ${superfText}` : '';
       if (hydroDetails) {
-        detailsContent = detailsContent ? `${detailsContent}<div style="margin-top:2px; font-size:0.72rem; color:#cbd5e1;">${hydroDetails}</div>` : hydroDetails;
+        detailsContent = detailsContent ? `${detailsContent}${hydroDetails}` : hydroDetails;
       }
 
       sections.push({
