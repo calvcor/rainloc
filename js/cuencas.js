@@ -7,10 +7,11 @@ import { CONFIG } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class CuencasLayer {
-  constructor(mapManager, uiManager) {
+  constructor(mapManager, uiManager, layerManager = null) {
     this.mapManager = mapManager;
     this.map = mapManager.map;
     this.uiManager = uiManager;
+    this.layerManager = layerManager;
     this.geoJsonLayer = null;
     this.featuresData = [];
     this.selectedFeatureId = null;
@@ -310,7 +311,7 @@ export class CuencasLayer {
     const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
     const isFav = StorageManager.isFavorite(feature.id);
 
-    // Popup enriquecido con estrella de favorita junto al título
+    // Popup enriquecido con estrella de favorita junto al título y tarjeta hidrológica
     const popupContent = `
       <div class="rainloc-popup">
         <div class="popup-header" style="border-left: 4px solid ${systemColor};">
@@ -331,6 +332,24 @@ export class CuencasLayer {
             <span class="metric-label">Superficie de Cuenca</span>
             <span class="metric-value">${superfFormatted}</span>
           </div>
+
+          <div class="popup-hydro-card" id="popup-hydro-card-${feature.id}">
+            <div class="popup-hydro-row">
+              <span class="popup-hydro-label">Volumen Previsto (NWP):</span>
+              <span class="popup-hydro-val" id="popup-hydro-vol-${feature.id}"><span class="inspector-spinner"></span> Calculando...</span>
+            </div>
+            <div class="popup-hydro-row" style="font-size: 0.72rem; color: #94a3b8;">
+              <span id="popup-hydro-model-${feature.id}">Modelo: ECMWF IFS</span>
+              <span id="popup-hydro-peak-${feature.id}">Pico: --</span>
+            </div>
+          </div>
+
+          <button type="button" class="popup-btn-hydro" data-basin-id="${feature.id}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+            </svg>
+            Ver Hidrograma de Aportación (hm³)
+          </button>
         </div>
         <div class="popup-footer">
           <button type="button" class="popup-btn-zoom" data-feature-id="${feature.id}">
@@ -354,8 +373,29 @@ export class CuencasLayer {
     .setContent(popupContent)
     .openOn(this.map);
 
+    // Cargar datos hidrológicos al vuelo para el popup
+    const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
+    if (this.layerManager) {
+      this.layerManager.fetchBasinHydrograph(activeModel, feature.id).then(hydroData => {
+        if (!hydroData) return;
+        const volEl = document.getElementById(`popup-hydro-vol-${feature.id}`);
+        const modelEl = document.getElementById(`popup-hydro-model-${feature.id}`);
+        const peakEl = document.getElementById(`popup-hydro-peak-${feature.id}`);
+        if (volEl) volEl.textContent = `${hydroData.total_accumulated_hm3.toFixed(2)} hm³`;
+        if (modelEl) modelEl.textContent = hydroData.model_name || activeModel.toUpperCase();
+        if (peakEl) peakEl.textContent = hydroData.peak_interval_hm3 > 0 ? `Pico: +${hydroData.peak_interval_hm3.toFixed(2)} hm³` : 'Sin lluvia';
+      });
+    }
+
     // Escuchar botones dentro del popup
     setTimeout(() => {
+      const hydroBtn = document.querySelector(`.popup-btn-hydro[data-basin-id="${feature.id}"]`);
+      if (hydroBtn && this.layerManager) {
+        hydroBtn.addEventListener('click', () => {
+          this.layerManager.openBasinHydroModal(feature.id, props, activeModel);
+        });
+      }
+
       const zoomBtn = document.querySelector(`.popup-btn-zoom[data-feature-id="${feature.id}"]`);
       if (zoomBtn) {
         zoomBtn.addEventListener('click', () => {

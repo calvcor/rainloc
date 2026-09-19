@@ -457,7 +457,28 @@ export class MultiLayerInspector {
       const subsistema = props.Subsistema || `Subsistema ${cuencaFound.feature.id || ""}`;
       const color = CONFIG.systemColors[sistema] || CONFIG.systemColors["Default"] || "#38bdf8";
       const rawSuperf = props["Superf km2"] || props["Area km2"] || props.Superficie;
-      const superfText = rawSuperf ? `${Number(rawSuperf).toLocaleString("es-ES", { maximumFractionDigits: 1 })} km²` : "";
+      // Si hay un modelo de predicción activo en el mapa, consultar volumen previsto en cuenca
+      const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : null;
+      const isModelOnMap = this.layerManager && (this.layerManager.isLayerOnMap("ecmwf_ifs") || this.layerManager.isLayerOnMap("gfs_0p25") || this.layerManager.isLayerOnMap("arome_precip"));
+      
+      let hydroDetails = null;
+      if (isModelOnMap && activeModel && this.layerManager) {
+        const cacheKey = `${activeModel}_${cuencaFound.feature.id}`;
+        if (this.layerManager._basinHydroCache && this.layerManager._basinHydroCache.has(cacheKey)) {
+          const hData = this.layerManager._basinHydroCache.get(cacheKey);
+          if (hData) {
+            hydroDetails = `Volumen previsto (${hData.model_name || activeModel.toUpperCase()}): <strong style="color:#38bdf8;">${hData.total_accumulated_hm3.toFixed(2)} hm³</strong>`;
+          }
+        } else {
+          // Precalentar caché en background
+          this.layerManager.fetchBasinHydrograph(activeModel, cuencaFound.feature.id);
+        }
+      }
+
+      let detailsContent = superfText ? `Superficie: ${superfText}` : null;
+      if (hydroDetails) {
+        detailsContent = detailsContent ? `${detailsContent}<div style="margin-top:2px; font-size:0.72rem; color:#cbd5e1;">${hydroDetails}</div>` : hydroDetails;
+      }
 
       sections.push({
         type: "cuenca",
@@ -467,7 +488,7 @@ export class MultiLayerInspector {
         name: subsistema,
         badge: sistema,
         badgeBg: color,
-        details: superfText ? `Superficie: ${superfText}` : null
+        details: detailsContent
       });
 
       // Actualizar estilo hover de la cuenca

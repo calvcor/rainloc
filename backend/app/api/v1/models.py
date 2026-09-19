@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.basin_hydrology import basin_hydrology_service
 
 logger = logging.getLogger("rainloc-backend.models-api")
 
@@ -402,3 +403,80 @@ async def get_icon_d2_model() -> Dict[str, Any]:
         ],
         "timesteps": []
     }
+
+
+# =========================================================================
+# Cuencas Hidrográficas & Cálculo Hidrológico Espacial al Vuelo (hm³)
+# =========================================================================
+
+@router.get("/basins", summary="Catálogo de cuencas y subsistemas precalculados")
+async def list_model_basins() -> Dict[str, Any]:
+    """
+    Devuelve la lista de cuencas y subsistemas hidrográficos precomputados con su ID,
+    nombre oficial, sistema de explotación y superficie oficial en km².
+    """
+    basins = basin_hydrology_service.list_basins()
+    return {
+        "count": len(basins),
+        "basins": basins
+    }
+
+
+@router.get("/{model}/basin-hydrograph", summary="Hidrograma y volumen acumulado al vuelo para una cuenca")
+async def get_model_basin_hydrograph(
+    model: str,
+    basin_id: str = Query(..., description="ID o nombre del subsistema de la cuenca (ej: '1', '2', 'TURIA')")
+) -> Dict[str, Any]:
+    """
+    Calcula al vuelo (<2ms) la serie completa de precipitación media ponderada (mm),
+    volumen hídrico acumulado e intervalar (hm³) y puntos de máxima precipitación
+    sobre la cuenca especificada para todos los pasos temporales del modelo (ECMWF, GFS o AROME).
+    """
+    result = basin_hydrology_service.calculate_basin_hydrograph(model_key=model, basin_id=basin_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@router.get("/{model}/basin-volume", summary="Volumen y precipitación en cuenca para un paso específico")
+async def get_model_basin_volume(
+    model: str,
+    basin_id: str = Query(..., description="ID o nombre del subsistema de la cuenca"),
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de cálculo: 'total' (acumulado) o 'interval' (intervalo)")
+) -> Dict[str, Any]:
+    """
+    Calcula al vuelo (<0.2ms) los valores hidrológicos de una cuenca en un único paso temporal.
+    """
+    hydro = basin_hydrology_service.calculate_basin_hydrograph(model_key=model, basin_id=basin_id)
+    if "error" in hydro:
+        raise HTTPException(status_code=404, detail=hydro["error"])
+
+    series = hydro.get("series", [])
+    step_match = next((s for s in series if s["step"] == step), None)
+    if not step_match:
+        raise HTTPException(status_code=404, detail=f"Paso +{step}h no disponible para el modelo {model}")
+
+    clean_type = "interval" if type.lower() == "interval" else "total"
+    vol_hm3 = step_match["interval_vol_hm3"] if clean_type == "interval" else step_match["total_vol_hm3"]
+    avg_mm = step_match["avg_interval_mm"] if clean_type == "interval" else step_match["avg_total_mm"]
+    max_mm = step_match["max_point_interval_mm"] if clean_type == "interval" else step_match["max_point_mm"]
+
+    return {
+        "model": hydro["model_name"],
+        "model_key": hydro["model_key"],
+        "cycle_str": hydro["cycle_str"],
+        "basin_id": hydro["basin_id"],
+        "basin_name": hydro["basin_name"],
+        "system_name": hydro["system_name"],
+        "area_km2": hydro["area_km2"],
+        "step": step,
+        "type": clean_type,
+        "valid_time_iso": step_match["valid_time_iso"],
+        "valid_time_local": step_match["valid_time_local"],
+        "volume_hm3": vol_hm3,
+        "avg_precip_mm": avg_mm,
+        "max_point_mm": max_mm,
+        "total_accumulated_hm3": hydro["total_accumulated_hm3"]
+    }
+

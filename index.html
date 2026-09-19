@@ -536,6 +536,83 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal de Hidrograma y Aportación de Cuenca (Modelos NWP: ECMWF, GFS, AROME) -->
+    <div id="basin-hydro-modal-backdrop" class="caudal-modal-backdrop" style="display: none;" aria-hidden="true">
+      <div class="caudal-modal basin-hydro-modal" role="dialog" aria-modal="true" aria-labelledby="basin-hydro-modal-title">
+        <div class="modal-sheet-handle" aria-hidden="true"></div>
+        
+        <div class="caudal-modal-scroll-area">
+          <header class="caudal-modal-header">
+            <div class="caudal-modal-title-group">
+              <div class="caudal-modal-badges">
+                <span id="basin-hydro-modal-model-badge" class="caudal-status-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">ECMWF IFS</span>
+                <span id="basin-hydro-modal-subcuenca-badge" class="caudal-subcuenca-badge">Cuenca</span>
+              </div>
+              <h2 id="basin-hydro-modal-title" class="caudal-modal-title">Cuenca Hidrográfica</h2>
+              <span id="basin-hydro-modal-subtitle" class="caudal-modal-subtitle">Demarcación Hidrográfica del Júcar</span>
+            </div>
+            <button id="basin-hydro-modal-close" class="btn-modal-close" aria-label="Cerrar modal" title="Cerrar (Esc)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </header>
+
+          <!-- Selector de Modelo Meteorológico -->
+          <div class="basin-model-selector-bar">
+            <span class="chart-controls-title">Modelo de predicción:</span>
+            <div class="time-range-buttons" id="basin-hydro-model-tabs" role="group" aria-label="Modelo de predicción">
+              <button type="button" class="btn-range active" data-model="ecmwf">ECMWF IFS (0.25°)</button>
+              <button type="button" class="btn-range" data-model="gfs">NOAA GFS (0.25°)</button>
+              <button type="button" class="btn-range" data-model="arome">AROME (1.3 km)</button>
+            </div>
+          </div>
+
+          <div class="caudal-modal-stats-bar">
+            <div class="caudal-stat-card">
+              <span class="caudal-stat-label">Volumen Acumulado Total</span>
+              <span id="basin-stat-vol-total" class="caudal-stat-val" style="color: #38bdf8;">-- hm³</span>
+              <span id="basin-stat-cycle" class="caudal-stat-sub">Ciclo: --</span>
+            </div>
+            <div class="caudal-stat-card">
+              <span class="caudal-stat-label">Pico Máximo de Aportación</span>
+              <span id="basin-stat-peak-vol" class="caudal-stat-val" style="color: #f59e0b;">-- hm³</span>
+              <span id="basin-stat-peak-time" class="caudal-stat-sub">Paso: --</span>
+            </div>
+            <div class="caudal-stat-card">
+              <span class="caudal-stat-label">Precipitación Media Cuenca</span>
+              <span id="basin-stat-avg-mm" class="caudal-stat-val" style="color: #10b981;">-- mm</span>
+              <span id="basin-stat-area" class="caudal-stat-sub">Superficie: -- km²</span>
+            </div>
+            <div class="caudal-stat-card">
+              <span class="caudal-stat-label">Punto Máximo en Cuenca</span>
+              <span id="basin-stat-max-point" class="caudal-stat-val" style="color: #ef4444;">-- mm</span>
+              <span id="basin-stat-steps-count" class="caudal-stat-sub">Pasos calculados: --</span>
+            </div>
+          </div>
+
+          <div class="caudal-modal-chart-controls">
+            <span class="chart-controls-title">Hidrograma de Aportación (hm³) y Curva Acumulada:</span>
+            <div class="basin-chart-legend">
+              <span class="basin-legend-pill bar-pill">▮ Aportación intervalo (hm³)</span>
+              <span class="basin-legend-pill line-pill">━ Acumulado total (hm³)</span>
+            </div>
+          </div>
+
+          <div class="caudal-modal-chart-body">
+            <div id="basin-hydro-chart-canvas-container" class="caudal-chart-canvas-container">
+              <!-- Gráfica SVG generada dinámicamente -->
+            </div>
+          </div>
+
+          <footer class="caudal-modal-footer">
+            <span class="caudal-source-tag">Integración geodésica espacial sobre cuadrícula Web Mercator &bull; $V = \frac{\sum P_i \cdot A_i}{10^9}\text{ hm}^3$</span>
+          </footer>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Leaflet JS 1.9.4 -->

@@ -40,7 +40,7 @@ class RainLocApp {
       this.uiManager.init(this.mapManager, null, this.layerManager);
 
       // 5. Inicializar y cargar Capa de Cuencas y Subsistemas CHJ
-      this.cuencasLayer = new CuencasLayer(this.mapManager, this.uiManager);
+      this.cuencasLayer = new CuencasLayer(this.mapManager, this.uiManager, this.layerManager);
       this.uiManager.setCuencasLayer(this.cuencasLayer);
       const loadResult = await this.cuencasLayer.load();
 

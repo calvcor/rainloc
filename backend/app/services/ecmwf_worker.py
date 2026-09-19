@@ -371,14 +371,8 @@ class ECMWFWorker:
                 logger.warning(f"Error cargando {npy_p}: {e}")
         return None
 
-    def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
-        """
-        Consulta puntual instantánea (0ms) en la matriz NumPy en memoria o disco.
-        """
-        if not (SPAIN_BBOX["lat_min"] <= lat <= SPAIN_BBOX["lat_max"] and
-                SPAIN_BBOX["lon_min"] <= lon <= SPAIN_BBOX["lon_max"]):
-            return None
-
+    def get_matrix(self, step: int, layer_type: str = "total") -> Optional[np.ndarray]:
+        """Devuelve la matriz NumPy (950 x 1500) para el paso y capa solicitados (con soporte de fallback)."""
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
         if not self.current_manifest:
@@ -418,6 +412,17 @@ class ECMWFWorker:
                 except Exception:
                     pass
 
+        return matrix
+
+    def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
+        """
+        Consulta puntual instantánea (0ms) en la matriz NumPy en memoria o disco.
+        """
+        if not (SPAIN_BBOX["lat_min"] <= lat <= SPAIN_BBOX["lat_max"] and
+                SPAIN_BBOX["lon_min"] <= lon <= SPAIN_BBOX["lon_max"]):
+            return None
+
+        matrix = self.get_matrix(step=step, layer_type=layer_type)
         if matrix is None:
             return None
 
@@ -437,48 +442,7 @@ class ECMWFWorker:
 
     def get_max_point(self, step: int, layer_type: str = "total") -> Optional[Dict[str, Any]]:
         """Calcula las coordenadas lat/lon exactas y el valor en mm del punto de máxima precipitación."""
-        if not self.current_manifest:
-            self._load_latest_manifest_from_disk()
-        if not self.current_manifest:
-            return None
-
-        cycle_str = self.current_manifest.get("cycle_str")
-        if not cycle_str:
-            return None
-
-        clean_type = "interval" if layer_type.lower() == "interval" else "total"
-        cache_key = f"{cycle_str}_{clean_type}_{step:02d}"
-
-        matrix = self._in_memory_arrays.get(cache_key)
-        if matrix is None:
-            npy_path = self.cache_dir / cycle_str / f"{clean_type}_step_{step:02d}.npy"
-            if npy_path.exists():
-                try:
-                    matrix = np.load(npy_path)
-                    self._in_memory_arrays[cache_key] = matrix
-                except Exception as e:
-                    logger.error(f"Error cargando npy {npy_path}: {e}")
-
-        # Fallback a ciclo anterior si aún no está resuelto
-        if matrix is None:
-            prev_manifest = self._get_previous_manifest()
-            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
-                try:
-                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
-                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                    prev_step = step + diff_hours
-                    prev_cycle_str = prev_manifest["cycle_str"]
-                    prev_cache_key = f"{prev_cycle_str}_{clean_type}_{prev_step:02d}"
-                    matrix = self._in_memory_arrays.get(prev_cache_key)
-                    if matrix is None:
-                        prev_npy = self.cache_dir / prev_cycle_str / f"{clean_type}_step_{prev_step:02d}.npy"
-                        if prev_npy.exists():
-                            matrix = np.load(prev_npy)
-                            self._in_memory_arrays[prev_cache_key] = matrix
-                except Exception:
-                    pass
-
+        matrix = self.get_matrix(step=step, layer_type=layer_type)
         if matrix is None:
             return None
 

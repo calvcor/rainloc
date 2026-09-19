@@ -3895,6 +3895,103 @@ html, body {
   }
 }
 
+/* -------------------------------------------------------------
+   Modal de Hidrograma y Volumen de Cuenca (Modelos NWP)
+------------------------------------------------------------- */
+.basin-model-selector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: rgba(15, 23, 42, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+}
 
+.basin-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
+.basin-legend-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
 
+.basin-legend-pill.bar-pill {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.basin-legend-pill.line-pill {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.basin-hydro-bar {
+  transition: opacity 0.15s ease, fill 0.15s ease;
+  cursor: pointer;
+}
+
+.basin-hydro-bar:hover {
+  opacity: 1 !important;
+  fill: #7dd3fc !important;
+}
+
+.popup-hydro-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popup-hydro-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+}
+
+.popup-hydro-label {
+  color: #94a3b8;
+}
+
+.popup-hydro-val {
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.popup-btn-hydro {
+  margin-top: 6px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.8), rgba(16, 185, 129, 0.8));
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.popup-btn-hydro:hover {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 1.0), rgba(16, 185, 129, 1.0));
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.5);
+  transform: translateY(-1px);
+}

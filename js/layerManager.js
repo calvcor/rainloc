@@ -3975,6 +3975,413 @@ export class LayerManager {
     hitbox.addEventListener('touchend', onHoverLeave);
     svgEl.addEventListener('touchend', onHoverLeave);
   }
+  /**
+   * Determina el modelo de predicción activo en el mapa
+   */
+  getActivePredictionModel() {
+    if (this.isLayerOnMap('arome_precip')) return 'arome';
+    if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
+    if (this.isLayerOnMap('ecmwf_ifs')) return 'ecmwf';
+    return 'ecmwf';
+  }
+
+  /**
+   * Consulta al vuelo la serie de hidrograma y volumen de una cuenca
+   */
+  async fetchBasinHydrograph(modelKey, basinId) {
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase();
+    const cacheKey = `${cleanModel}_${basinId}`;
+    if (!this._basinHydroCache) {
+      this._basinHydroCache = new Map();
+    }
+    if (this._basinHydroCache.has(cacheKey)) {
+      return this._basinHydroCache.get(cacheKey);
+    }
+    try {
+      const resp = await fetch(`${CONFIG.apiBase}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(basinId)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      this._basinHydroCache.set(cacheKey, data);
+      return data;
+    } catch (err) {
+      console.warn(`Error fetching basin hydrograph for ${basinId} (${cleanModel}):`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Abre el Modal de Hidrograma y Volumen de Cuenca
+   */
+  async openBasinHydroModal(basinId, basinProps = {}, selectedModel = null) {
+    const backdrop = document.getElementById('basin-hydro-modal-backdrop');
+    if (!backdrop) return;
+
+    this._currentModalBasinId = basinId;
+    this._currentModalBasinProps = basinProps;
+    const modelToUse = selectedModel || this.getActivePredictionModel();
+    this._currentModalBasinModel = modelToUse;
+
+    const title = document.getElementById('basin-hydro-modal-title');
+    const subtitle = document.getElementById('basin-hydro-modal-subtitle');
+    const badgeModel = document.getElementById('basin-hydro-modal-model-badge');
+    const badgeSub = document.getElementById('basin-hydro-modal-subcuenca-badge');
+    const closeBtn = document.getElementById('basin-hydro-modal-close');
+    const modelTabs = document.querySelectorAll('#basin-hydro-model-tabs .btn-range');
+
+    const subsistema = basinProps.Subsistema || basinProps.name || `Cuenca ${basinId}`;
+    const sistema = basinProps.NomSistExp || basinProps.system || 'Demarcación CHJ';
+    const superf = basinProps['Superf km2'] || basinProps['Area km2'] || basinProps.area_km2 || null;
+    const superfText = superf ? `${Number(superf).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²` : '';
+
+    if (title) title.textContent = subsistema;
+    if (subtitle) {
+      subtitle.textContent = `Sistema ${sistema}${superfText ? ` · Superficie: ${superfText}` : ''}`;
+    }
+    if (badgeSub) badgeSub.textContent = sistema;
+
+    // Configurar pestañas de modelo
+    modelTabs.forEach(btn => {
+      const m = btn.getAttribute('data-model');
+      btn.classList.toggle('active', m === modelToUse);
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        modelTabs.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._currentModalBasinModel = m;
+        this.loadBasinHydroForModal(basinId, m, basinProps);
+      };
+    });
+
+    const closeModal = () => {
+      backdrop.style.display = 'none';
+      backdrop.classList.remove('no-anim');
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') closeModal();
+    };
+
+    if (closeBtn) closeBtn.onclick = closeModal;
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) closeModal();
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    backdrop.style.display = 'flex';
+
+    // Cargar datos del hidrograma
+    await this.loadBasinHydroForModal(basinId, modelToUse, basinProps);
+  }
+
+  /**
+   * Carga los datos del hidrograma y dibuja la gráfica interactiva
+   */
+  async loadBasinHydroForModal(basinId, modelKey, basinProps = {}) {
+    const container = document.getElementById('basin-hydro-chart-canvas-container');
+    const badgeModel = document.getElementById('basin-hydro-modal-model-badge');
+    const statVolTotal = document.getElementById('basin-stat-vol-total');
+    const statCycle = document.getElementById('basin-stat-cycle');
+    const statPeakVol = document.getElementById('basin-stat-peak-vol');
+    const statPeakTime = document.getElementById('basin-stat-peak-time');
+    const statAvgMm = document.getElementById('basin-stat-avg-mm');
+    const statArea = document.getElementById('basin-stat-area');
+    const statMaxPoint = document.getElementById('basin-stat-max-point');
+    const statStepsCount = document.getElementById('basin-stat-steps-count');
+
+    if (container) {
+      container.innerHTML = `
+        <div class="caudal-chart-modal-loading">
+          <div class="caudal-spinner"></div>
+          <span>Calculando integración hidrológica al vuelo sobre la cuenca...</span>
+        </div>
+      `;
+    }
+
+    const modelNames = {
+      ecmwf: 'ECMWF IFS (0.25°)',
+      gfs: 'NOAA GFS (0.25°)',
+      arome: 'Météo-France AROME (1.3 km)'
+    };
+
+    if (badgeModel) {
+      badgeModel.textContent = modelNames[modelKey] || modelKey.toUpperCase();
+      if (modelKey === 'ecmwf') {
+        badgeModel.style.background = 'rgba(16, 185, 129, 0.2)';
+        badgeModel.style.color = '#10b981';
+        badgeModel.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+      } else if (modelKey === 'gfs') {
+        badgeModel.style.background = 'rgba(37, 99, 235, 0.2)';
+        badgeModel.style.color = '#38bdf8';
+        badgeModel.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+      } else {
+        badgeModel.style.background = 'rgba(139, 92, 246, 0.2)';
+        badgeModel.style.color = '#c084fc';
+        badgeModel.style.borderColor = 'rgba(192, 132, 252, 0.4)';
+      }
+    }
+
+    const data = await this.fetchBasinHydrograph(modelKey, basinId);
+    if (!data || !data.series || data.series.length === 0) {
+      if (container) {
+        container.innerHTML = `
+          <div class="caudal-chart-nodata">
+            No se pudieron obtener datos de previsión para este modelo y cuenca.
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // Actualizar tarjetas de métricas
+    if (statVolTotal) statVolTotal.textContent = `${data.total_accumulated_hm3.toFixed(2)} hm³`;
+    if (statCycle) statCycle.textContent = `Ciclo: ${data.cycle_str || '--'}`;
+    if (statPeakVol) statPeakVol.textContent = `${data.peak_interval_hm3.toFixed(2)} hm³`;
+    if (statPeakTime) statPeakTime.textContent = data.peak_time_local ? `Pico: ${data.peak_time_local}` : (data.peak_step ? `Paso: +${data.peak_step}h` : 'Sin precipitación');
+    
+    // Precipitación media acumulada final
+    const lastStep = data.series[data.series.length - 1];
+    const avgFinalMm = lastStep ? lastStep.avg_total_mm : 0.0;
+    const maxPointMm = Math.max(...data.series.map(s => s.max_point_mm || 0), 0.0);
+
+    if (statAvgMm) statAvgMm.textContent = `${avgFinalMm.toFixed(1)} mm`;
+    if (statArea) statArea.textContent = `Superficie: ${Number(data.area_km2).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²`;
+    if (statMaxPoint) statMaxPoint.textContent = `${maxPointMm.toFixed(1)} mm`;
+    if (statStepsCount) statStepsCount.textContent = `Pasos calculados: ${data.steps_count}`;
+
+    // Renderizar gráfico interactivo SVG
+    if (container) {
+      this._renderBasinHydroSvgChart(data.series, data, container);
+    }
+  }
+
+  /**
+   * Renderiza el gráfico SVG interactivo con barras de aportación y curva acumulada
+   */
+  _renderBasinHydroSvgChart(series, basinData, containerEl) {
+    if (!series || series.length === 0) return;
+
+    const width = 720;
+    const height = 240;
+    const pad = { top: 25, right: 45, bottom: 35, left: 55 };
+    const innerW = width - pad.left - pad.right;
+    const innerH = height - pad.top - pad.bottom;
+
+    const maxCumVol = Math.max(...series.map(s => s.total_vol_hm3 || 0), 0.1);
+    const maxIntVol = Math.max(...series.map(s => s.interval_vol_hm3 || 0), 0.05);
+
+    // Escala Y principal (Volumen Acumulado hm³)
+    const maxY = maxCumVol * 1.15;
+    const minY = 0;
+    const rangeY = maxY - minY || 1;
+
+    // Escala Y secundaria para barras de intervalo (hm³)
+    const maxBarY = maxIntVol * 1.25;
+
+    const n = series.length;
+    const barWidth = Math.max(3, Math.min(18, (innerW / n) * 0.7));
+
+    const coords = series.map((s, i) => {
+      const x = pad.left + (i / Math.max(1, n - 1)) * innerW;
+      const yCum = pad.top + innerH - ((s.total_vol_hm3 - minY) / rangeY) * innerH;
+      const barH = (s.interval_vol_hm3 / (maxBarY || 1)) * innerH * 0.75;
+      const yBar = pad.top + innerH - barH;
+      return { x, yCum, yBar, barH, s };
+    });
+
+    const polyPointsStr = coords.map(c => `${c.x.toFixed(1)},${c.yCum.toFixed(1)}`).join(' ');
+    const baseY = (pad.top + innerH).toFixed(1);
+    const areaPointsStr = `${pad.left},${baseY} ${polyPointsStr} ${pad.left + innerW},${baseY}`;
+
+    // Cuadrícula y Ejes Y (4 divisiones)
+    const gridLines = [];
+    const yLabels = [];
+    for (let i = 0; i <= 4; i++) {
+      const val = minY + (rangeY * (i / 4));
+      const y = pad.top + innerH - (innerH * (i / 4));
+      const yF = y.toFixed(1);
+      gridLines.push(`<line x1="${pad.left}" y1="${yF}" x2="${pad.left + innerW}" y2="${yF}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`);
+      yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#10b981" font-size="10" font-weight="600" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
+    }
+
+    // Ejes X y Fechas
+    const xLabels = [];
+    const numXMarks = Math.min(5, n);
+    for (let k = 0; k < numXMarks; k++) {
+      const idx = Math.round((k / Math.max(1, numXMarks - 1)) * (n - 1));
+      const s = series[idx];
+      const x = pad.left + (idx / Math.max(1, n - 1)) * innerW;
+      const timeLabel = s.valid_time_local || `+${s.step}h`;
+      xLabels.push(`
+        <g transform="translate(${x.toFixed(1)}, ${height - pad.bottom + 14})">
+          <text x="0" y="0" fill="#cbd5e1" font-size="10" font-weight="600" text-anchor="middle">${timeLabel}</text>
+          <text x="0" y="11" fill="#94a3b8" font-size="8.5" text-anchor="middle">+${s.step}h</text>
+        </g>
+      `);
+    }
+
+    // Barras de Aportación Intervalar
+    const barsSvg = coords.map((c, i) => `
+      <rect class="basin-hydro-bar" data-idx="${i}"
+            x="${(c.x - barWidth / 2).toFixed(1)}"
+            y="${c.yBar.toFixed(1)}"
+            width="${barWidth.toFixed(1)}"
+            height="${Math.max(1, c.barH).toFixed(1)}"
+            rx="2"
+            fill="#38bdf8"
+            opacity="0.65" />
+    `).join('');
+
+    const gradId = `basin-hydro-grad-${Date.now()}`;
+
+    containerEl.innerHTML = `
+      <div class="caudal-svg-chart-container">
+        <svg viewBox="0 0 ${width} ${height}" class="caudal-modal-svg" id="basin-hydro-interactive-svg" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#10b981" stop-opacity="0.45"/>
+              <stop offset="70%" stop-color="#059669" stop-opacity="0.15"/>
+              <stop offset="100%" stop-color="#059669" stop-opacity="0.0"/>
+            </linearGradient>
+            <filter id="basin-glow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2.5" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          <!-- Cuadrícula -->
+          <g class="chart-grid">${gridLines.join('')}</g>
+
+          <!-- Eje Y etiquetas -->
+          <g class="chart-y-labels">${yLabels.join('')}</g>
+          <text x="${pad.left - 8}" y="${pad.top - 8}" fill="#94a3b8" font-size="9" font-weight="700" text-anchor="end">hm³</text>
+
+          <!-- Eje X etiquetas -->
+          <g class="chart-x-labels">${xLabels.join('')}</g>
+
+          <!-- Barras de Aportación Intervalar (hm³) -->
+          <g class="chart-bars-group">${barsSvg}</g>
+
+          <!-- Área sombreada Acumulada -->
+          <polygon points="${areaPointsStr}" fill="url(#${gradId})"/>
+
+          <!-- Línea de Curva Acumulada -->
+          <polyline points="${polyPointsStr}" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#basin-glow)"/>
+
+          <!-- Grupo de Hover interactivo -->
+          <g id="basin-chart-hover-group" style="display: none;">
+            <line id="basin-chart-hover-line" x1="0" y1="${pad.top}" x2="0" y2="${pad.top + innerH}" stroke="rgba(255,255,255,0.4)" stroke-width="1.2" stroke-dasharray="3,3"/>
+            <circle id="basin-chart-hover-dot" cx="0" cy="0" r="5" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+          </g>
+
+          <!-- Capa transparente para captura de eventos de ratón/touch -->
+          <rect id="basin-chart-hitbox" x="${pad.left}" y="${pad.top}" width="${innerW}" height="${innerH}" fill="transparent" style="cursor: crosshair;"/>
+        </svg>
+
+        <!-- Tooltip flotante interactivo -->
+        <div id="basin-chart-tooltip" class="caudal-chart-hover-tooltip" style="display: none;">
+          <div class="caudal-chart-tooltip-header" id="basin-tt-time">--</div>
+          <div style="margin-top: 2px;">
+            <span style="color: #94a3b8; font-size: 0.72rem;">Acumulado:</span>
+            <span class="caudal-chart-tooltip-val" id="basin-tt-vol" style="color: #10b981;">-- hm³</span>
+          </div>
+          <div style="font-size: 0.72rem; color: #38bdf8; margin-top: 1px;" id="basin-tt-int">
+            +-- hm³ / paso
+          </div>
+          <div style="font-size: 0.68rem; color: #94a3b8; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2px;" id="basin-tt-rain">
+            Media: -- mm · Máx: -- mm
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Interactividad Tooltip
+    const svgEl = containerEl.querySelector('#basin-hydro-interactive-svg');
+    const hitbox = containerEl.querySelector('#basin-chart-hitbox');
+    const hoverGroup = containerEl.querySelector('#basin-chart-hover-group');
+    const hoverLine = containerEl.querySelector('#basin-chart-hover-line');
+    const hoverDot = containerEl.querySelector('#basin-chart-hover-dot');
+    const tooltip = containerEl.querySelector('#basin-chart-tooltip');
+    const ttTime = containerEl.querySelector('#basin-tt-time');
+    const ttVol = containerEl.querySelector('#basin-tt-vol');
+    const ttInt = containerEl.querySelector('#basin-tt-int');
+    const ttRain = containerEl.querySelector('#basin-tt-rain');
+
+    if (!hitbox || !tooltip) return;
+
+    const onHoverMove = (e) => {
+      const rect = svgEl.getBoundingClientRect();
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : null);
+      if (clientX === null) return;
+
+      const scaleX = width / rect.width;
+      const mouseSvgX = (clientX - rect.left) * scaleX;
+
+      if (mouseSvgX < pad.left || mouseSvgX > pad.left + innerW) {
+        hoverGroup.style.display = 'none';
+        tooltip.style.display = 'none';
+        return;
+      }
+
+      // Encontrar el paso más cercano
+      let closest = coords[0];
+      let minDist = Infinity;
+      for (const c of coords) {
+        const d = Math.abs(c.x - mouseSvgX);
+        if (d < minDist) {
+          minDist = d;
+          closest = c;
+        }
+      }
+
+      hoverGroup.style.display = 'inline';
+      hoverLine.setAttribute('x1', closest.x.toFixed(1));
+      hoverLine.setAttribute('x2', closest.x.toFixed(1));
+      hoverDot.setAttribute('cx', closest.x.toFixed(1));
+      hoverDot.setAttribute('cy', closest.yCum.toFixed(1));
+
+      // Contenido del tooltip
+      const s = closest.s;
+      if (ttTime) ttTime.textContent = `${s.valid_time_local || `+${s.step}h`} (+${s.step}h)`;
+      if (ttVol) ttVol.textContent = `${s.total_vol_hm3.toFixed(2)} hm³`;
+      if (ttInt) ttInt.textContent = `Aportación: +${s.interval_vol_hm3.toFixed(2)} hm³ (${s.avg_interval_mm.toFixed(1)} mm)`;
+      if (ttRain) ttRain.textContent = `Media acum: ${s.avg_total_mm.toFixed(1)} mm · Pico: ${s.max_point_mm.toFixed(1)} mm`;
+
+      // Posicionamiento
+      tooltip.style.display = 'block';
+      const tooltipX = (closest.x / width) * rect.width;
+      const tooltipY = (closest.yCum / height) * rect.height;
+
+      tooltip.style.left = `${tooltipX}px`;
+      tooltip.style.top = `${tooltipY}px`;
+
+      let transformX = '-50%';
+      if (closest.x < pad.left + 90) {
+        transformX = '10%';
+      } else if (closest.x > pad.left + innerW - 90) {
+        transformX = '-90%';
+      }
+      tooltip.style.transform = `translate(${transformX}, -120%)`;
+      tooltip.classList.add('is-visible');
+    };
+
+    const onHoverLeave = () => {
+      hoverGroup.style.display = 'none';
+      tooltip.style.display = 'none';
+      tooltip.classList.remove('is-visible');
+    };
+
+    hitbox.addEventListener('mousemove', onHoverMove);
+    hitbox.addEventListener('mouseenter', onHoverMove);
+    hitbox.addEventListener('mouseleave', onHoverLeave);
+    svgEl.addEventListener('mouseleave', onHoverLeave);
+    hitbox.addEventListener('touchstart', onHoverMove, { passive: false });
+    hitbox.addEventListener('touchmove', onHoverMove, { passive: false });
+    hitbox.addEventListener('touchend', onHoverLeave);
+  }
 }
 
 function haversineDistanceKm(lat1, lon1, lat2, lon2) {
