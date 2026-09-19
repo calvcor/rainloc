@@ -613,8 +613,7 @@ export class UIManager {
     // Controles ECMWF: Slider de pasos
     const ecmwfSlider = document.getElementById('ecmwf-step-slider');
     if (ecmwfSlider) {
-      ecmwfSlider.addEventListener('input', (e) => {
-        const rawVal = parseInt(e.target.value, 10);
+      const handleSliderInput = (rawVal) => {
         if (!this.layerManager) return;
         const steps = (this.layerManager.ecmwfMetadata && this.layerManager.ecmwfMetadata.available_steps) || [];
         if (steps.length === 0) return;
@@ -630,7 +629,28 @@ export class UIManager {
           }
         }
         this.layerManager.setEcmwfStep(closestStep);
+      };
+
+      ecmwfSlider.addEventListener('input', (e) => {
+        handleSliderInput(parseInt(e.target.value, 10));
       });
+
+      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
+      ecmwfSlider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!this.layerManager || !this.layerManager.ecmwfMetadata) return;
+        const steps = this.layerManager.ecmwfMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentEcmwfStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        if (e.deltaY > 0) {
+          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
+          this.layerManager.setEcmwfStep(steps[nextIdx]);
+        } else if (e.deltaY < 0) {
+          const prevIdx = Math.max(0, curIdx - 1);
+          this.layerManager.setEcmwfStep(steps[prevIdx]);
+        }
+      }, { passive: false });
     }
   }
 

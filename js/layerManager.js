@@ -29,6 +29,9 @@ export class LayerManager {
     this.ecmwfPlaybackInterval = null;
     this.isEcmwfPlaying = false;
     this.ecmwfCanvasData = null;
+    this.currentEcmwfOverlay = null;
+    this._ecmwfStepRequestId = 0;
+    this._ecmwfImageCache = new Map();
   }
 
   /**
@@ -502,15 +505,85 @@ export class LayerManager {
   }
 
   /**
-   * Carga la capa del modelo ECMWF IFS (Precipitación acumulada / Intervalos 3h) mediante L.imageOverlay
+   * Genera una URL estable para la imagen de un paso de ECMWF, aprovechando el caché del navegador
    */
-  async _loadEcmwfLayer(layerGroup, opacity) {
-    try {
-      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
-      if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
-      const metadata = await metaResp.json();
-      this.ecmwfMetadata = metadata;
+  _getEcmwfImageUrl(step, type) {
+    const runId = (this.ecmwfMetadata && (this.ecmwfMetadata.run_id || this.ecmwfMetadata.run_timestamp)) || '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/ecmwf/image?step=${step}&type=${type}${runParam}`;
+  }
 
+  /**
+   * Precarga pasos adyacentes en la memoria del navegador para transiciones instantáneas y fluidas
+   */
+  _preloadEcmwfSteps(currentStep, type) {
+    if (!this.ecmwfMetadata || !this.ecmwfMetadata.available_steps) return;
+    const steps = this.ecmwfMetadata.available_steps;
+    const curIdx = steps.indexOf(currentStep);
+    if (curIdx === -1) return;
+
+    // Precargar los 5 siguientes y los 2 anteriores
+    const targetIndices = [
+      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5,
+      curIdx - 1, curIdx - 2
+    ];
+
+    const bbox = this.ecmwfMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+
+    targetIndices.forEach(idx => {
+      if (idx >= 0 && idx < steps.length) {
+        const step = steps[idx];
+        const key = `${type}_${step}`;
+        if (!this._ecmwfImageCache.has(key)) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const imgUrl = this._getEcmwfImageUrl(step, type);
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(img, 0, 0);
+              const stepInfo = (this.ecmwfMetadata.steps || []).find(s => s.step === step);
+              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+              this._ecmwfImageCache.set(key, {
+                img: img,
+                canvasData: {
+                  ctx: ctx,
+                  width: img.naturalWidth,
+                  height: img.naturalHeight,
+                  bounds: bounds,
+                  step: step,
+                  type: type,
+                  validText: validText
+                }
+              });
+            } catch (e) {
+              // Ignore canvas context errors
+            }
+          };
+          img.src = imgUrl;
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo ECMWF IFS con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadEcmwfLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.ecmwfMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.ecmwfMetadata = metadata;
+        this._ecmwfImageCache.clear();
+      }
+
+      const metadata = this.ecmwfMetadata;
       const availSteps = metadata.available_steps || [];
       if (availSteps.length === 0) {
         if (this.uiManager && this.uiManager.updateLayerTimestamp) {
@@ -529,45 +602,65 @@ export class LayerManager {
       const stepInfo = (metadata.steps || []).find(s => s.step === step);
       const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
 
-      // Actualizar timestamp en la tarjeta UI con la salida del modelo y estado de actualización
+      // Actualizar timestamp y controles en la UI de inmediato
       if (this.uiManager && this.uiManager.updateLayerTimestamp) {
         this.uiManager.updateLayerTimestamp('ecmwf_ifs', formatEcmwfTimestamp(metadata));
       }
-
       if (this.uiManager && this.uiManager.updateEcmwfPlayerUI) {
         this.uiManager.updateEcmwfPlayerUI(metadata, step, type, this.isEcmwfPlaying);
       }
 
       const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
-      const imgUrl = `${CONFIG.apiBaseUrl}/models/ecmwf/image?step=${step}&type=${type}&_t=${Date.now()}`;
+      this.currentEcmwfBounds = bounds;
 
-      layerGroup.clearLayers();
+      const cacheKey = `${type}_${step}`;
+      const imgUrl = this._getEcmwfImageUrl(step, type);
+      const requestId = ++this._ecmwfStepRequestId;
 
-      const imageOverlay = L.imageOverlay(imgUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'ecmwf-raster-overlay'
-      });
+      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
+      const cached = this._ecmwfImageCache.get(cacheKey);
+      if (cached && cached.canvasData) {
+        this.ecmwfCanvasData = cached.canvasData;
+      }
 
-      imageOverlay.on('error', () => {
-        console.warn(`La imagen ECMWF IFS para paso +${step}h no pudo ser cargada.`);
-      });
+      // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
+      const swapOverlay = () => {
+        if (requestId !== this._ecmwfStepRequestId) return; // Petición obsoleta descartada
 
-      // Canvas en memoria para consulta 0ms en cursor / inspector
-      this.ecmwfCanvasData = null;
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'ecmwf-raster-overlay'
+        });
+
+        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentEcmwfOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentEcmwfOverlay = newOverlay;
+
+        // Disparar precarga de pasos contiguos
+        this._preloadEcmwfSteps(step, type);
+      };
+
+      // Precargar y decodificar la imagen antes de montar en Leaflet
       const offscreenImg = new Image();
       offscreenImg.crossOrigin = 'anonymous';
       offscreenImg.onload = () => {
+        if (requestId !== this._ecmwfStepRequestId) return;
+
         try {
           const canvas = document.createElement('canvas');
           canvas.width = offscreenImg.naturalWidth;
           canvas.height = offscreenImg.naturalHeight;
           const ctx = canvas.getContext('2d', { willReadFrequently: true });
           ctx.drawImage(offscreenImg, 0, 0);
-          this.ecmwfCanvasData = {
+          const canvasData = {
             ctx: ctx,
             width: offscreenImg.naturalWidth,
             height: offscreenImg.naturalHeight,
@@ -576,15 +669,29 @@ export class LayerManager {
             type: type,
             validText: timeLabel
           };
+          this.ecmwfCanvasData = canvasData;
+          this._ecmwfImageCache.set(cacheKey, {
+            img: offscreenImg,
+            canvasData: canvasData
+          });
         } catch (err) {
           console.warn('Canvas raster ECMWF inaccesible para lectura local:', err);
         }
+
+        swapOverlay();
       };
+
+      offscreenImg.onerror = () => {
+        if (requestId !== this._ecmwfStepRequestId) return;
+        console.warn(`La imagen ECMWF IFS para paso +${step}h no pudo ser cargada.`);
+      };
+
       offscreenImg.src = imgUrl;
 
-      layerGroup.addLayer(imageOverlay);
-      this.currentEcmwfOverlay = imageOverlay;
-      this.currentEcmwfBounds = bounds;
+      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
 
     } catch (err) {
       console.warn('Error al cargar ECMWF IFS desde backend API:', err);
@@ -595,10 +702,13 @@ export class LayerManager {
    * Cambia el paso temporal o tipo del modelo ECMWF IFS
    */
   setEcmwfStep(step, type = null) {
-    this.currentEcmwfStep = parseInt(step, 10);
-    if (type) {
-      this.currentEcmwfType = type;
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentEcmwfType || 'total';
+    if (this.currentEcmwfStep === parsedStep && this.currentEcmwfType === targetType && this.currentEcmwfOverlay) {
+      return;
     }
+    this.currentEcmwfStep = parsedStep;
+    this.currentEcmwfType = targetType;
     this.reloadEcmwfLayer();
   }
 
@@ -606,6 +716,7 @@ export class LayerManager {
    * Cambia el tipo de visualización (total vs interval)
    */
   setEcmwfType(type) {
+    if (this.currentEcmwfType === type && this.currentEcmwfOverlay) return;
     this.currentEcmwfType = type;
     this.reloadEcmwfLayer();
   }
@@ -613,11 +724,11 @@ export class LayerManager {
   /**
    * Recarga la capa ECMWF con los parámetros activos
    */
-  reloadEcmwfLayer() {
+  reloadEcmwfLayer(forceMetaFetch = false) {
     const ecmwfGroup = this.layers['ecmwf_ifs'];
     if (!ecmwfGroup) return;
     const opacity = (this.layerStates['ecmwf_ifs'] && this.layerStates['ecmwf_ifs'].opacity) || 0.65;
-    this._loadEcmwfLayer(ecmwfGroup, opacity);
+    this._loadEcmwfLayer(ecmwfGroup, opacity, forceMetaFetch);
   }
 
   /**
