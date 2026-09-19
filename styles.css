@@ -776,7 +776,7 @@ html, body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Sub-controles de Radar (Refresh, dBZ, Rayos, Player 24h) */
+/* Sub-controles de Radar (dBZ, Rayos) */
 .radar-subcontrols {
   margin-top: 8px;
   padding-top: 8px;
@@ -786,26 +786,54 @@ html, body {
   gap: 8px;
 }
 
-/* Reproductor temporal de Radar (24h de histórico) */
-.radar-player-panel {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm);
-  padding: 8px;
+/* -------------------------------------------------------------
+   Barra Inferior Flotante Unificada: Reproductor Temporal (Radar / Modelos)
+   Ocupa desde el menú de capas (left: 348px) hasta la leyenda (right: 248px)
+   Tiene la misma altura (48px) y alineación que la leyenda (bottom: 14px)
+------------------------------------------------------------- */
+.timeline-bottom-player,
+.radar-bottom-player {
+  position: absolute;
+  bottom: 14px;
+  left: 348px;
+  right: 248px;
+  height: 48px;
+  max-height: 48px;
+  box-sizing: border-box;
+  z-index: 1000;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-surface);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 8px 14px;
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: fadeInBanner 0.25s ease-out;
+  transition: all 0.2s ease;
 }
 
+.timeline-player-left-group,
+.radar-player-left-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.timeline-player-header,
 .radar-player-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
 }
 
+.timeline-time-badge,
 .radar-time-badge {
-  font-size: 0.70rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.12);
@@ -814,13 +842,12 @@ html, body {
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 75%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 5px;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
+.timeline-live-dot,
 .radar-live-dot {
   width: 6px;
   height: 6px;
@@ -837,23 +864,30 @@ html, body {
   100% { transform: scale(0.9); opacity: 0.7; }
 }
 
+.timeline-live-btn,
 .radar-live-btn {
-  font-size: 0.68rem;
+  font-size: 0.70rem;
   font-weight: 700;
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 3px 8px;
+  height: 26px;
   border-radius: 6px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-fast);
 }
 
+.timeline-live-btn:hover,
 .radar-live-btn:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.15);
 }
 
+.timeline-live-btn.active,
 .radar-live-btn.active {
   color: #22c55e;
   background: rgba(34, 197, 94, 0.15);
@@ -861,19 +895,78 @@ html, body {
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.25);
 }
 
+.timeline-model-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline-mode-chip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.timeline-mode-chip:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.timeline-mode-chip.active {
+  color: #ffffff;
+  background: var(--accent-emerald, #059669);
+  box-shadow: 0 0 6px rgba(5, 150, 105, 0.4);
+}
+
+.timeline-max-pill {
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.timeline-max-pill:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.7);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.35);
+}
+
+.timeline-player-controls-row,
 .radar-player-controls-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 5px;
 }
 
+.timeline-step-btn,
 .radar-step-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--text-primary);
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -882,20 +975,22 @@ html, body {
   transition: all var(--transition-fast);
 }
 
+.timeline-step-btn:hover,
 .radar-step-btn:hover {
   background: rgba(255, 255, 255, 0.18);
   border-color: rgba(255, 255, 255, 0.3);
   transform: scale(1.06);
 }
 
+.timeline-play-btn,
 .radar-play-btn {
   background: linear-gradient(135deg, #0284c7, #38bdf8);
   border: none;
   color: #ffffff;
-  padding: 4px 14px;
-  height: 28px;
-  border-radius: 14px;
-  font-size: 0.72rem;
+  padding: 2px 11px;
+  height: 26px;
+  border-radius: 13px;
+  font-size: 0.70rem;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -905,34 +1000,46 @@ html, body {
   transition: all var(--transition-fast);
 }
 
+.timeline-play-btn:hover,
 .radar-play-btn:hover {
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
   transform: translateY(-1px);
 }
 
+.timeline-play-btn.playing,
 .radar-play-btn.playing {
   background: linear-gradient(135deg, #f59e0b, #eab308);
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
 }
 
+.timeline-slider-wrapper,
 .radar-slider-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 140px;
 }
 
+.timeline-step-slider,
 .radar-step-slider {
   width: 100%;
+  height: 5px;
+  margin: 2px 0 0 0;
 }
 
+.timeline-slider-labels,
 .radar-slider-labels {
   display: flex;
   justify-content: space-between;
   font-size: 0.58rem;
   font-weight: 500;
+  line-height: 1;
   color: var(--text-muted);
 }
 
+.timeline-live-badge,
 .radar-live-badge {
   display: inline-flex;
   align-items: center;
@@ -1391,8 +1498,8 @@ html, body {
 ------------------------------------------------------------- */
 .map-legend {
   position: absolute;
-  bottom: 24px;
-  right: 18px;
+  bottom: 14px;
+  right: 14px;
   width: 220px;
   background: var(--bg-surface);
   backdrop-filter: var(--backdrop-blur);
@@ -1897,10 +2004,19 @@ html, body {
 }
 
 /* -------------------------------------------------------------
-   Controles de Leaflet personalizados
+   Controles de Leaflet personalizados y alineación margen derecho
 ------------------------------------------------------------- */
 .leaflet-top {
-  top: 76px !important;
+  top: 78px !important;
+}
+
+.leaflet-right {
+  right: 14px !important;
+}
+
+.leaflet-right .leaflet-control {
+  margin-right: 0 !important;
+  margin-top: 10px !important;
 }
 
 .leaflet-control-zoom {
@@ -1908,9 +2024,14 @@ html, body {
   border-radius: var(--radius-md) !important;
   overflow: hidden;
   box-shadow: var(--shadow-lg) !important;
+  margin-right: 0 !important;
 }
 
 .leaflet-control-zoom a {
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  font-size: 18px !important;
   background-color: var(--bg-surface) !important;
   color: var(--text-primary) !important;
   border-bottom: 1px solid var(--border-color) !important;
@@ -1929,9 +2050,13 @@ html, body {
   border-radius: var(--radius-md) !important;
   backdrop-filter: blur(10px) !important;
   box-shadow: var(--shadow-lg) !important;
+  margin-right: 0 !important;
 }
 
 .leaflet-control-layers-toggle {
+  width: 36px !important;
+  height: 36px !important;
+  background-size: 20px 20px !important;
   filter: invert(0.9) hue-rotate(180deg);
 }
 
@@ -3339,6 +3464,22 @@ html, body {
     top: 66px !important;
     left: 8px !important;
     right: 8px !important;
+  }
+
+  .timeline-bottom-player,
+  .radar-bottom-player {
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 64px !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .timeline-player-left-group,
+  .radar-player-left-group {
+    justify-content: space-between;
   }
 
   .map-legend {

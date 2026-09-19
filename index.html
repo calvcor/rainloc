@@ -126,6 +126,46 @@
       </button>
     </div>
 
+    <!-- Barra Inferior Flotante Unificada: Línea Temporal y Reproductor (Radar 24h / Modelos de Predicción) -->
+    <div id="timeline-bottom-player" class="timeline-bottom-player" style="display: none;" aria-label="Reproductor temporal">
+      <div class="timeline-player-left-group">
+        <div class="timeline-player-header">
+          <span class="timeline-time-badge" id="timeline-time-badge">
+            <span class="timeline-live-dot" id="timeline-live-dot" style="display: none;"></span>
+            <span id="timeline-time-text">--</span>
+          </span>
+          <button type="button" class="timeline-live-btn" id="timeline-live-btn" style="display: none;" title="Saltar al radar en directo">
+            Directo
+          </button>
+          <div class="timeline-model-mode-group" id="timeline-model-mode-group" style="display: none;">
+            <button type="button" class="timeline-mode-chip active" id="timeline-mode-total" data-mode="total" title="Acumulado Total">Total</button>
+            <button type="button" class="timeline-mode-chip" id="timeline-mode-interval" data-mode="interval" title="Precipitación del Intervalo">Intervalo</button>
+          </div>
+          <span class="timeline-max-pill" id="timeline-max-pill" style="display: none;" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
+        </div>
+
+        <div class="timeline-player-controls-row">
+          <button type="button" class="timeline-step-btn" id="timeline-prev-btn" title="Paso anterior">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button type="button" class="timeline-play-btn" id="timeline-play-btn" title="Reproducir animación temporal">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="timeline-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span id="timeline-play-text">Animar</span>
+          </button>
+          <button type="button" class="timeline-step-btn" id="timeline-next-btn" title="Paso siguiente">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="timeline-slider-wrapper">
+        <input type="range" class="slider-glass timeline-step-slider" id="timeline-step-slider" min="0" max="0" step="1" value="0">
+        <div class="timeline-slider-labels" id="timeline-slider-labels">
+          <!-- Etiquetas generadas dinámicamente -->
+        </div>
+      </div>
+    </div>
+
     <!-- Contenedor Lateral Izquierdo: Menú de Capas + Panel de Demarcación -->
     <div class="left-sidebar-container" id="left-sidebar-container">
       <!-- Menú de Selección de Información (Tiempo Real / Predicción) -->

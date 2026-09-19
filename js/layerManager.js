@@ -285,6 +285,9 @@ export class LayerManager {
         }
       });
     }
+    if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
+      this.uiManager.updateUnifiedTimelinePlayer();
+    }
   }
 
   /**
@@ -306,6 +309,12 @@ export class LayerManager {
         });
         if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
           this.map.removeLayer(this.lightningGroup);
+        }
+        if (this.isRadarPlaying) {
+          this.pauseRadarPlayback();
+        }
+        if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
+          this.uiManager.toggleRadarBottomPlayer(false);
         }
 
         // Regla 2: Solo una predicción activa a la vez
@@ -346,6 +355,9 @@ export class LayerManager {
         if (layerId === 'arome_precip' && this.isAromePlaying) {
           this.pauseAromePlayback();
         }
+      }
+      if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
+        this.uiManager.updateUnifiedTimelinePlayer();
       }
       return;
     }
@@ -443,6 +455,9 @@ export class LayerManager {
 
       if (layerId === 'radar') {
         if (active) {
+          if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
+            this.uiManager.toggleRadarBottomPlayer(true);
+          }
           if (this.showRadarLightning) {
             if (!this.map.hasLayer(this.lightningGroup)) {
               this.lightningGroup.addTo(this.map);
@@ -451,12 +466,22 @@ export class LayerManager {
             this._startLightningSSE();
           }
         } else {
+          if (this.isRadarPlaying) {
+            this.pauseRadarPlayback();
+          }
+          if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
+            this.uiManager.toggleRadarBottomPlayer(false);
+          }
           if (this.map.hasLayer(this.lightningGroup)) {
             this.map.removeLayer(this.lightningGroup);
           }
           this._stopLightningSSE();
         }
       }
+    }
+
+    if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
+      this.uiManager.updateUnifiedTimelinePlayer();
     }
   }
 

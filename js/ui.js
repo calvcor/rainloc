@@ -24,6 +24,7 @@ export class UIManager {
     this.predictionBannerModel = document.getElementById('prediction-banner-model');
     this.predictionBannerMode = document.getElementById('prediction-banner-mode');
     this.predictionBannerExactTime = document.getElementById('prediction-banner-exact-time');
+    this.timelineBottomPlayer = document.getElementById('timeline-bottom-player');
     this.layerManager = null;
 
     // Elementos exclusivos de la versión móvil
@@ -152,6 +153,9 @@ export class UIManager {
     // Renderizar leyenda inicial e indicador de favorita
     this.renderLegend();
     this.renderFavoriteBadge();
+
+    // Inicializar reproductor temporal inferior unificado (Radar / Modelos)
+    this._initTimelineBottomPlayer();
   }
 
   /**
@@ -505,6 +509,8 @@ export class UIManager {
     if (this.layerManager && this.layerManager.onTabChange) {
       this.layerManager.onTabChange(tabId);
     }
+
+    this.updateUnifiedTimelinePlayer();
   }
 
   /**
@@ -531,6 +537,7 @@ export class UIManager {
       this.predictionBanner.style.display = isActive ? 'flex' : 'none';
     }
 
+    this.updateUnifiedTimelinePlayer();
     this.updateMobileLayersBadge();
   }
 
@@ -575,45 +582,6 @@ export class UIManager {
     if (layer.id === 'radar') {
       radarExtraControls = `
         <div class="radar-subcontrols">
-          <!-- Reproductor temporal interactivo del Radar (24h de histórico) -->
-          <div class="radar-player-panel" id="radar-player-panel">
-            <div class="radar-player-header">
-              <span class="radar-time-badge" id="radar-time-badge">
-                <span class="radar-live-dot"></span>
-                <span id="radar-time-text">En Directo</span>
-              </span>
-              <button type="button" class="radar-live-btn active" id="radar-live-btn" title="Saltar al radar en directo">
-                Directo
-              </button>
-            </div>
-
-            <!-- Controles Play / Prev / Next -->
-            <div class="radar-player-controls-row">
-              <button type="button" class="radar-step-btn" id="radar-prev-btn" title="Paso anterior (-5 min)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-              </button>
-              <button type="button" class="radar-play-btn" id="radar-play-btn" title="Reproducir bucle de 24h">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="radar-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span id="radar-play-text">Animar</span>
-              </button>
-              <button type="button" class="radar-step-btn" id="radar-next-btn" title="Paso siguiente (+5 min)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-              </button>
-            </div>
-
-            <!-- Slider de pasos temporales (-24h hasta directo) -->
-            <div class="radar-slider-wrapper">
-              <input type="range" class="slider-glass radar-step-slider" id="radar-step-slider" min="0" max="0" step="1" value="0">
-              <div class="radar-slider-labels">
-                <span>-24h</span>
-                <span>-12h</span>
-                <span>-6h</span>
-                <span>-1h</span>
-                <span>Ahora</span>
-              </div>
-            </div>
-          </div>
-
           <div class="radar-dbz-legend">
             <span class="dbz-legend-title">Reflectividad (dBZ):</span>
             <div class="dbz-bar">
@@ -694,53 +662,11 @@ export class UIManager {
     }
 
     // Sub-controles específicos para el Modelo ECMWF IFS (Reproductor temporal y selector total/intervalo)
+    // Sub-controles específicos para el Modelo ECMWF IFS (Leyenda de precipitación)
     let ecmwfExtraControls = '';
     if (layer.id === 'ecmwf_ifs') {
       ecmwfExtraControls = `
         <div class="ecmwf-subcontrols">
-          <!-- Selector de Modo: Acumulado Total vs Intervalo 3h -->
-          <div class="ecmwf-type-selector">
-            <button type="button" class="ecmwf-type-btn active" data-type="total" id="ecmwf-btn-total">
-              Acumulado Total
-            </button>
-            <button type="button" class="ecmwf-type-btn" data-type="interval" id="ecmwf-btn-interval">
-              Intervalo (3h / 6h)
-            </button>
-          </div>
-
-          <!-- Reproductor temporal interactivo -->
-          <div class="ecmwf-player-panel">
-            <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="ecmwf-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
-            </div>
-
-            <!-- Controles Play / Prev / Next -->
-            <div class="ecmwf-player-controls-row">
-              <button type="button" class="ecmwf-step-btn" id="ecmwf-prev-btn" title="Paso anterior (-3h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-              </button>
-              <button type="button" class="ecmwf-play-btn" id="ecmwf-play-btn" title="Reproducir animación">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="ecmwf-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span id="ecmwf-play-text">Animar</span>
-              </button>
-              <button type="button" class="ecmwf-step-btn" id="ecmwf-next-btn" title="Paso siguiente (+3h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-              </button>
-            </div>
-
-            <!-- Slider de pasos temporales hasta +240h (10 días) -->
-            <div class="ecmwf-slider-wrapper">
-              <input type="range" class="slider-glass ecmwf-step-slider" id="ecmwf-step-slider" min="3" max="240" step="3" value="3">
-              <div class="ecmwf-slider-labels">
-                <span>+3h</span>
-                <span>+72h (3d)</span>
-                <span>+144h (6d)</span>
-                <span>+240h (10d)</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Leyenda de Precipitación -->
           <div class="ecmwf-precip-legend">
             <span class="precip-legend-title">Precipitación (mm):</span>
             <div class="precip-bar">
@@ -760,54 +686,11 @@ export class UIManager {
       `;
     }
 
-    // Sub-controles específicos para el Modelo NOAA GFS (Reproductor temporal hasta +384h y selector total/intervalo)
+    // Sub-controles específicos para el Modelo NOAA GFS (Leyenda de precipitación)
     let gfsExtraControls = '';
     if (layer.id === 'gfs_0p25') {
       gfsExtraControls = `
         <div class="ecmwf-subcontrols">
-          <!-- Selector de Modo: Acumulado Total vs Intervalo 3h -->
-          <div class="ecmwf-type-selector">
-            <button type="button" class="ecmwf-type-btn active" data-type="total" id="gfs-btn-total">
-              Acumulado Total
-            </button>
-            <button type="button" class="ecmwf-type-btn" data-type="interval" id="gfs-btn-interval">
-              Intervalo (3h / 6h)
-            </button>
-          </div>
-
-          <!-- Reproductor temporal interactivo -->
-          <div class="ecmwf-player-panel">
-            <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="gfs-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
-            </div>
-
-            <!-- Controles Play / Prev / Next -->
-            <div class="ecmwf-player-controls-row">
-              <button type="button" class="ecmwf-step-btn" id="gfs-prev-btn" title="Paso anterior (-3h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-              </button>
-              <button type="button" class="ecmwf-play-btn" id="gfs-play-btn" title="Reproducir animación">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="gfs-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span id="gfs-play-text">Animar</span>
-              </button>
-              <button type="button" class="ecmwf-step-btn" id="gfs-next-btn" title="Paso siguiente (+3h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-              </button>
-            </div>
-
-            <!-- Slider de pasos temporales hasta +384h (16 días) -->
-            <div class="ecmwf-slider-wrapper">
-              <input type="range" class="slider-glass ecmwf-step-slider" id="gfs-step-slider" min="3" max="384" step="3" value="3">
-              <div class="ecmwf-slider-labels">
-                <span>+3h</span>
-                <span>+120h (5d)</span>
-                <span>+240h (10d)</span>
-                <span>+384h (16d)</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Leyenda de Precipitación -->
           <div class="ecmwf-precip-legend">
             <span class="precip-legend-title">Precipitación (mm):</span>
             <div class="precip-bar">
@@ -827,55 +710,11 @@ export class UIManager {
       `;
     }
 
-    // Sub-controles específicos para el Modelo Météo-France / AEMET AROME (Reproductor temporal hasta +48h y selector total/intervalo)
+    // Sub-controles específicos para el Modelo Météo-France / AEMET AROME (Leyenda de precipitación)
     let aromeExtraControls = '';
     if (layer.id === 'arome_precip') {
       aromeExtraControls = `
         <div class="ecmwf-subcontrols">
-          <!-- Selector de Modo: Acumulado Total vs Intervalo 1h -->
-          <div class="ecmwf-type-selector">
-            <button type="button" class="ecmwf-type-btn active" data-type="total" id="arome-btn-total">
-              Acumulado Total
-            </button>
-            <button type="button" class="ecmwf-type-btn" data-type="interval" id="arome-btn-interval">
-              Intervalo (1h)
-            </button>
-          </div>
-
-          <!-- Reproductor temporal interactivo -->
-          <div class="ecmwf-player-panel">
-            <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="arome-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
-            </div>
-
-            <!-- Controles Play / Prev / Next -->
-            <div class="ecmwf-player-controls-row">
-              <button type="button" class="ecmwf-step-btn" id="arome-prev-btn" title="Paso anterior (-1h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-              </button>
-              <button type="button" class="ecmwf-play-btn" id="arome-play-btn" title="Reproducir animación">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="arome-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span id="arome-play-text">Animar</span>
-              </button>
-              <button type="button" class="ecmwf-step-btn" id="arome-next-btn" title="Paso siguiente (+1h)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-              </button>
-            </div>
-
-            <!-- Slider de pasos temporales hasta +48h (2 días) -->
-            <div class="ecmwf-slider-wrapper">
-              <input type="range" class="slider-glass ecmwf-step-slider" id="arome-step-slider" min="1" max="48" step="1" value="1">
-              <div class="ecmwf-slider-labels">
-                <span>+1h</span>
-                <span>+12h</span>
-                <span>+24h (1d)</span>
-                <span>+36h</span>
-                <span>+48h (2d)</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Leyenda de Precipitación -->
           <div class="ecmwf-precip-legend">
             <span class="precip-legend-title">Precipitación (mm):</span>
             <div class="precip-bar">
@@ -1008,80 +847,6 @@ export class UIManager {
     });
 
 
-    // Controles de Reproductor Temporal de Radar (24h de histórico)
-    const radarPlayBtn = document.getElementById('radar-play-btn');
-    if (radarPlayBtn) {
-      radarPlayBtn.addEventListener('click', () => {
-        if (this.layerManager) {
-          this.layerManager.toggleRadarPlayback();
-        }
-      });
-    }
-
-    const radarLiveBtn = document.getElementById('radar-live-btn');
-    if (radarLiveBtn) {
-      radarLiveBtn.addEventListener('click', () => {
-        if (this.layerManager) {
-          this.layerManager.pauseRadarPlayback();
-          this.layerManager.setRadarLive();
-        }
-      });
-    }
-
-    const radarPrevBtn = document.getElementById('radar-prev-btn');
-    if (radarPrevBtn) {
-      radarPrevBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.radarTimeline) return;
-        this.layerManager.pauseRadarPlayback();
-        const timeline = this.layerManager.radarTimeline;
-        if (timeline.length === 0) return;
-        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
-        const prevIdx = curIdx <= 0 ? 0 : curIdx - 1;
-        this.layerManager.setRadarTimestep(timeline[prevIdx].timestep);
-      });
-    }
-
-    const radarNextBtn = document.getElementById('radar-next-btn');
-    if (radarNextBtn) {
-      radarNextBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.radarTimeline) return;
-        this.layerManager.pauseRadarPlayback();
-        const timeline = this.layerManager.radarTimeline;
-        if (timeline.length === 0) return;
-        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
-        const nextIdx = (curIdx === -1 || curIdx >= timeline.length - 1) ? timeline.length - 1 : curIdx + 1;
-        this.layerManager.setRadarTimestep(timeline[nextIdx].timestep);
-      });
-    }
-
-    const radarSlider = document.getElementById('radar-step-slider');
-    if (radarSlider) {
-      const handleRadarSlider = (idx) => {
-        if (!this.layerManager || !this.layerManager.radarTimeline) return;
-        this.layerManager.pauseRadarPlayback();
-        const timeline = this.layerManager.radarTimeline;
-        if (timeline.length === 0) return;
-        const clampedIdx = Math.max(0, Math.min(idx, timeline.length - 1));
-        this.layerManager.setRadarTimestep(timeline[clampedIdx].timestep);
-      };
-
-      radarSlider.addEventListener('input', (e) => {
-        handleRadarSlider(parseInt(e.target.value, 10));
-      });
-
-      radarSlider.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (!this.layerManager || !this.layerManager.radarTimeline) return;
-        const timeline = this.layerManager.radarTimeline;
-        if (timeline.length === 0) return;
-        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
-        const delta = e.deltaY > 0 ? -1 : 1;
-        const newIdx = Math.max(0, Math.min(curIdx + delta, timeline.length - 1));
-        this.layerManager.pauseRadarPlayback();
-        this.layerManager.setRadarTimestep(timeline[newIdx].timestep);
-      }, { passive: false });
-    }
-
     // Controles de Rayos integrados en el Radar: Toggle de activación
     const radarLightningToggle = document.getElementById('radar-lightning-toggle');
     if (radarLightningToggle) {
@@ -1119,337 +884,6 @@ export class UIManager {
           this.layerManager.reloadLightningLayer();
         }
         setTimeout(() => radarLightningRefreshBtn.classList.remove('rotating'), 800);
-      });
-    }
-
-    // Controles Modelo ECMWF IFS: Selector de Modo (Total vs Intervalo)
-    const ecmwfBtnTotal = document.getElementById('ecmwf-btn-total');
-    const ecmwfBtnInterval = document.getElementById('ecmwf-btn-interval');
-    if (ecmwfBtnTotal && ecmwfBtnInterval) {
-      ecmwfBtnTotal.addEventListener('click', () => {
-        ecmwfBtnTotal.classList.add('active');
-        ecmwfBtnInterval.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setEcmwfType('total');
-        }
-      });
-      ecmwfBtnInterval.addEventListener('click', () => {
-        ecmwfBtnInterval.classList.add('active');
-        ecmwfBtnTotal.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setEcmwfType('interval');
-        }
-      });
-    }
-
-    // Controles ECMWF: Botón Play / Pause
-    const ecmwfPlayBtn = document.getElementById('ecmwf-play-btn');
-    if (ecmwfPlayBtn) {
-      ecmwfPlayBtn.addEventListener('click', () => {
-        if (this.layerManager) {
-          this.layerManager.toggleEcmwfPlayback();
-        }
-      });
-    }
-
-    // Controles ECMWF: Paso Anterior (-3h)
-    const ecmwfPrevBtn = document.getElementById('ecmwf-prev-btn');
-    if (ecmwfPrevBtn) {
-      ecmwfPrevBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.ecmwfMetadata) return;
-        const steps = this.layerManager.ecmwfMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentEcmwfStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const prevIdx = (curIdx - 1 + steps.length) % steps.length;
-        this.layerManager.setEcmwfStep(steps[prevIdx]);
-      });
-    }
-
-    // Controles ECMWF: Paso Siguiente (+3h)
-    const ecmwfNextBtn = document.getElementById('ecmwf-next-btn');
-    if (ecmwfNextBtn) {
-      ecmwfNextBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.ecmwfMetadata) return;
-        const steps = this.layerManager.ecmwfMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentEcmwfStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const nextIdx = (curIdx + 1) % steps.length;
-        this.layerManager.setEcmwfStep(steps[nextIdx]);
-      });
-    }
-
-    // Controles ECMWF: Slider de pasos
-    const ecmwfSlider = document.getElementById('ecmwf-step-slider');
-    if (ecmwfSlider) {
-      const handleSliderInput = (rawVal) => {
-        if (!this.layerManager) return;
-        const steps = (this.layerManager.ecmwfMetadata && this.layerManager.ecmwfMetadata.available_steps) || [];
-        if (steps.length === 0) return;
-
-        // Encontrar el paso disponible más cercano al valor arrastrado
-        let closestStep = steps[0];
-        let minDiff = Infinity;
-        for (const s of steps) {
-          const diff = Math.abs(s - rawVal);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestStep = s;
-          }
-        }
-        this.layerManager.setEcmwfStep(closestStep);
-      };
-
-      ecmwfSlider.addEventListener('input', (e) => {
-        handleSliderInput(parseInt(e.target.value, 10));
-      });
-
-      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
-      ecmwfSlider.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (!this.layerManager || !this.layerManager.ecmwfMetadata) return;
-        const steps = this.layerManager.ecmwfMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentEcmwfStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        if (e.deltaY > 0) {
-          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
-          this.layerManager.setEcmwfStep(steps[nextIdx]);
-        } else if (e.deltaY < 0) {
-          const prevIdx = Math.max(0, curIdx - 1);
-          this.layerManager.setEcmwfStep(steps[prevIdx]);
-        }
-      }, { passive: false });
-    }
-
-    // Clic en píldora de máximo para volar directamente al punto geográfico en el mapa
-    const ecmwfMaxPill = document.getElementById('ecmwf-max-pill');
-    if (ecmwfMaxPill) {
-      ecmwfMaxPill.addEventListener('click', () => {
-        if (this.layerManager) this.layerManager.flyToModelMax('ecmwf');
-      });
-    }
-
-    // =========================================================================
-    // Controles Interactivos para NOAA GFS
-    // =========================================================================
-    const gfsBtnTotal = document.getElementById('gfs-btn-total');
-    const gfsBtnInterval = document.getElementById('gfs-btn-interval');
-
-    if (gfsBtnTotal && gfsBtnInterval) {
-      gfsBtnTotal.addEventListener('click', () => {
-        gfsBtnTotal.classList.add('active');
-        gfsBtnInterval.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setGfsType('total');
-        }
-      });
-      gfsBtnInterval.addEventListener('click', () => {
-        gfsBtnInterval.classList.add('active');
-        gfsBtnTotal.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setGfsType('interval');
-        }
-      });
-    }
-
-    // Controles GFS: Botón Play / Pause
-    const gfsPlayBtn = document.getElementById('gfs-play-btn');
-    if (gfsPlayBtn) {
-      gfsPlayBtn.addEventListener('click', () => {
-        if (this.layerManager) {
-          this.layerManager.toggleGfsPlayback();
-        }
-      });
-    }
-
-    // Controles GFS: Paso Anterior (-3h)
-    const gfsPrevBtn = document.getElementById('gfs-prev-btn');
-    if (gfsPrevBtn) {
-      gfsPrevBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
-        const steps = this.layerManager.gfsMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentGfsStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const prevIdx = (curIdx - 1 + steps.length) % steps.length;
-        this.layerManager.setGfsStep(steps[prevIdx]);
-      });
-    }
-
-    // Controles GFS: Paso Siguiente (+3h)
-    const gfsNextBtn = document.getElementById('gfs-next-btn');
-    if (gfsNextBtn) {
-      gfsNextBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
-        const steps = this.layerManager.gfsMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentGfsStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const nextIdx = (curIdx + 1) % steps.length;
-        this.layerManager.setGfsStep(steps[nextIdx]);
-      });
-    }
-
-    // Controles GFS: Slider de pasos
-    const gfsSlider = document.getElementById('gfs-step-slider');
-    if (gfsSlider) {
-      const handleGfsSliderInput = (rawVal) => {
-        if (!this.layerManager) return;
-        const steps = (this.layerManager.gfsMetadata && this.layerManager.gfsMetadata.available_steps) || [];
-        if (steps.length === 0) return;
-
-        let closestStep = steps[0];
-        let minDiff = Infinity;
-        for (const s of steps) {
-          const diff = Math.abs(s - rawVal);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestStep = s;
-          }
-        }
-        this.layerManager.setGfsStep(closestStep);
-      };
-
-      gfsSlider.addEventListener('input', (e) => {
-        handleGfsSliderInput(parseInt(e.target.value, 10));
-      });
-
-      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
-      gfsSlider.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (!this.layerManager || !this.layerManager.gfsMetadata) return;
-        const steps = this.layerManager.gfsMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentGfsStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        if (e.deltaY > 0) {
-          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
-          this.layerManager.setGfsStep(steps[nextIdx]);
-        } else if (e.deltaY < 0) {
-          const prevIdx = Math.max(0, curIdx - 1);
-          this.layerManager.setGfsStep(steps[prevIdx]);
-        }
-      }, { passive: false });
-    }
-
-    // Clic en píldora de máximo GFS para volar al punto
-    const gfsMaxPill = document.getElementById('gfs-max-pill');
-    if (gfsMaxPill) {
-      gfsMaxPill.addEventListener('click', () => {
-        if (this.layerManager) this.layerManager.flyToModelMax('gfs');
-      });
-    }
-
-    // =========================================================================
-    // Controles Interactivos para Météo-France / AEMET AROME
-    // =========================================================================
-    const aromeBtnTotal = document.getElementById('arome-btn-total');
-    const aromeBtnInterval = document.getElementById('arome-btn-interval');
-
-    if (aromeBtnTotal && aromeBtnInterval) {
-      aromeBtnTotal.addEventListener('click', () => {
-        aromeBtnTotal.classList.add('active');
-        aromeBtnInterval.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setAromeType('total');
-        }
-      });
-      aromeBtnInterval.addEventListener('click', () => {
-        aromeBtnInterval.classList.add('active');
-        aromeBtnTotal.classList.remove('active');
-        if (this.layerManager) {
-          this.layerManager.setAromeType('interval');
-        }
-      });
-    }
-
-    // Controles AROME: Botón Play / Pause
-    const aromePlayBtn = document.getElementById('arome-play-btn');
-    if (aromePlayBtn) {
-      aromePlayBtn.addEventListener('click', () => {
-        if (this.layerManager) {
-          this.layerManager.toggleAromePlayback();
-        }
-      });
-    }
-
-    // Controles AROME: Paso Anterior (-1h)
-    const aromePrevBtn = document.getElementById('arome-prev-btn');
-    if (aromePrevBtn) {
-      aromePrevBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
-        const steps = this.layerManager.aromeMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentAromeStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const prevIdx = (curIdx - 1 + steps.length) % steps.length;
-        this.layerManager.setAromeStep(steps[prevIdx]);
-      });
-    }
-
-    // Controles AROME: Paso Siguiente (+1h)
-    const aromeNextBtn = document.getElementById('arome-next-btn');
-    if (aromeNextBtn) {
-      aromeNextBtn.addEventListener('click', () => {
-        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
-        const steps = this.layerManager.aromeMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentAromeStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        const nextIdx = (curIdx + 1) % steps.length;
-        this.layerManager.setAromeStep(steps[nextIdx]);
-      });
-    }
-
-    // Controles AROME: Slider de pasos
-    const aromeSlider = document.getElementById('arome-step-slider');
-    if (aromeSlider) {
-      const handleAromeSliderInput = (rawVal) => {
-        if (!this.layerManager) return;
-        const steps = (this.layerManager.aromeMetadata && this.layerManager.aromeMetadata.available_steps) || [];
-        if (steps.length === 0) return;
-
-        let closestStep = steps[0];
-        let minDiff = Infinity;
-        for (const s of steps) {
-          const diff = Math.abs(s - rawVal);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestStep = s;
-          }
-        }
-        this.layerManager.setAromeStep(closestStep);
-      };
-
-      aromeSlider.addEventListener('input', (e) => {
-        handleAromeSliderInput(parseInt(e.target.value, 10));
-      });
-
-      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
-      aromeSlider.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
-        const steps = this.layerManager.aromeMetadata.available_steps || [];
-        if (steps.length === 0) return;
-        const curStep = this.layerManager.currentAromeStep || steps[0];
-        const curIdx = steps.indexOf(curStep);
-        if (e.deltaY > 0) {
-          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
-          this.layerManager.setAromeStep(steps[nextIdx]);
-        } else if (e.deltaY < 0) {
-          const prevIdx = Math.max(0, curIdx - 1);
-          this.layerManager.setAromeStep(steps[prevIdx]);
-        }
-      }, { passive: false });
-    }
-
-    // Clic en píldora de máximo AROME para volar al punto
-    const aromeMaxPill = document.getElementById('arome-max-pill');
-    if (aromeMaxPill) {
-      aromeMaxPill.addEventListener('click', () => {
-        if (this.layerManager) this.layerManager.flyToModelMax('arome');
       });
     }
 
@@ -1539,56 +973,380 @@ export class UIManager {
   }
 
   /**
-   * Actualiza el reproductor interactivo de Radar 24h en la UI
+   * Helper para obtener el tipo de capa con línea temporal actualmente activa en el mapa
+   * @returns {'radar' | 'ecmwf_ifs' | 'gfs_0p25' | 'arome_precip' | null}
    */
-  updateRadarPlayerUI(timeline, currentTimestep, isPlaying, isLive) {
-    const slider = document.getElementById('radar-step-slider');
-    const timeText = document.getElementById('radar-time-text');
-    const liveDot = document.querySelector('#radar-time-badge .radar-live-dot');
-    const liveBtn = document.getElementById('radar-live-btn');
-
-    if (slider && Array.isArray(timeline) && timeline.length > 0) {
-      slider.min = 0;
-      slider.max = timeline.length - 1;
-      const curIdx = timeline.findIndex(t => t.timestep === currentTimestep);
-      slider.value = curIdx >= 0 ? curIdx : timeline.length - 1;
-      slider.disabled = false;
-    }
-
-    const currentEntry = Array.isArray(timeline) ? timeline.find(t => t.timestep === currentTimestep) : null;
-
-    if (timeText) {
-      if (isLive) {
-        timeText.textContent = currentEntry ? `${currentEntry.valid_time_local} (Directo)` : 'En Directo';
-      } else if (currentEntry) {
-        timeText.textContent = `${currentEntry.valid_time_local} (-${currentEntry.age_text || ''})`;
-      } else {
-        timeText.textContent = currentTimestep || '--';
-      }
-    }
-
-    if (liveDot) {
-      liveDot.style.display = isLive ? 'inline-block' : 'none';
-    }
-
-    if (liveBtn) {
-      if (isLive) {
-        liveBtn.classList.add('active');
-      } else {
-        liveBtn.classList.remove('active');
-      }
-    }
-
-    this.updateRadarPlayState(isPlaying);
+  _getActiveTimelineType() {
+    if (!this.layerManager) return null;
+    if (this.layerManager.isLayerOnMap('radar')) return 'radar';
+    if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
+    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
+    if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
+    return null;
   }
 
   /**
-   * Actualiza el estado visual del botón play/pause del radar
+   * Inicializa los listeners del reproductor temporal inferior unificado (Radar / Modelos)
    */
-  updateRadarPlayState(isPlaying) {
-    const playBtn = document.getElementById('radar-play-btn');
-    const playIcon = document.getElementById('radar-play-icon');
-    const playText = document.getElementById('radar-play-text');
+  _initTimelineBottomPlayer() {
+    const playBtn = document.getElementById('timeline-play-btn');
+    if (playBtn) {
+      playBtn.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          this.layerManager.toggleRadarPlayback();
+        } else if (activeType === 'ecmwf_ifs') {
+          this.layerManager.toggleEcmwfPlayback();
+        } else if (activeType === 'gfs_0p25') {
+          this.layerManager.toggleGfsPlayback();
+        } else if (activeType === 'arome_precip') {
+          this.layerManager.toggleAromePlayback();
+        }
+      });
+    }
+
+    const liveBtn = document.getElementById('timeline-live-btn');
+    if (liveBtn) {
+      liveBtn.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        this.layerManager.pauseRadarPlayback();
+        this.layerManager.setRadarLive();
+      });
+    }
+
+    const prevBtn = document.getElementById('timeline-prev-btn');
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          this.layerManager.pauseRadarPlayback();
+          const timeline = this.layerManager.radarTimeline || [];
+          if (timeline.length === 0) return;
+          const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+          const prevIdx = curIdx <= 0 ? 0 : curIdx - 1;
+          this.layerManager.setRadarTimestep(timeline[prevIdx].timestep);
+        } else if (activeType) {
+          this._stepModel(activeType, -1);
+        }
+      });
+    }
+
+    const nextBtn = document.getElementById('timeline-next-btn');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          this.layerManager.pauseRadarPlayback();
+          const timeline = this.layerManager.radarTimeline || [];
+          if (timeline.length === 0) return;
+          const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+          const nextIdx = (curIdx === -1 || curIdx >= timeline.length - 1) ? timeline.length - 1 : curIdx + 1;
+          this.layerManager.setRadarTimestep(timeline[nextIdx].timestep);
+        } else if (activeType) {
+          this._stepModel(activeType, 1);
+        }
+      });
+    }
+
+    const modeTotal = document.getElementById('timeline-mode-total');
+    const modeInterval = document.getElementById('timeline-mode-interval');
+    if (modeTotal && modeInterval) {
+      modeTotal.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('total');
+        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
+        else if (activeType === 'arome_precip') this.layerManager.setAromeType('total');
+      });
+      modeInterval.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('interval');
+        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
+        else if (activeType === 'arome_precip') this.layerManager.setAromeType('interval');
+      });
+    }
+
+    const maxPill = document.getElementById('timeline-max-pill');
+    if (maxPill) {
+      maxPill.addEventListener('click', () => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'ecmwf_ifs') this.layerManager.flyToModelMax('ecmwf');
+        else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
+        else if (activeType === 'arome_precip') this.layerManager.flyToModelMax('arome');
+      });
+    }
+
+    const slider = document.getElementById('timeline-step-slider');
+    if (slider) {
+      const handleSliderChange = (rawVal) => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          this.layerManager.pauseRadarPlayback();
+          const timeline = this.layerManager.radarTimeline || [];
+          const item = timeline[rawVal];
+          if (item) this.layerManager.setRadarTimestep(item.timestep);
+        } else if (activeType) {
+          this._handleModelSliderInput(activeType, rawVal);
+        }
+      };
+
+      slider.addEventListener('input', (e) => {
+        handleSliderChange(parseInt(e.target.value, 10));
+      });
+
+      slider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          const timeline = this.layerManager.radarTimeline || [];
+          if (timeline.length === 0) return;
+          const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+          const delta = e.deltaY > 0 ? -1 : 1;
+          const newIdx = Math.max(0, Math.min(curIdx + delta, timeline.length - 1));
+          this.layerManager.pauseRadarPlayback();
+          this.layerManager.setRadarTimestep(timeline[newIdx].timestep);
+        } else if (activeType) {
+          const delta = e.deltaY > 0 ? -1 : 1;
+          this._stepModel(activeType, delta);
+        }
+      }, { passive: false });
+    }
+  }
+
+  _stepModel(modelId, direction) {
+    if (!this.layerManager) return;
+    let meta = null;
+    let curStep = null;
+    let setStepFn = null;
+    if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
+      meta = this.layerManager.ecmwfMetadata;
+      curStep = this.layerManager.currentEcmwfStep;
+      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
+    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
+      meta = this.layerManager.gfsMetadata;
+      curStep = this.layerManager.currentGfsStep;
+      setStepFn = (s) => this.layerManager.setGfsStep(s);
+    } else if (modelId === 'arome_precip' || modelId === 'arome') {
+      meta = this.layerManager.aromeMetadata;
+      curStep = this.layerManager.currentAromeStep;
+      setStepFn = (s) => this.layerManager.setAromeStep(s);
+    }
+    if (!meta || !setStepFn) return;
+    const steps = meta.available_steps || [];
+    if (steps.length === 0) return;
+    const curIdx = steps.indexOf(curStep);
+    const nextIdx = (curIdx + direction + steps.length) % steps.length;
+    setStepFn(steps[nextIdx]);
+  }
+
+  _handleModelSliderInput(modelId, rawVal) {
+    if (!this.layerManager) return;
+    let meta = null;
+    let setStepFn = null;
+    if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
+      meta = this.layerManager.ecmwfMetadata;
+      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
+    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
+      meta = this.layerManager.gfsMetadata;
+      setStepFn = (s) => this.layerManager.setGfsStep(s);
+    } else if (modelId === 'arome_precip' || modelId === 'arome') {
+      meta = this.layerManager.aromeMetadata;
+      setStepFn = (s) => this.layerManager.setAromeStep(s);
+    }
+    if (!meta || !setStepFn) return;
+    const steps = meta.available_steps || [];
+    if (steps.length === 0) return;
+    let closestStep = steps[0];
+    let minDiff = Infinity;
+    for (const s of steps) {
+      const diff = Math.abs(s - rawVal);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestStep = s;
+      }
+    }
+    setStepFn(closestStep);
+  }
+
+  toggleRadarBottomPlayer(show) {
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el reproductor temporal inferior unificado según la capa activa en el mapa
+   */
+  updateUnifiedTimelinePlayer() {
+    const bottomPlayer = this.timelineBottomPlayer || document.getElementById('timeline-bottom-player');
+    if (!bottomPlayer) return;
+
+    const activeType = this._getActiveTimelineType();
+    if (!activeType) {
+      bottomPlayer.style.display = 'none';
+      return;
+    }
+
+    bottomPlayer.style.display = 'flex';
+
+    const slider = document.getElementById('timeline-step-slider');
+    const timeText = document.getElementById('timeline-time-text');
+    const liveDot = document.getElementById('timeline-live-dot');
+    const liveBtn = document.getElementById('timeline-live-btn');
+    const modeGroup = document.getElementById('timeline-model-mode-group');
+    const modeTotal = document.getElementById('timeline-mode-total');
+    const modeInterval = document.getElementById('timeline-mode-interval');
+    const maxPill = document.getElementById('timeline-max-pill');
+    const labelsContainer = document.getElementById('timeline-slider-labels');
+
+    if (activeType === 'radar') {
+      const timeline = this.layerManager.radarTimeline || [];
+      const currentStep = this.layerManager.currentRadarTimestep;
+      const currentEntry = timeline.find(t => t.timestep === currentStep);
+      const isLive = currentEntry ? (currentEntry.is_latest || currentStep === timeline[timeline.length - 1]?.timestep) : true;
+
+      if (liveDot) liveDot.style.display = isLive ? 'inline-block' : 'none';
+      if (liveBtn) {
+        liveBtn.style.display = 'inline-flex';
+        liveBtn.classList.toggle('active', isLive);
+      }
+      if (modeGroup) modeGroup.style.display = 'none';
+      if (maxPill) maxPill.style.display = 'none';
+
+      const getCleanTime = (ts, validLocal) => {
+        if (ts) {
+          const t = formatMadridTime(ts);
+          if (t && t.length <= 5) return t;
+        }
+        if (validLocal) {
+          const parts = String(validLocal).trim().split(/\s+/);
+          return parts[parts.length - 1];
+        }
+        return '';
+      };
+
+      if (timeText) {
+        const timeOnly = getCleanTime(currentEntry?.timestep, currentEntry?.valid_time_local);
+        if (isLive) {
+          timeText.textContent = timeOnly ? `Radar · ${timeOnly}` : 'Radar · Directo';
+        } else if (currentEntry) {
+          const ageStr = currentEntry.age_text ? ` (-${currentEntry.age_text})` : '';
+          timeText.textContent = `Radar · ${timeOnly}${ageStr}`;
+        } else {
+          timeText.textContent = `Radar · ${currentStep || '--'}`;
+        }
+      }
+
+      if (slider && timeline.length > 0) {
+        slider.min = 0;
+        slider.max = timeline.length - 1;
+        slider.step = 1;
+        const curIdx = timeline.findIndex(t => t.timestep === currentStep);
+        slider.value = curIdx >= 0 ? curIdx : timeline.length - 1;
+        slider.disabled = false;
+      }
+
+      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== 'radar')) {
+        labelsContainer._currentType = 'radar';
+        labelsContainer.innerHTML = `
+          <span>-24h</span>
+          <span>-18h</span>
+          <span>-12h</span>
+          <span>-6h</span>
+          <span>-3h</span>
+          <span>-1h</span>
+          <span>Ahora</span>
+        `;
+      }
+
+      this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
+
+    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip') {
+      let meta = null;
+      let curStep = null;
+      let curType = null;
+      let isPlaying = false;
+      let modelLabel = '';
+      let labelsHtml = '';
+
+      if (activeType === 'ecmwf_ifs') {
+        meta = this.layerManager.ecmwfMetadata || {};
+        curStep = this.layerManager.currentEcmwfStep || 3;
+        curType = this.layerManager.currentEcmwfType || 'total';
+        isPlaying = this.layerManager.isEcmwfPlaying;
+        modelLabel = 'ECMWF IFS';
+        labelsHtml = '<span>+3h</span><span>+72h (3d)</span><span>+144h (6d)</span><span>+240h (10d)</span>';
+      } else if (activeType === 'gfs_0p25') {
+        meta = this.layerManager.gfsMetadata || {};
+        curStep = this.layerManager.currentGfsStep || 3;
+        curType = this.layerManager.currentGfsType || 'total';
+        isPlaying = this.layerManager.isGfsPlaying;
+        modelLabel = 'NOAA GFS';
+        labelsHtml = '<span>+3h</span><span>+96h (4d)</span><span>+192h (8d)</span><span>+288h (12d)</span><span>+384h (16d)</span>';
+      } else if (activeType === 'arome_precip') {
+        meta = this.layerManager.aromeMetadata || {};
+        curStep = this.layerManager.currentAromeStep || 1;
+        curType = this.layerManager.currentAromeType || 'total';
+        isPlaying = this.layerManager.isAromePlaying;
+        modelLabel = 'AROME HD';
+        labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h (2d)</span>';
+      }
+
+      if (liveDot) liveDot.style.display = 'none';
+      if (liveBtn) liveBtn.style.display = 'none';
+      if (modeGroup) modeGroup.style.display = 'inline-flex';
+      if (modeTotal) modeTotal.classList.toggle('active', curType === 'total');
+      if (modeInterval) modeInterval.classList.toggle('active', curType === 'interval');
+
+      const stepInfo = (meta.steps || []).find(s => s.step === curStep);
+      if (maxPill) {
+        maxPill.style.display = 'inline-flex';
+        if (stepInfo) {
+          const maxVal = curType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+          maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+        } else {
+          maxPill.innerHTML = `🎯 Máx: -- mm`;
+        }
+      }
+
+      if (timeText) {
+        const timeOnly = stepInfo?.valid_time_iso
+          ? formatMadridTime(stepInfo.valid_time_iso)
+          : (stepInfo?.valid_time_local ? String(stepInfo.valid_time_local).trim().split(/\s+/).pop() : '');
+        if (timeOnly) {
+          timeText.innerHTML = `<strong>${modelLabel}</strong> (+${curStep}h · ${timeOnly})`;
+        } else {
+          timeText.innerHTML = `<strong>${modelLabel}</strong> (+${curStep}h)`;
+        }
+      }
+
+      const availSteps = meta.available_steps || [];
+      if (slider && availSteps.length > 0) {
+        slider.min = availSteps[0];
+        slider.max = availSteps[availSteps.length - 1];
+        slider.step = activeType === 'arome_precip' ? 1 : 3;
+        slider.value = curStep;
+        slider.disabled = false;
+      }
+
+      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType)) {
+        labelsContainer._currentType = activeType;
+        labelsContainer.innerHTML = labelsHtml;
+      }
+
+      this._updateTimelinePlayButton(isPlaying);
+    }
+  }
+
+  _updateTimelinePlayButton(isPlaying) {
+    const playBtn = document.getElementById('timeline-play-btn');
+    const playIcon = document.getElementById('timeline-play-icon');
+    const playText = document.getElementById('timeline-play-text');
 
     if (!playBtn) return;
 
@@ -1598,7 +1356,7 @@ export class UIManager {
         playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
       }
       if (playText) {
-        playText.textContent = 'Pausar';
+        playText.textContent = 'Pausa';
       }
     } else {
       playBtn.classList.remove('playing');
@@ -1609,6 +1367,20 @@ export class UIManager {
         playText.textContent = 'Animar';
       }
     }
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de Radar 24h en la UI
+   */
+  updateRadarPlayerUI(timeline, currentTimestep, isPlaying, isLive) {
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el estado visual del botón play/pause del radar
+   */
+  updateRadarPlayState(isPlaying) {
+    this._updateTimelinePlayButton(isPlaying);
   }
 
   /**
@@ -1666,6 +1438,7 @@ export class UIManager {
     }
 
     this.updateEcmwfPlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
   }
 
   /**
@@ -1722,6 +1495,7 @@ export class UIManager {
     }
 
     this.updateGfsPlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
   }
 
   /**
@@ -1778,6 +1552,7 @@ export class UIManager {
     }
 
     this.updateAromePlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
   }
 
   /**
