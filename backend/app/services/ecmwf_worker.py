@@ -12,9 +12,19 @@ import time
 import shutil
 import logging
 import asyncio
+import tempfile
+import warnings
+import urllib.request
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List, Tuple, Set, AsyncGenerator
+
+# Silenciar advertencias internas de combinación y compatibilidad de cfgrib/xarray
+warnings.filterwarnings("ignore", category=FutureWarning, module="cfgrib")
+warnings.filterwarnings("ignore", category=FutureWarning, module="xarray")
+warnings.filterwarnings("ignore", message=".*compat.*", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="cfgrib")
+warnings.filterwarnings("ignore", message=".*Ignoring index file.*")
 
 import numpy as np
 from PIL import Image
@@ -51,8 +61,8 @@ SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID
 # Pasos estándar de predicción ECMWF (cada 3 horas hasta +144h y cada 6 horas hasta +240h / 10 días)
 ECMWF_STEPS = list(range(3, 147, 3)) + list(range(150, 246, 6))
 
-# Fuentes de ECMWF Open Data en orden de prioridad
-DATA_SOURCES = ["ecmwf", "aws", "azure"]
+# Fuentes de ECMWF Open Data en orden de prioridad (Replicas Cloud de alta disponibilidad sin 429)
+DATA_SOURCES = ["aws", "azure"]
 
 
 def colorize_precip_array(precip_mm: np.ndarray) -> np.ndarray:
@@ -202,8 +212,30 @@ class ECMWFWorker:
         except Exception as e:
             logger.warning(f"ECMWF: No se pudo cargar manifiesto previo: {e}")
 
+    def _get_previous_manifest(self) -> Optional[Dict[str, Any]]:
+        """Devuelve el manifiesto del ciclo inmediatamente anterior para hibridación de pasos futuros."""
+        try:
+            dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
+            if len(dirs) < 2:
+                return None
+            dirs.sort(key=lambda d: d.name, reverse=True)
+            prev_dir = dirs[1]
+            with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+        return None
+
     def get_metadata(self) -> Dict[str, Any]:
-        """Devuelve los metadatos del ciclo actual disponible con run y estado de actualización."""
+        """
+        Devuelve los metadatos del ciclo actual con hibridación temporal inteligente (Stitching):
+        Si la corrida actual sólo tiene los primeros pasos, rellena los pasos futuros
+        restantes a partir de la corrida anterior para que el usuario nunca pierda horizonte.
+        """
+        max_target = getattr(settings, "ECMWF_MAX_STEPS", 240)
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
+
         if self.current_manifest:
             meta = dict(self.current_manifest)
             meta["is_syncing"] = self._is_syncing
@@ -224,11 +256,49 @@ class ECMWFWorker:
                     run_str = parts[1].lower()
             
             meta["run"] = run_str or "00z"
-            avail = meta.get("available_steps", [])
+            avail = list(meta.get("available_steps", []))
+            steps_dict = {s["step"]: s for s in meta.get("steps", [])}
+
+            # Si la corrida no está completa, intentar rellenar los pasos futuros desde el ciclo anterior
+            if len(avail) < len(ECMWF_STEPS) and cycle_iso:
+                prev_manifest = self._get_previous_manifest()
+                if prev_manifest and prev_manifest.get("cycle") and prev_manifest.get("steps"):
+                    try:
+                        latest_dt = datetime.fromisoformat(cycle_iso.replace("Z", "+00:00"))
+                        prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                        diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                        prev_steps_dict = {s["step"]: s for s in prev_manifest.get("steps", [])}
+
+                        for s in ECMWF_STEPS:
+                            if s <= max_target and s not in steps_dict:
+                                prev_s = s + diff_hours
+                                if prev_s in prev_steps_dict:
+                                    prev_item = prev_steps_dict[prev_s]
+                                    valid_dt = latest_dt + timedelta(hours=s)
+                                    steps_dict[s] = {
+                                        "step": s,
+                                        "valid_time_iso": valid_dt.isoformat(),
+                                        "valid_time_local": (valid_dt + timedelta(hours=2)).strftime("%d/%m %H:%M"),
+                                        "max_total_mm": prev_item.get("max_total_mm"),
+                                        "max_interval_mm": prev_item.get("max_interval_mm"),
+                                        "is_fallback": True,
+                                        "fallback_cycle": prev_manifest.get("cycle_str"),
+                                        "fallback_step": prev_s
+                                    }
+                                    if s not in avail:
+                                        avail.append(s)
+                    except Exception as e:
+                        logger.debug(f"ECMWF stitching calculation error: {e}")
+
+            avail.sort()
+            sorted_steps = [steps_dict[s] for s in avail if s in steps_dict]
+            meta["available_steps"] = avail
+            meta["steps"] = sorted_steps
             max_step = max(avail) if avail else 0
             meta["max_step"] = max_step
-            meta["is_complete"] = (max_step >= 240)
-            meta["is_updating"] = self._is_syncing or (max_step < 240 and meta.get("status") != "complete")
+            raw_complete = (len(self.current_manifest.get("available_steps", [])) >= len([s for s in ECMWF_STEPS if s <= max_target]))
+            meta["is_complete"] = raw_complete
+            meta["is_updating"] = self._is_syncing or (not raw_complete and self.current_manifest.get("status") != "complete")
             return meta
 
         return {
@@ -248,7 +318,9 @@ class ECMWFWorker:
         }
 
     def get_image_path(self, step: int, layer_type: str = "total") -> Optional[Path]:
-        """Devuelve la ruta a la imagen PNG generada."""
+        """Devuelve la ruta a la imagen PNG generada (con soporte de fallback al ciclo anterior)."""
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
         if not self.current_manifest:
             return None
         cycle_str = self.current_manifest.get("cycle_str")
@@ -259,16 +331,34 @@ class ECMWFWorker:
         img_path = self.cache_dir / cycle_str / f"{clean_type}_step_{step:02d}.png"
         if img_path.exists():
             return img_path
+
+        # Fallback a ciclo anterior si aún no está resuelto
+        prev_manifest = self._get_previous_manifest()
+        if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+            try:
+                latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                prev_step = step + diff_hours
+                prev_dir = self.cache_dir / prev_manifest["cycle_str"]
+                prev_img = prev_dir / f"{clean_type}_step_{prev_step:02d}.png"
+                if prev_img.exists():
+                    return prev_img
+            except Exception:
+                pass
+
         return None
 
     def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
         """
-        Consulta en tiempo O(1) el valor de precipitación (mm) en una coordenada específica.
+        Consulta en tiempo O(1) el valor de precipitación (mm) en una coordenada específica (con fallback).
         """
         if not (SPAIN_BBOX["lat_min"] <= lat <= SPAIN_BBOX["lat_max"] and
                 SPAIN_BBOX["lon_min"] <= lon <= SPAIN_BBOX["lon_max"]):
             return None
 
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
         if not self.current_manifest:
             return None
 
@@ -282,14 +372,35 @@ class ECMWFWorker:
         matrix = self._in_memory_arrays.get(cache_key)
         if matrix is None:
             npy_path = self.cache_dir / cycle_str / f"{clean_type}_step_{step:02d}.npy"
-            if not npy_path.exists():
-                return None
-            try:
-                matrix = np.load(npy_path)
-                self._in_memory_arrays[cache_key] = matrix
-            except Exception as e:
-                logger.error(f"Error cargando matriz .npy {npy_path}: {e}")
-                return None
+            if npy_path.exists():
+                try:
+                    matrix = np.load(npy_path)
+                    self._in_memory_arrays[cache_key] = matrix
+                except Exception as e:
+                    logger.error(f"Error cargando matriz .npy {npy_path}: {e}")
+
+        # Fallback a ciclo anterior si aún no está en memoria ni en disco
+        if matrix is None:
+            prev_manifest = self._get_previous_manifest()
+            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                try:
+                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                    prev_step = step + diff_hours
+                    prev_cycle_str = prev_manifest["cycle_str"]
+                    prev_cache_key = f"{prev_cycle_str}_{clean_type}_{prev_step:02d}"
+                    matrix = self._in_memory_arrays.get(prev_cache_key)
+                    if matrix is None:
+                        prev_npy = self.cache_dir / prev_cycle_str / f"{clean_type}_step_{prev_step:02d}.npy"
+                        if prev_npy.exists():
+                            matrix = np.load(prev_npy)
+                            self._in_memory_arrays[prev_cache_key] = matrix
+                except Exception:
+                    pass
+
+        if matrix is None:
+            return None
 
         # Convertir coordenada lat/lon a fila/columna en la cuadrícula Web Mercator
         try:
@@ -305,16 +416,20 @@ class ECMWFWorker:
 
         return None
 
-    def _purge_old_cycles(self, keep_cycle_str: str):
-        """Rolling cache: Elimina ciclos antiguos de disco para mantener espacio."""
+    def _purge_old_cycles(self, keep: int = 2):
+        """Rolling cache: Conserva al menos los 2 ciclos más recientes en disco para permitir hibridación."""
         try:
-            for item in self.cache_dir.iterdir():
-                if item.is_dir() and item.name != keep_cycle_str:
-                    logger.info(f"ECMWF: Purgando ciclo anterior {item.name}")
-                    shutil.rmtree(item, ignore_errors=True)
+            dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
+            if len(dirs) <= keep:
+                return
+            dirs.sort(key=lambda d: d.name, reverse=True)
+            for old_dir in dirs[keep:]:
+                logger.info(f"ECMWF: Purgando ciclo anterior {old_dir.name}")
+                shutil.rmtree(old_dir, ignore_errors=True)
             
             # Limpiar memoria de matrices antiguas
-            keys_to_delete = [k for k in self._in_memory_arrays.keys() if not k.startswith(keep_cycle_str)]
+            kept_names = {d.name for d in dirs[:keep]}
+            keys_to_delete = [k for k in self._in_memory_arrays.keys() if not any(k.startswith(name) for name in kept_names)]
             for k in keys_to_delete:
                 del self._in_memory_arrays[k]
             gc.collect()
@@ -322,23 +437,54 @@ class ECMWFWorker:
             logger.warning(f"ECMWF: Error purgando ciclos anteriores: {e}")
 
     def _detect_latest_cycle(self) -> Optional[datetime]:
-        """Detecta la fecha y hora del ciclo más reciente publicado en ECMWF Open Data."""
-        for src in DATA_SOURCES:
+        """Detecta la fecha y hora del ciclo más reciente publicado en ECMWF Open Data (vía AWS S3 / Azure)."""
+        now = datetime.now(timezone.utc)
+        candidate_cycles = []
+        for d in range(3):
+            day = now - timedelta(days=d)
+            for h in [18, 12, 6, 0]:
+                c_dt = datetime(day.year, day.month, day.day, h, 0, tzinfo=timezone.utc)
+                if c_dt <= now:
+                    candidate_cycles.append(c_dt)
+
+        for c_dt in candidate_cycles:
+            cycle_str = c_dt.strftime("%Y%m%d_%Hz")
+            d_str = c_dt.strftime("%Y%m%d")
+            hh_str = f"{c_dt.hour:02d}"
+
+            # Comprobación directa y ultrarrápida en AWS S3 para evitar 429 en el portal central
+            aws_index_url = f"https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/{d_str}/{hh_str}z/ifs/0p25/oper/{d_str}{hh_str}0000-3h-oper-fc.index"
             try:
-                client = Client(source=src)
-                latest_dt = client.latest(type="fc", param="tp")
-                if latest_dt:
-                    logger.info(f"ECMWF: Ciclo más reciente detectado ({src}): {latest_dt}")
-                    return latest_dt
-            except Exception as e:
-                logger.debug(f"ECMWF: Error detectando ciclo en fuente {src}: {e}")
+                req = urllib.request.Request(aws_index_url, headers={"User-Agent": "RainLoc-GIS/1.0"})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    if resp.status == 200:
+                        logger.info(f"ECMWF: Ciclo disponible detectado en AWS S3: {cycle_str}")
+                        return c_dt
+            except Exception:
+                pass
+
+        # Si no se detecta ciclo remoto accesible, utilizar el más reciente disponible en caché local
+        if self.cache_dir.exists():
+            existing = sorted([d for d in self.cache_dir.iterdir() if d.is_dir() and "_" in d.name and (d / "manifest.json").exists()], reverse=True)
+            if existing:
+                latest_existing_name = existing[0].name
+                try:
+                    parts = latest_existing_name.split("_")
+                    d_p = parts[0]
+                    h_p = int(parts[1].replace("z", ""))
+                    c_dt = datetime(int(d_p[:4]), int(d_p[4:6]), int(d_p[6:8]), h_p, 0, tzinfo=timezone.utc)
+                    logger.info(f"ECMWF: Utilizando ciclo local más reciente en caché: {latest_existing_name}")
+                    return c_dt
+                except Exception:
+                    pass
         return None
 
     def _download_step_grib(self, client: Any, cycle_dt: datetime, step: int, target_file: Path) -> bool:
         """Intenta descargar el archivo GRIB2 de un paso específico probando fuentes con reintentos."""
         for src in DATA_SOURCES:
             try:
-                c = Client(source=src)
+                logger.info(f"ECMWF: Consultando paso +{step}h en fuente {src.upper()}...")
+                c = Client(source=src, maximum_retries=2, retry_after=2)
                 c.retrieve(
                     date=cycle_dt.date(),
                     time=cycle_dt.hour,
@@ -348,13 +494,14 @@ class ECMWFWorker:
                     target=str(target_file)
                 )
                 if target_file.exists() and target_file.stat().st_size > 1000:
+                    logger.info(f"ECMWF: Paso +{step}h descargado con éxito desde {src.upper()} ({target_file.stat().st_size/1024:.1f} KB).")
                     return True
             except Exception as e:
                 err_str = str(e).lower()
-                if "not found" in err_str or "404" in err_str:
-                    logger.debug(f"ECMWF: Paso {step} aún no generado/disponible en {src} (404/NotFound).")
+                if "not found" in err_str or "404" in err_str or "forbidden" in err_str:
+                    logger.info(f"ECMWF: Paso +{step}h aún no disponible en {src.upper()}.")
                 else:
-                    logger.warning(f"ECMWF: Fallo descargando paso {step} de {src}: {e}")
+                    logger.warning(f"ECMWF: Fallo consultando paso +{step}h de {src}: {e}")
         return False
 
     def _process_grib_to_mercator(self, grib_path: Path) -> Optional[np.ndarray]:
@@ -364,7 +511,7 @@ class ECMWFWorker:
         """
         ds = None
         try:
-            ds = xr.open_dataset(grib_path, engine="cfgrib")
+            ds = xr.open_dataset(grib_path, engine="cfgrib", backend_kwargs={"indexpath": ""})
             if "tp" not in ds:
                 return None
 
@@ -476,7 +623,13 @@ class ECMWFWorker:
         available_steps = set(manifest_data.get("available_steps", []))
         steps_to_process = [s for s in ECMWF_STEPS if s <= max_steps]
 
-        client = Client(source="ecmwf")
+        missing_steps = [s for s in steps_to_process if s not in available_steps]
+        if not missing_steps:
+            logger.info(f"ECMWF: Todos los pasos (+{min(steps_to_process)}h..+{max(steps_to_process)}h) ya están al día en caché para el ciclo {cycle_str}.")
+        else:
+            logger.info(f"ECMWF: Pasos disponibles: {len(available_steps)}/{len(steps_to_process)}. Comprobando si el supercomputador ha publicado el paso +{missing_steps[0]}h...")
+
+        client = Client(source="aws", maximum_retries=2, retry_after=2)
         last_total_matrix: Optional[np.ndarray] = None
         new_steps_downloaded = 0
 
@@ -497,11 +650,12 @@ class ECMWFWorker:
             # Descargar archivo GRIB2 temporal para este step
             tmp_grib = cycle_dir / f"tmp_{cycle_str}_step{step:02d}.grib2"
             try:
-                logger.info(f"ECMWF: Descargando paso +{step}h del ciclo {cycle_str}...")
+                logger.info(f"ECMWF: Comprobando y descargando paso +{step}h del ciclo {cycle_str}...")
                 ok = self._download_step_grib(client, latest_dt, step, tmp_grib)
                 if not ok:
                     logger.info(f"ECMWF: Paso +{step}h aún no disponible en el supercomputador. Deteniendo pipeline progresivo.")
                     break
+                logger.info(f"ECMWF: Paso +{step}h descargado con éxito. Procesando ráster...")
 
                 # Procesar a matriz Web Mercator
                 total_matrix = self._process_grib_to_mercator(tmp_grib)
@@ -600,8 +754,8 @@ class ECMWFWorker:
                     except Exception:
                         pass
 
-        # Purga de ciclos anteriores (Rolling Cache)
-        self._purge_old_cycles(cycle_str)
+        # Purga de ciclos anteriores (Rolling Cache - conserva 2 para stitching)
+        self._purge_old_cycles(keep=2)
 
         if new_steps_downloaded > 0:
             self.notify_ecmwf_update(

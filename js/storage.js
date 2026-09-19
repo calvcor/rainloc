@@ -7,11 +7,19 @@ export class StorageManager {
   static STORAGE_KEY = 'rainloc_user_preferences_v1';
 
   /**
+   * Obtiene el mapa base por defecto según el modo del sistema (claro u oscuro)
+   */
+  static getDefaultBasemapId() {
+    const isDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return isDark ? 'esriDarkCanvas' : 'esriCanvas';
+  }
+
+  /**
    * Valores por defecto
    */
   static getDefaults() {
     return {
-      basemapId: 'ignBase',
+      basemapId: this.getDefaultBasemapId(),
       fillOpacity: 0.25,
       cuencasVisible: true,
       ccaaVisible: true,

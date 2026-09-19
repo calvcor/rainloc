@@ -334,6 +334,28 @@ export class UIManager {
       `;
     }
 
+    // Botón de sincronización para modelos numéricos en la píldora de estado
+    let modelSyncBtnHtml = '';
+    if (layer.id === 'ecmwf_ifs') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="ecmwf-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
+    } else if (layer.id === 'gfs_0p25') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="gfs-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
+    } else if (layer.id === 'arome_precip') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="arome-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
+    }
+
     // Sub-controles específicos para el Modelo ECMWF IFS (Reproductor temporal y selector total/intervalo)
     let ecmwfExtraControls = '';
     if (layer.id === 'ecmwf_ifs') {
@@ -352,7 +374,6 @@ export class UIManager {
           <!-- Reproductor temporal interactivo -->
           <div class="ecmwf-player-panel">
             <div class="ecmwf-player-header">
-              <span class="ecmwf-player-title">Control de Previsión</span>
               <span class="ecmwf-max-pill" id="ecmwf-max-pill">Máx: -- mm</span>
             </div>
 
@@ -420,7 +441,6 @@ export class UIManager {
           <!-- Reproductor temporal interactivo -->
           <div class="ecmwf-player-panel">
             <div class="ecmwf-player-header">
-              <span class="ecmwf-player-title">Control de Previsión GFS</span>
               <span class="ecmwf-max-pill" id="gfs-max-pill">Máx: -- mm</span>
             </div>
 
@@ -470,6 +490,74 @@ export class UIManager {
       `;
     }
 
+    // Sub-controles específicos para el Modelo Météo-France / AEMET AROME (Reproductor temporal hasta +48h y selector total/intervalo)
+    let aromeExtraControls = '';
+    if (layer.id === 'arome_precip') {
+      aromeExtraControls = `
+        <div class="ecmwf-subcontrols">
+          <!-- Selector de Modo: Acumulado Total vs Intervalo 1h -->
+          <div class="ecmwf-type-selector">
+            <button type="button" class="ecmwf-type-btn active" data-type="total" id="arome-btn-total">
+              Acumulado Total
+            </button>
+            <button type="button" class="ecmwf-type-btn" data-type="interval" id="arome-btn-interval">
+              Intervalo (1h)
+            </button>
+          </div>
+
+          <!-- Reproductor temporal interactivo -->
+          <div class="ecmwf-player-panel">
+            <div class="ecmwf-player-header">
+              <span class="ecmwf-max-pill" id="arome-max-pill">Máx: -- mm</span>
+            </div>
+
+            <!-- Controles Play / Prev / Next -->
+            <div class="ecmwf-player-controls-row">
+              <button type="button" class="ecmwf-step-btn" id="arome-prev-btn" title="Paso anterior (-1h)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+              </button>
+              <button type="button" class="ecmwf-play-btn" id="arome-play-btn" title="Reproducir animación">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="arome-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span id="arome-play-text">Animar</span>
+              </button>
+              <button type="button" class="ecmwf-step-btn" id="arome-next-btn" title="Paso siguiente (+1h)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+            </div>
+
+            <!-- Slider de pasos temporales hasta +48h (2 días) -->
+            <div class="ecmwf-slider-wrapper">
+              <input type="range" class="slider-glass ecmwf-step-slider" id="arome-step-slider" min="1" max="48" step="1" value="1">
+              <div class="ecmwf-slider-labels">
+                <span>+1h</span>
+                <span>+12h</span>
+                <span>+24h (1d)</span>
+                <span>+36h</span>
+                <span>+48h (2d)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Leyenda de Precipitación -->
+          <div class="ecmwf-precip-legend">
+            <span class="precip-legend-title">Precipitación (mm):</span>
+            <div class="precip-bar">
+              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
+              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
+              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
+              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
+              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
+              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
+              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
+              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
+              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
+              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="layer-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
         <div class="layer-card-main">
@@ -486,6 +574,7 @@ export class UIManager {
             <div class="layer-timestamp-pill" id="timestamp-pill-${layer.id}">
               <span class="timestamp-indicator"></span>
               <span class="timestamp-val" id="time-val-${layer.id}">${this._getDefaultLayerTimestamp(layer.id)}</span>
+              ${modelSyncBtnHtml}
             </div>
           </div>
         </div>
@@ -498,6 +587,7 @@ export class UIManager {
           ${radarExtraControls}
           ${ecmwfExtraControls}
           ${gfsExtraControls}
+          ${aromeExtraControls}
         </div>
       </div>
     `;
@@ -824,6 +914,193 @@ export class UIManager {
         }
       }, { passive: false });
     }
+
+    // =========================================================================
+    // Controles Interactivos para Météo-France / AEMET AROME
+    // =========================================================================
+    const aromeBtnTotal = document.getElementById('arome-btn-total');
+    const aromeBtnInterval = document.getElementById('arome-btn-interval');
+
+    if (aromeBtnTotal && aromeBtnInterval) {
+      aromeBtnTotal.addEventListener('click', () => {
+        aromeBtnTotal.classList.add('active');
+        aromeBtnInterval.classList.remove('active');
+        if (this.layerManager) {
+          this.layerManager.setAromeType('total');
+        }
+      });
+      aromeBtnInterval.addEventListener('click', () => {
+        aromeBtnInterval.classList.add('active');
+        aromeBtnTotal.classList.remove('active');
+        if (this.layerManager) {
+          this.layerManager.setAromeType('interval');
+        }
+      });
+    }
+
+    // Controles AROME: Botón Play / Pause
+    const aromePlayBtn = document.getElementById('arome-play-btn');
+    if (aromePlayBtn) {
+      aromePlayBtn.addEventListener('click', () => {
+        if (this.layerManager) {
+          this.layerManager.toggleAromePlayback();
+        }
+      });
+    }
+
+    // Controles AROME: Paso Anterior (-1h)
+    const aromePrevBtn = document.getElementById('arome-prev-btn');
+    if (aromePrevBtn) {
+      aromePrevBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
+        const steps = this.layerManager.aromeMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentAromeStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        const prevIdx = (curIdx - 1 + steps.length) % steps.length;
+        this.layerManager.setAromeStep(steps[prevIdx]);
+      });
+    }
+
+    // Controles AROME: Paso Siguiente (+1h)
+    const aromeNextBtn = document.getElementById('arome-next-btn');
+    if (aromeNextBtn) {
+      aromeNextBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
+        const steps = this.layerManager.aromeMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentAromeStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        const nextIdx = (curIdx + 1) % steps.length;
+        this.layerManager.setAromeStep(steps[nextIdx]);
+      });
+    }
+
+    // Controles AROME: Slider de pasos
+    const aromeSlider = document.getElementById('arome-step-slider');
+    if (aromeSlider) {
+      const handleAromeSliderInput = (rawVal) => {
+        if (!this.layerManager) return;
+        const steps = (this.layerManager.aromeMetadata && this.layerManager.aromeMetadata.available_steps) || [];
+        if (steps.length === 0) return;
+
+        let closestStep = steps[0];
+        let minDiff = Infinity;
+        for (const s of steps) {
+          const diff = Math.abs(s - rawVal);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestStep = s;
+          }
+        }
+        this.layerManager.setAromeStep(closestStep);
+      };
+
+      aromeSlider.addEventListener('input', (e) => {
+        handleAromeSliderInput(parseInt(e.target.value, 10));
+      });
+
+      // Soporte de scroll / rueda de ratón en el slider para navegación fluida
+      aromeSlider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!this.layerManager || !this.layerManager.aromeMetadata) return;
+        const steps = this.layerManager.aromeMetadata.available_steps || [];
+        if (steps.length === 0) return;
+        const curStep = this.layerManager.currentAromeStep || steps[0];
+        const curIdx = steps.indexOf(curStep);
+        if (e.deltaY > 0) {
+          const nextIdx = Math.min(steps.length - 1, curIdx + 1);
+          this.layerManager.setAromeStep(steps[nextIdx]);
+        } else if (e.deltaY < 0) {
+          const prevIdx = Math.max(0, curIdx - 1);
+          this.layerManager.setAromeStep(steps[prevIdx]);
+        }
+      }, { passive: false });
+    }
+
+    // Botones de Sincronización Manual Inmediata
+    this._setupModelSyncButton('ecmwf-sync-btn', 'ecmwf');
+    this._setupModelSyncButton('gfs-sync-btn', 'gfs');
+    this._setupModelSyncButton('arome-sync-btn', 'arome');
+    this._setupPredictionBannerSync();
+  }
+
+  /**
+   * Configura el comportamiento interactivo de un botón de sincronización de modelo
+   */
+  _setupModelSyncButton(btnId, modelKey) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (btn.classList.contains('syncing')) return;
+
+      btn.classList.add('syncing');
+      btn.setAttribute('title', 'Comprobando si hay nueva corrida o pasos...');
+
+      try {
+        if (this.layerManager) {
+          await this.layerManager.triggerModelSync(modelKey);
+        }
+        btn.setAttribute('title', '✓ Actualizado con éxito');
+      } catch (err) {
+        console.warn(`Error al sincronizar ${modelKey}:`, err);
+        btn.setAttribute('title', 'Error al sincronizar');
+      } finally {
+        setTimeout(() => {
+          btn.classList.remove('syncing');
+          btn.setAttribute('title', 'Comprobar si hay nueva corrida o pasos ahora');
+        }, 1200);
+      }
+    });
+  }
+
+  /**
+   * Configura el botón de sincronización rápida ubicado en el banner flotante de predicción
+   */
+  _setupPredictionBannerSync() {
+    const bannerSyncBtn = document.getElementById('btn-prediction-banner-sync');
+    if (!bannerSyncBtn || bannerSyncBtn._hasSyncListener) return;
+    bannerSyncBtn._hasSyncListener = true;
+
+    bannerSyncBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (bannerSyncBtn.classList.contains('syncing')) return;
+
+      bannerSyncBtn.classList.add('syncing');
+      try {
+        if (this.layerManager) {
+          const syncTasks = [];
+          if (this.layerManager.isLayerActive('ecmwf_ifs')) {
+            syncTasks.push(this.layerManager.triggerModelSync('ecmwf'));
+          }
+          if (this.layerManager.isLayerActive('gfs_0p25')) {
+            syncTasks.push(this.layerManager.triggerModelSync('gfs'));
+          }
+          if (this.layerManager.isLayerActive('arome_precip')) {
+            syncTasks.push(this.layerManager.triggerModelSync('arome'));
+          }
+
+          if (syncTasks.length === 0) {
+            // Si ninguno está activo visible, sincroniza los tres
+            await Promise.all([
+              this.layerManager.triggerModelSync('ecmwf'),
+              this.layerManager.triggerModelSync('gfs'),
+              this.layerManager.triggerModelSync('arome')
+            ]);
+          } else {
+            await Promise.all(syncTasks);
+          }
+        }
+      } catch (err) {
+        console.warn('Error al sincronizar desde el banner:', err);
+      } finally {
+        setTimeout(() => {
+          bannerSyncBtn.classList.remove('syncing');
+        }, 1200);
+      }
+    });
   }
 
   /**
@@ -875,7 +1152,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -930,11 +1207,66 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateGfsPlayState(isPlaying);
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de Météo-France / AEMET AROME en la UI
+   */
+  updateAromePlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('arome-step-slider');
+    const maxPill = document.getElementById('arome-max-pill');
+    const btnTotal = document.getElementById('arome-btn-total');
+    const btnInterval = document.getElementById('arome-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.textContent = `Máx: ${maxVal !== undefined ? maxVal : '--'} mm`;
+    }
+
+    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
+    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
+      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
+      this.predictionBannerExactTime.textContent = formattedInstant;
+    }
+    if (this.predictionBannerModel) {
+      this.predictionBannerModel.textContent = `AROME HD (+${currentStep}h)`;
+    }
+    if (this.predictionBannerMode) {
+      const modeText = currentType === 'total' ? 'Acumulado Total' : 'Intervalo 1h';
+      this.predictionBannerMode.textContent = modeText;
+    }
+
+    // Visibilidad del banner: visible si alguna capa de predicción está activa
+    if (this.predictionBanner) {
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
+    }
+
+    this.updateAromePlayState(isPlaying);
   }
 
   /**
@@ -965,6 +1297,27 @@ export class UIManager {
     const playBtn = document.getElementById('gfs-play-btn');
     const playText = document.getElementById('gfs-play-text');
     const playIcon = document.getElementById('gfs-play-icon');
+
+    if (playBtn && playText && playIcon) {
+      if (isPlaying) {
+        playBtn.classList.add('playing');
+        playText.textContent = 'Pausa';
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        playBtn.classList.remove('playing');
+        playText.textContent = 'Animar';
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
+  }
+
+  /**
+   * Actualiza el estado visual del botón Play/Pausa de AROME
+   */
+  updateAromePlayState(isPlaying) {
+    const playBtn = document.getElementById('arome-play-btn');
+    const playText = document.getElementById('arome-play-text');
+    const playIcon = document.getElementById('arome-play-icon');
 
     if (playBtn && playText && playIcon) {
       if (isPlaying) {

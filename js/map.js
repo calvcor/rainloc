@@ -115,6 +115,16 @@ export class MapManager {
       }
     });
 
+    // Escuchar cambios en el modo de color del sistema (claro/oscuro) para adaptar el mapa base Esri por defecto
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (this.currentBasemapId === 'esriCanvas' || this.currentBasemapId === 'esriDarkCanvas') {
+          const newBasemapId = e.matches ? 'esriDarkCanvas' : 'esriCanvas';
+          this.switchBasemap(newBasemapId);
+        }
+      });
+    }
+
     return this.map;
   }
 
@@ -123,7 +133,7 @@ export class MapManager {
    * (Azul muy oscuro en mapas claros/satélite, blanco en mapa oscuro)
    */
   _getCcaaStyle(basemapId = null) {
-    const activeId = basemapId || this.currentBasemapId || StorageManager.load().basemapId || 'ignBase';
+    const activeId = basemapId || this.currentBasemapId || StorageManager.load().basemapId || StorageManager.getDefaultBasemapId();
     const isDarkMap = activeId === 'esriDarkCanvas';
 
     return {
@@ -195,12 +205,13 @@ export class MapManager {
   }
 
   /**
-   * Configura las capas base de teselas (IGN, Esri, OSM) y restaura la preferencia guardada
+   * Configura las capas base de teselas (Esri, IGN, OSM) y restaura la preferencia guardada o el modo del sistema
    */
   _setupBaseLayers() {
     let defaultLayer = null;
+    const systemDefaultId = StorageManager.getDefaultBasemapId();
     const savedPrefs = StorageManager.load();
-    const savedBasemapId = savedPrefs.basemapId;
+    const savedBasemapId = savedPrefs.basemapId || systemDefaultId;
 
     Object.values(CONFIG.basemaps).forEach((bm) => {
       const tileLayer = L.tileLayer(bm.url, {
@@ -212,22 +223,21 @@ export class MapManager {
       this.baseLayers[bm.name] = tileLayer;
       this.layerNameToId[bm.name] = bm.id;
 
-      // Si coincide con el guardado en localStorage o es el predeterminado
+      // Si coincide con el guardado en localStorage o con el predeterminado del sistema
       const isSavedActive = (savedBasemapId && bm.id === savedBasemapId);
-      const isConfigDefault = (!savedBasemapId && bm.isDefault);
 
-      if ((isSavedActive || isConfigDefault) && !defaultLayer) {
+      if (isSavedActive && !defaultLayer) {
         defaultLayer = tileLayer;
         this.currentBasemapId = bm.id;
         tileLayer.addTo(this.map);
       }
     });
 
-    // Si ninguna fue marcada, usar la primera
+    // Si ninguna fue marcada, usar el predeterminado según el sistema
     if (!defaultLayer && Object.values(this.baseLayers).length > 0) {
-      const firstEntry = Object.entries(this.baseLayers)[0];
-      defaultLayer = firstEntry[1];
-      this.currentBasemapId = this.layerNameToId[firstEntry[0]];
+      const targetBm = Object.values(CONFIG.basemaps).find(b => b.id === systemDefaultId) || Object.values(CONFIG.basemaps)[0];
+      defaultLayer = this.baseLayers[targetBm.name];
+      this.currentBasemapId = targetBm.id;
       defaultLayer.addTo(this.map);
     }
 
@@ -237,6 +247,27 @@ export class MapManager {
       {},
       { position: 'topright', collapsed: true }
     ).addTo(this.map);
+  }
+
+  /**
+   * Cambia programáticamente el mapa base activo y actualiza los estilos dependientes
+   * @param {string} basemapId
+   */
+  switchBasemap(basemapId) {
+    const targetBm = Object.values(CONFIG.basemaps).find(b => b.id === basemapId);
+    if (!targetBm || !this.baseLayers[targetBm.name]) return;
+
+    Object.values(this.baseLayers).forEach(layer => {
+      if (this.map.hasLayer(layer)) {
+        this.map.removeLayer(layer);
+      }
+    });
+
+    const newLayer = this.baseLayers[targetBm.name];
+    this.map.addLayer(newLayer);
+    this.currentBasemapId = basemapId;
+    StorageManager.setBasemap(basemapId);
+    this.updateCcaaStyle(basemapId);
   }
 
   /**

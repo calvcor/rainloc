@@ -31,7 +31,7 @@ COPY ccaa.geojson ./ccaa.geojson
 WORKDIR /app/backend
 
 # Crear directorios de datos y cachés
-RUN mkdir -p data/radar_cache data/ecmwf_cache data/gfs_cache
+RUN mkdir -p data/radar_cache data/ecmwf_cache data/gfs_cache data/arome_cache
 
 EXPOSE 8000
 

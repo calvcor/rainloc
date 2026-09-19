@@ -11,12 +11,14 @@ DATA_DIR = BACKEND_DIR / "data"
 RADAR_CACHE_DIR = DATA_DIR / "radar_cache"
 ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
 GFS_CACHE_DIR = DATA_DIR / "gfs_cache"
+AROME_CACHE_DIR = DATA_DIR / "arome_cache"
 
 # Asegurar directorios
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GFS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+AROME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Catálogo de radares españoles (estaciones individuales en openradar-24h)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
@@ -76,13 +78,21 @@ try:
 
         # ECMWF IFS Open Data
         ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
-        ECMWF_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos
+        ECMWF_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        ECMWF_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
         ECMWF_MAX_STEPS: int = 240  # Pasos hasta +240h (10 días)
 
         # NOAA GFS (Global Forecast System) Open Data
         GFS_CACHE_DIR: Path = GFS_CACHE_DIR
-        GFS_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos
+        GFS_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        GFS_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
         GFS_MAX_STEPS: int = 384  # Pasos hasta +384h (16 días)
+
+        # Météo-France / AEMET AROME (High-Resolution Convective Model, ~1.3-2.5km)
+        AROME_CACHE_DIR: Path = AROME_CACHE_DIR
+        AROME_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        AROME_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
+        AROME_MAX_STEPS: int = 48  # Pasos hasta +48h (2 días)
 
         class Config:
             env_file = ".env"
@@ -105,6 +115,7 @@ except ImportError:
         RADAR_CACHE_DIR: Path = RADAR_CACHE_DIR
         ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
         GFS_CACHE_DIR: Path = GFS_CACHE_DIR
+        AROME_CACHE_DIR: Path = AROME_CACHE_DIR
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
@@ -116,8 +127,13 @@ except ImportError:
         RADAR_POLL_INTERVAL_SECONDS: int = int(os.getenv("RADAR_POLL_INTERVAL_SECONDS", "300"))
         RADAR_CACHE_TTL_HOURS: int = 24
         ECMWF_POLL_INTERVAL_SECONDS: int = 1800
+        ECMWF_UPDATING_INTERVAL_SECONDS: int = 300
         ECMWF_MAX_STEPS: int = 240
         GFS_POLL_INTERVAL_SECONDS: int = 1800
+        GFS_UPDATING_INTERVAL_SECONDS: int = 300
         GFS_MAX_STEPS: int = 384
+        AROME_POLL_INTERVAL_SECONDS: int = 1800
+        AROME_UPDATING_INTERVAL_SECONDS: int = 300
+        AROME_MAX_STEPS: int = 48
 
 settings = Settings()

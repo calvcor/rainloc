@@ -10,22 +10,28 @@ from app.services.radar_worker import radar_service
 from app.services.lightning_service import lightning_service
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
+from app.services.arome_worker import arome_worker
 
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos y modelos NWP (ECMWF, GFS)."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos y modelos NWP (ECMWF, GFS, AROME)."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
         self._radar_task: Optional[asyncio.Task] = None
         self._ecmwf_task: Optional[asyncio.Task] = None
         self._gfs_task: Optional[asyncio.Task] = None
+        self._arome_task: Optional[asyncio.Task] = None
         self._running: bool = False
         self.aemet_interval: int = settings.AEMET_REFRESH_INTERVAL_SECONDS
         self.radar_interval: int = settings.RADAR_POLL_INTERVAL_SECONDS
         self.ecmwf_interval: int = getattr(settings, "ECMWF_POLL_INTERVAL_SECONDS", 1800)
+        self.ecmwf_updating_interval: int = getattr(settings, "ECMWF_UPDATING_INTERVAL_SECONDS", 300)
         self.gfs_interval: int = getattr(settings, "GFS_POLL_INTERVAL_SECONDS", 1800)
+        self.gfs_updating_interval: int = getattr(settings, "GFS_UPDATING_INTERVAL_SECONDS", 300)
+        self.arome_interval: int = getattr(settings, "AROME_POLL_INTERVAL_SECONDS", 1800)
+        self.arome_updating_interval: int = getattr(settings, "AROME_UPDATING_INTERVAL_SECONDS", 300)
 
     async def _aemet_loop(self):
         try:
@@ -69,7 +75,12 @@ class BackgroundScheduler:
 
         while self._running:
             try:
-                await asyncio.sleep(self.ecmwf_interval)
+                meta = ecmwf_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.ecmwf_interval if is_complete else self.ecmwf_updating_interval
+
+                logger.debug(f"Scheduler ECMWF: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
                 if self._running:
                     await ecmwf_worker.sync_ecmwf_forecast()
             except asyncio.CancelledError:
@@ -86,13 +97,40 @@ class BackgroundScheduler:
 
         while self._running:
             try:
-                await asyncio.sleep(self.gfs_interval)
+                meta = gfs_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.gfs_interval if is_complete else self.gfs_updating_interval
+
+                logger.debug(f"Scheduler GFS: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
                 if self._running:
                     await gfs_worker.sync_gfs_forecast()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error en bucle de NOAA GFS: {e}")
+
+    async def _arome_loop(self):
+        # Primera comprobación y sincronización de AROME al iniciar
+        try:
+            await arome_worker.sync_arome_forecast()
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando AROME: {e}")
+
+        while self._running:
+            try:
+                meta = arome_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.arome_interval if is_complete else self.arome_updating_interval
+
+                logger.debug(f"Scheduler AROME: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
+                if self._running:
+                    await arome_worker.sync_arome_forecast()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de AROME: {e}")
 
     def start(self):
         if not self._running:
@@ -101,11 +139,12 @@ class BackgroundScheduler:
             self._radar_task = asyncio.create_task(self._radar_loop())
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
+            self._arome_task = asyncio.create_task(self._arome_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + ECMWF IFS + NOAA GFS).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + ECMWF IFS + NOAA GFS + AROME).")
 
     def stop(self):
         if self._running:
@@ -118,6 +157,8 @@ class BackgroundScheduler:
                 self._ecmwf_task.cancel()
             if self._gfs_task and not self._gfs_task.done():
                 self._gfs_task.cancel()
+            if self._arome_task and not self._arome_task.done():
+                self._arome_task.cancel()
             lightning_service.stop()
             logger.info("BackgroundScheduler detenido.")
 

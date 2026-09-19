@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -20,6 +20,7 @@ export class LayerManager {
     this.radarEventSource = null;
     this.ecmwfEventSource = null;
     this.gfsEventSource = null;
+    this.aromeEventSource = null;
     this.lightningGroup = L.layerGroup();
     this.currentRadarMode = 'composite';
 
@@ -44,6 +45,17 @@ export class LayerManager {
     this.currentGfsOverlay = null;
     this._gfsStepRequestId = 0;
     this._gfsImageCache = new Map();
+
+    // Météo-France / AEMET AROME NWP Model State
+    this.currentAromeStep = 1;
+    this.currentAromeType = 'total'; // 'total' | 'interval'
+    this.aromeMetadata = null;
+    this.aromePlaybackInterval = null;
+    this.isAromePlaying = false;
+    this.aromeCanvasData = null;
+    this.currentAromeOverlay = null;
+    this._aromeStepRequestId = 0;
+    this._aromeImageCache = new Map();
   }
 
   /**
@@ -72,6 +84,9 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el modelo NOAA GFS (aviso reactivo de nuevos pasos)
     this._startGfsSSE();
+
+    // Iniciar conexión SSE en tiempo real para el modelo AROME (aviso reactivo de nuevos pasos)
+    this._startAromeSSE();
 
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
@@ -146,7 +161,10 @@ export class LayerManager {
     else if (def.id === 'gfs_0p25') {
       this._loadGfsLayer(layerGroup, opacity);
     }
-    else if (def.id.startsWith('arome') || def.id.startsWith('icon')) {
+    else if (def.id === 'arome_precip') {
+      this._loadAromeLayer(layerGroup, opacity);
+    }
+    else if (def.id.startsWith('icon')) {
       const demoModel = L.rectangle([[38.5, -1.2], [40.2, 0.4]], {
         color: def.color,
         weight: 1.5,
@@ -224,6 +242,9 @@ export class LayerManager {
       if (this.isGfsPlaying) {
         this.pauseGfsPlayback();
       }
+      if (this.isAromePlaying) {
+        this.pauseAromePlayback();
+      }
 
       // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
       CONFIG.overlayLayers.realtime.forEach(def => {
@@ -279,6 +300,9 @@ export class LayerManager {
             if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
               this.pauseGfsPlayback();
             }
+            if (p.id === 'arome_precip' && this.isAromePlaying) {
+              this.pauseAromePlayback();
+            }
           }
         });
 
@@ -298,6 +322,9 @@ export class LayerManager {
         if (layerId === 'gfs_0p25' && this.isGfsPlaying) {
           this.pauseGfsPlayback();
         }
+        if (layerId === 'arome_precip' && this.isAromePlaying) {
+          this.pauseAromePlayback();
+        }
       }
       return;
     }
@@ -315,6 +342,9 @@ export class LayerManager {
           }
           if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
             this.pauseGfsPlayback();
+          }
+          if (p.id === 'arome_precip' && this.isAromePlaying) {
+            this.pauseAromePlayback();
           }
         });
 
@@ -1076,6 +1106,304 @@ export class LayerManager {
     }
   }
 
+  // =========================================================================
+  // Météo-France / AEMET AROME (1.3 km) Pipeline & Interactivity
+  // =========================================================================
+
+  /**
+   * Genera una URL estable para la imagen de un paso de AROME, aprovechando el caché del navegador
+   */
+  _getAromeImageUrl(step, type) {
+    const runId = (this.aromeMetadata && (this.aromeMetadata.run_id || this.aromeMetadata.run_timestamp || this.aromeMetadata.cycle_str)) || '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/arome/image?step=${step}&type=${type}${runParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de AROME en la memoria del navegador para transiciones instantáneas y fluidas
+   */
+  _preloadAromeSteps(currentStep, type) {
+    if (!this.aromeMetadata || !this.aromeMetadata.available_steps) return;
+    const steps = this.aromeMetadata.available_steps;
+    const idx = steps.indexOf(currentStep);
+    if (idx === -1) return;
+
+    // Precargar los siguientes 3 pasos y el anterior
+    const stepsToPreload = [];
+    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
+    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
+    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
+    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
+
+    const bbox = this.aromeMetadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+    const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+
+    stepsToPreload.forEach(step => {
+      for (const t of [type, (type === 'total' ? 'interval' : 'total')]) {
+        const key = `${t}_${step}`;
+        if (!this._aromeImageCache.has(key)) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const imgUrl = this._getAromeImageUrl(step, t);
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(img, 0, 0);
+              const stepInfo = (this.aromeMetadata.steps || []).find(s => s.step === step);
+              const validText = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+              this._aromeImageCache.set(key, {
+                img: img,
+                canvasData: {
+                  ctx: ctx,
+                  width: img.naturalWidth,
+                  height: img.naturalHeight,
+                  bounds: bounds,
+                  step: step,
+                  type: t,
+                  validText: validText
+                }
+              });
+            } catch (e) {
+              // Ignore canvas context errors
+            }
+          };
+          img.src = imgUrl;
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo AROME con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadAromeLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.aromeMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/arome/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.aromeMetadata = metadata;
+        this._aromeImageCache.clear();
+      }
+
+      const metadata = this.aromeMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('arome_precip', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      // Si el paso actual no está entre los disponibles, seleccionar el primero
+      if (!availSteps.includes(this.currentAromeStep)) {
+        this.currentAromeStep = availSteps[0];
+      }
+
+      const step = this.currentAromeStep;
+      const type = this.currentAromeType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI de inmediato
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('arome_precip', formatAromeTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateAromePlayerUI) {
+        this.uiManager.updateAromePlayerUI(metadata, step, type, this.isAromePlaying);
+      }
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentAromeBounds = bounds;
+
+      const cacheKey = `${type}_${step}`;
+      const imgUrl = this._getAromeImageUrl(step, type);
+      const requestId = ++this._aromeStepRequestId;
+
+      // Si ya tenemos los datos de canvas en caché, actualizarlos de inmediato para el cursor inspector
+      const cached = this._aromeImageCache.get(cacheKey);
+      if (cached && cached.canvasData) {
+        this.aromeCanvasData = cached.canvasData;
+      }
+
+      // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
+      const swapOverlay = () => {
+        if (requestId !== this._aromeStepRequestId) return; // Petición obsoleta descartada
+
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'arome-raster-overlay'
+        });
+
+        // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentAromeOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentAromeOverlay = newOverlay;
+
+        // Disparar precarga de pasos contiguos
+        this._preloadAromeSteps(step, type);
+      };
+
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = () => {
+        if (requestId !== this._aromeStepRequestId) return;
+
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = offscreenImg.naturalWidth;
+          canvas.height = offscreenImg.naturalHeight;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(offscreenImg, 0, 0);
+          const canvasData = {
+            ctx: ctx,
+            width: offscreenImg.naturalWidth,
+            height: offscreenImg.naturalHeight,
+            bounds: bounds,
+            step: step,
+            type: type,
+            validText: timeLabel
+          };
+          this.aromeCanvasData = canvasData;
+          this._aromeImageCache.set(cacheKey, {
+            img: offscreenImg,
+            canvasData: canvasData
+          });
+        } catch (err) {
+          console.warn('Canvas raster AROME inaccesible para lectura local:', err);
+        }
+
+        swapOverlay();
+      };
+
+      offscreenImg.onerror = () => {
+        if (requestId !== this._aromeStepRequestId) return;
+        console.warn(`La imagen AROME para paso +${step}h no pudo ser cargada.`);
+      };
+
+      offscreenImg.src = imgUrl;
+
+      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
+
+    } catch (err) {
+      console.warn('Error al cargar AROME desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo AROME
+   */
+  setAromeStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentAromeType || 'total';
+    if (this.currentAromeStep === parsedStep && this.currentAromeType === targetType && this.currentAromeOverlay) {
+      return;
+    }
+    this.currentAromeStep = parsedStep;
+    this.currentAromeType = targetType;
+    this.reloadAromeLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de AROME
+   */
+  setAromeType(type) {
+    if (this.currentAromeType === type && this.currentAromeOverlay) return;
+    this.currentAromeType = type;
+    this.reloadAromeLayer();
+  }
+
+  /**
+   * Recarga la capa AROME con los parámetros activos
+   */
+  reloadAromeLayer(forceMetaFetch = false) {
+    const aromeGroup = this.layers['arome_precip'];
+    if (!aromeGroup) return;
+    const opacity = (this.layerStates['arome_precip'] && this.layerStates['arome_precip'].opacity) || 0.70;
+    this._loadAromeLayer(aromeGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de AROME
+   */
+  toggleAromePlayback() {
+    if (this.isAromePlaying) {
+      this.pauseAromePlayback();
+    } else {
+      this.startAromePlayback();
+    }
+  }
+
+  startAromePlayback() {
+    if (this.isAromePlaying) return;
+    this.isAromePlaying = true;
+    if (this.uiManager && this.uiManager.updateAromePlayState) {
+      this.uiManager.updateAromePlayState(true);
+    }
+
+    this.aromePlaybackInterval = setInterval(() => {
+      if (!this.aromeMetadata || !this.aromeMetadata.available_steps || this.aromeMetadata.available_steps.length === 0) {
+        this.pauseAromePlayback();
+        return;
+      }
+
+      const steps = this.aromeMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentAromeStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setAromeStep(steps[nextIdx]);
+    }, 1000);
+  }
+
+  pauseAromePlayback() {
+    this.isAromePlaying = false;
+    if (this.aromePlaybackInterval) {
+      clearInterval(this.aromePlaybackInterval);
+      this.aromePlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateAromePlayState) {
+      this.uiManager.updateAromePlayState(false);
+    }
+  }
+
+  /**
+   * Dispara una sincronización manual inmediata con el backend para buscar nuevas salidas o pasos
+   */
+  async triggerModelSync(modelKey) {
+    const keyMap = {
+      'ecmwf_ifs': 'ecmwf',
+      'ecmwf': 'ecmwf',
+      'gfs_0p25': 'gfs',
+      'gfs': 'gfs',
+      'arome_precip': 'arome',
+      'arome': 'arome'
+    };
+    const apiName = keyMap[modelKey] || 'ecmwf';
+
+    try {
+      await fetch(`${CONFIG.apiBaseUrl}/models/${apiName}/sync`, { method: 'POST' });
+      await new Promise(r => setTimeout(r, 600));
+      if (apiName === 'ecmwf') this.reloadEcmwfLayer(true);
+      else if (apiName === 'gfs') this.reloadGfsLayer(true);
+      else if (apiName === 'arome') this.reloadAromeLayer(true);
+    } catch (e) {
+      console.warn(`Error al forzar sincronización de ${apiName}:`, e);
+    }
+  }
+
   /**
    * Cambia la configuración del radar (compuesto vs único / estación) y actualiza el mapa
    */
@@ -1522,6 +1850,82 @@ export class LayerManager {
     if (this.gfsEventSource) {
       this.gfsEventSource.close();
       this.gfsEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de AROME
+   */
+  _startAromeSSE() {
+    if (this.aromeEventSource) {
+      return;
+    }
+
+    const sseUrl = `${CONFIG.apiBaseUrl}/models/arome/stream`;
+    try {
+      this.aromeEventSource = new EventSource(sseUrl);
+
+      this.aromeEventSource.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'arome_update' || data.event === 'arome_init')) {
+            console.log('🌐 Notificación SSE AROME recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/arome/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.aromeMetadata = metadata;
+              this._aromeImageCache.clear();
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentAromeStep)) {
+                this.currentAromeStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('arome_precip', formatAromeTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateAromePlayerUI) {
+                this.uiManager.updateAromePlayerUI(
+                  metadata,
+                  this.currentAromeStep,
+                  this.currentAromeType || 'total',
+                  this.isAromePlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('arome_precip')) {
+                this.reloadAromeLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de AROME:', e);
+        }
+      };
+
+      this.aromeEventSource.onerror = (err) => {
+        console.warn('Stream SSE de AROME desconectado. Intentando reconexión en 5s...', err);
+        this._stopAromeSSE();
+        setTimeout(() => this._startAromeSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para AROME:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de AROME
+   */
+  _stopAromeSSE() {
+    if (this.aromeEventSource) {
+      this.aromeEventSource.close();
+      this.aromeEventSource = null;
     }
   }
 
