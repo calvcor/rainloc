@@ -69,11 +69,15 @@ async def get_ecmwf_image(
             detail=f"Imagen para el paso +{step}h ({type}) no encontrada o aún no generada."
         )
 
+    cur_cycle = ecmwf_worker.current_manifest.get("cycle_str") if ecmwf_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
     return FileResponse(
         img_path,
         media_type="image/png",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": cache_control,
             "Access-Control-Allow-Origin": "*"
         }
     )
@@ -190,11 +194,15 @@ async def get_gfs_image(
             detail=f"Imagen GFS para el paso +{step}h ({type}) no encontrada o aún no generada."
         )
 
+    cur_cycle = gfs_worker.current_manifest.get("cycle_str") if gfs_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
     return FileResponse(
         img_path,
         media_type="image/png",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": cache_control,
             "Access-Control-Allow-Origin": "*"
         }
     )
@@ -311,11 +319,15 @@ async def get_arome_image(
             detail=f"Imagen AROME para el paso +{step}h ({type}) no encontrada o aún no generada."
         )
 
+    cur_cycle = arome_worker.current_manifest.get("cycle_str") if arome_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
     return FileResponse(
         img_path,
         media_type="image/png",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": cache_control,
             "Access-Control-Allow-Origin": "*"
         }
     )

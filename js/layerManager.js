@@ -620,9 +620,13 @@ export class LayerManager {
    * Genera una URL estable para la imagen de un paso de ECMWF, aprovechando el caché del navegador
    */
   _getEcmwfImageUrl(step, type) {
-    const runId = (this.ecmwfMetadata && (this.ecmwfMetadata.run_id || this.ecmwfMetadata.run_timestamp)) || '';
+    const meta = this.ecmwfMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
     const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
-    return `${CONFIG.apiBaseUrl}/models/ecmwf/image?step=${step}&type=${type}${runParam}`;
+    return `${CONFIG.apiBaseUrl}/models/ecmwf/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
   }
 
   /**
@@ -896,9 +900,13 @@ export class LayerManager {
    * Genera una URL estable para la imagen de un paso de GFS, aprovechando el caché del navegador
    */
   _getGfsImageUrl(step, type) {
-    const runId = (this.gfsMetadata && (this.gfsMetadata.run_id || this.gfsMetadata.run_timestamp || this.gfsMetadata.cycle_str)) || '';
+    const meta = this.gfsMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
     const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
-    return `${CONFIG.apiBaseUrl}/models/gfs/image?step=${step}&type=${type}${runParam}`;
+    return `${CONFIG.apiBaseUrl}/models/gfs/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
   }
 
   /**
@@ -1024,7 +1032,7 @@ export class LayerManager {
           opacity: opacity,
           interactive: false,
           crossOrigin: 'anonymous',
-          className: 'gfs-raster-overlay'
+          className: 'ecmwf-raster-overlay'
         });
 
         // Doble búfer: Añadir primero la nueva capa y luego retirar la anterior (cero parpadeo)
@@ -1065,56 +1073,53 @@ export class LayerManager {
             img: offscreenImg,
             canvasData: canvasData
           });
-        } catch (err) {
-          console.warn('Canvas raster GFS inaccesible para lectura local:', err);
+        } catch (e) {
+          // Ignore
         }
 
         swapOverlay();
       };
 
       offscreenImg.onerror = () => {
-        if (requestId !== this._gfsStepRequestId) return;
-        console.warn(`La imagen NOAA GFS para paso +${step}h no pudo ser cargada.`);
+        if (requestId === this._gfsStepRequestId) {
+          swapOverlay();
+        }
       };
 
       offscreenImg.src = imgUrl;
 
-      // Si la imagen ya estaba en memoria (caché del navegador), invocar onload inmediatamente
-      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
-      }
-
     } catch (err) {
-      console.warn('Error al cargar NOAA GFS desde backend API:', err);
+      console.warn('Error cargando capa NOAA GFS:', err);
     }
   }
 
   /**
-   * Cambia el paso temporal o tipo del modelo NOAA GFS
+   * Cambia el paso temporal activo de GFS
    */
-  setGfsStep(step, type = null) {
-    const parsedStep = parseInt(step, 10);
-    const targetType = type || this.currentGfsType || 'total';
-    if (this.currentGfsStep === parsedStep && this.currentGfsType === targetType && this.currentGfsOverlay) {
-      return;
+  setGfsStep(step) {
+    if (this.currentGfsStep === step) return;
+    this.currentGfsStep = step;
+    const gfsGroup = this.layers['gfs_0p25'];
+    if (gfsGroup && this.isLayerOnMap('gfs_0p25')) {
+      const opacity = (this.layerStates['gfs_0p25'] && this.layerStates['gfs_0p25'].opacity) || 0.65;
+      this._loadGfsLayer(gfsGroup, opacity, false);
     }
-    this.currentGfsStep = parsedStep;
-    this.currentGfsType = targetType;
-    this.reloadGfsLayer();
   }
 
   /**
-   * Cambia el tipo de visualización (total vs interval) de GFS
+   * Cambia el modo de visualización de GFS ('total' vs 'interval')
    */
   setGfsType(type) {
-    if (this.currentGfsType === type && this.currentGfsOverlay) return;
+    if (this.currentGfsType === type) return;
     this.currentGfsType = type;
-    this.reloadGfsLayer();
+    this._gfsImageCache.clear();
+    const gfsGroup = this.layers['gfs_0p25'];
+    if (gfsGroup && this.isLayerOnMap('gfs_0p25')) {
+      const opacity = (this.layerStates['gfs_0p25'] && this.layerStates['gfs_0p25'].opacity) || 0.65;
+      this._loadGfsLayer(gfsGroup, opacity, false);
+    }
   }
 
-  /**
-   * Recarga la capa GFS con los parámetros activos
-   */
   reloadGfsLayer(forceMetaFetch = false) {
     const gfsGroup = this.layers['gfs_0p25'];
     if (!gfsGroup) return;
@@ -1122,9 +1127,6 @@ export class LayerManager {
     this._loadGfsLayer(gfsGroup, opacity, forceMetaFetch);
   }
 
-  /**
-   * Inicia o detiene la reproducción automática temporal de NOAA GFS
-   */
   toggleGfsPlayback() {
     if (this.isGfsPlaying) {
       this.pauseGfsPlayback();
@@ -1172,9 +1174,13 @@ export class LayerManager {
    * Genera una URL estable para la imagen de un paso de AROME, aprovechando el caché del navegador
    */
   _getAromeImageUrl(step, type) {
-    const runId = (this.aromeMetadata && (this.aromeMetadata.run_id || this.aromeMetadata.run_timestamp || this.aromeMetadata.cycle_str)) || '';
+    const meta = this.aromeMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
     const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
-    return `${CONFIG.apiBaseUrl}/models/arome/image?step=${step}&type=${type}${runParam}`;
+    return `${CONFIG.apiBaseUrl}/models/arome/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
   }
 
   /**
