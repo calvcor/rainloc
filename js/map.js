@@ -112,6 +112,9 @@ export class MapManager {
         this.currentBasemapId = basemapId;
         StorageManager.setBasemap(basemapId);
         this.updateCcaaStyle(basemapId);
+        if (this.uiManager && this.uiManager.updateActiveBasemapUI) {
+          this.uiManager.updateActiveBasemapUI(basemapId);
+        }
       }
     });
 
@@ -268,6 +271,9 @@ export class MapManager {
     this.currentBasemapId = basemapId;
     StorageManager.setBasemap(basemapId);
     this.updateCcaaStyle(basemapId);
+    if (this.uiManager && this.uiManager.updateActiveBasemapUI) {
+      this.uiManager.updateActiveBasemapUI(basemapId);
+    }
   }
 
   /**

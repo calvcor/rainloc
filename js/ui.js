@@ -25,6 +25,26 @@ export class UIManager {
     this.predictionBannerMode = document.getElementById('prediction-banner-mode');
     this.predictionBannerExactTime = document.getElementById('prediction-banner-exact-time');
     this.layerManager = null;
+
+    // Elementos exclusivos de la versión móvil
+    this.mobileBottomBar = document.getElementById('mobile-bottom-bar');
+    this.btnMobileLayers = document.getElementById('btn-mobile-layers');
+    this.btnMobileSettings = document.getElementById('btn-mobile-settings');
+    this.mobileLayersBadge = document.getElementById('mobile-layers-badge');
+    this.layersDrawer = document.getElementById('left-sidebar-container');
+    this.settingsDrawer = document.getElementById('mobile-settings-drawer');
+    this.drawerBackdrop = document.getElementById('mobile-drawer-backdrop');
+    this.btnCloseLayers = document.getElementById('btn-close-layers-drawer');
+    this.btnCloseSettings = document.getElementById('btn-close-settings-drawer');
+    this.toggleCuencasMobileEl = document.getElementById('toggle-cuencas-mobile');
+    this.toggleCcaaMobileEl = document.getElementById('toggle-ccaa-mobile');
+    this.opacitySliderMobile = document.getElementById('opacity-slider-mobile');
+    this.opacityValMobileEl = document.getElementById('opacity-val-mobile');
+    this.cuencasOpacityContainerMobile = document.getElementById('cuencas-opacity-container-mobile');
+    this.btnResetViewMobile = document.getElementById('btn-reset-view-mobile');
+    this.btnFavoriteBasinMobile = document.getElementById('btn-favorite-basin-mobile');
+    this.favBasinMobileLabel = document.getElementById('fav-basin-mobile-label');
+    this.mobileBasemapSelector = document.getElementById('mobile-basemap-selector');
   }
 
   /**
@@ -35,6 +55,9 @@ export class UIManager {
    */
   init(mapManager, cuencasLayer = null, layerManager = null) {
     this.mapManager = mapManager;
+    if (this.mapManager) {
+      this.mapManager.uiManager = this;
+    }
     this.cuencasLayer = cuencasLayer;
     this.layerManager = layerManager;
     if (this.layerManager) {
@@ -52,6 +75,7 @@ export class UIManager {
 
       this.toggleCuencasEl.addEventListener('change', (e) => {
         const visible = e.target.checked;
+        if (this.toggleCuencasMobileEl) this.toggleCuencasMobileEl.checked = visible;
         this._updateCuencasUIState(visible);
         if (this.cuencasLayer) {
           this.cuencasLayer.setVisible(visible);
@@ -63,6 +87,7 @@ export class UIManager {
       this.toggleCcaaEl.checked = isCcaaVisible;
       this.toggleCcaaEl.addEventListener('change', (e) => {
         const visible = e.target.checked;
+        if (this.toggleCcaaMobileEl) this.toggleCcaaMobileEl.checked = visible;
         if (this.mapManager) {
           this.mapManager.setCcaaVisible(visible);
         }
@@ -77,6 +102,8 @@ export class UIManager {
       this.opacitySlider.addEventListener('input', (e) => {
         const val = e.target.value;
         this.opacityValEl.textContent = `${val}%`;
+        if (this.opacityValMobileEl) this.opacityValMobileEl.textContent = `${val}%`;
+        if (this.opacitySliderMobile) this.opacitySliderMobile.value = val;
         if (this.cuencasLayer) {
           this.cuencasLayer.setFillOpacity(val / 100);
         }
@@ -101,11 +128,17 @@ export class UIManager {
       });
     }
 
+    // Inicializar navegación y ajustes móviles
+    this._initMobileNavigation();
+    this._initMobileSettings();
+    this._renderMobileBasemaps();
+
     // Inicializar listeners de pestañas (Tiempo Real / Predicción)
     this._initTabs(savedPrefs.activeTab || 'realtime');
 
     // Renderizar listas de capas de Tiempo Real y Predicción
     this.renderLayerCards();
+    this.updateMobileLayersBadge();
 
     // Listener de coordenadas en tiempo real al mover el ratón sobre el mapa
     if (this.coordsDisplay && this.mapManager.map) {
@@ -121,13 +154,273 @@ export class UIManager {
     this.renderFavoriteBadge();
   }
 
+  /**
+   * Inicializa los listeners de la barra inferior y drawers móviles
+   */
+  _initMobileNavigation() {
+    if (this.btnMobileLayers) {
+      this.btnMobileLayers.addEventListener('click', () => {
+        if (this.layersDrawer && this.layersDrawer.classList.contains('mobile-open')) {
+          this.closeMobileDrawers();
+        } else {
+          this.openMobileDrawer('layers');
+        }
+      });
+    }
+
+    if (this.btnMobileSettings) {
+      this.btnMobileSettings.addEventListener('click', () => {
+        if (this.settingsDrawer && this.settingsDrawer.classList.contains('mobile-open')) {
+          this.closeMobileDrawers();
+        } else {
+          this.openMobileDrawer('settings');
+        }
+      });
+    }
+
+    if (this.btnCloseLayers) {
+      this.btnCloseLayers.addEventListener('click', () => {
+        this.closeMobileDrawers();
+      });
+    }
+
+    if (this.btnCloseSettings) {
+      this.btnCloseSettings.addEventListener('click', () => {
+        this.closeMobileDrawers();
+      });
+    }
+
+    if (this.drawerBackdrop) {
+      this.drawerBackdrop.addEventListener('click', () => {
+        this.closeMobileDrawers();
+      });
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.closeMobileDrawers();
+      }
+    });
+  }
+
+  /**
+   * Abre un panel/drawer móvil específico
+   * @param {string} drawerName 'layers' | 'settings'
+   */
+  openMobileDrawer(drawerName) {
+    this.closeMobileDrawers();
+
+    if (drawerName === 'layers') {
+      if (this.layersDrawer) {
+        this.layersDrawer.classList.add('mobile-open');
+      }
+      if (this.btnMobileLayers) {
+        this.btnMobileLayers.classList.add('active');
+        this.btnMobileLayers.setAttribute('aria-expanded', 'true');
+      }
+    } else if (drawerName === 'settings') {
+      if (this.settingsDrawer) {
+        this.settingsDrawer.classList.add('mobile-open');
+      }
+      if (this.btnMobileSettings) {
+        this.btnMobileSettings.classList.add('active');
+        this.btnMobileSettings.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    if (this.drawerBackdrop) {
+      this.drawerBackdrop.classList.add('active');
+      this.drawerBackdrop.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  /**
+   * Cierra todos los drawers móviles y retira el backdrop
+   */
+  closeMobileDrawers() {
+    if (this.layersDrawer) {
+      this.layersDrawer.classList.remove('mobile-open');
+    }
+    if (this.settingsDrawer) {
+      this.settingsDrawer.classList.remove('mobile-open');
+    }
+    if (this.btnMobileLayers) {
+      this.btnMobileLayers.classList.remove('active');
+      this.btnMobileLayers.setAttribute('aria-expanded', 'false');
+    }
+    if (this.btnMobileSettings) {
+      this.btnMobileSettings.classList.remove('active');
+      this.btnMobileSettings.setAttribute('aria-expanded', 'false');
+    }
+    if (this.drawerBackdrop) {
+      this.drawerBackdrop.classList.remove('active');
+      this.drawerBackdrop.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  /**
+   * Inicializa los controles del panel de ajustes móvil
+   */
+  _initMobileSettings() {
+    const savedPrefs = StorageManager.load();
+    const isCuencasVisible = (savedPrefs.cuencasVisible !== undefined) ? Boolean(savedPrefs.cuencasVisible) : true;
+    const isCcaaVisible = (savedPrefs.ccaaVisible !== undefined) ? Boolean(savedPrefs.ccaaVisible) : true;
+    const savedOpacityPct = Math.round((savedPrefs.fillOpacity || 0.25) * 100);
+
+    // Toggle Cuencas Móvil
+    if (this.toggleCuencasMobileEl) {
+      this.toggleCuencasMobileEl.checked = isCuencasVisible;
+      this.toggleCuencasMobileEl.addEventListener('change', (e) => {
+        const visible = e.target.checked;
+        if (this.toggleCuencasEl) this.toggleCuencasEl.checked = visible;
+        this._updateCuencasUIState(visible);
+        if (this.cuencasLayer) {
+          this.cuencasLayer.setVisible(visible);
+        }
+      });
+    }
+
+    // Toggle CCAA Móvil
+    if (this.toggleCcaaMobileEl) {
+      this.toggleCcaaMobileEl.checked = isCcaaVisible;
+      this.toggleCcaaMobileEl.addEventListener('change', (e) => {
+        const visible = e.target.checked;
+        if (this.toggleCcaaEl) this.toggleCcaaEl.checked = visible;
+        if (this.mapManager) {
+          this.mapManager.setCcaaVisible(visible);
+        }
+      });
+    }
+
+    // Slider Opacidad Móvil
+    if (this.opacitySliderMobile && this.opacityValMobileEl) {
+      this.opacitySliderMobile.value = savedOpacityPct;
+      this.opacityValMobileEl.textContent = `${savedOpacityPct}%`;
+
+      this.opacitySliderMobile.addEventListener('input', (e) => {
+        const val = e.target.value;
+        this.opacityValMobileEl.textContent = `${val}%`;
+        if (this.opacityValEl) this.opacityValEl.textContent = `${val}%`;
+        if (this.opacitySlider) this.opacitySlider.value = val;
+        if (this.cuencasLayer) {
+          this.cuencasLayer.setFillOpacity(val / 100);
+        }
+      });
+    }
+
+    // Botón Recentrar Móvil
+    if (this.btnResetViewMobile) {
+      this.btnResetViewMobile.addEventListener('click', () => {
+        if (this.mapManager) {
+          this.mapManager.resetView();
+        }
+      });
+    }
+
+    // Botón Cuenca Favorita Móvil
+    if (this.btnFavoriteBasinMobile) {
+      this.btnFavoriteBasinMobile.addEventListener('click', () => {
+        const currentPrefs = StorageManager.load();
+        if (currentPrefs.favoriteBasinId && this.cuencasLayer) {
+          this.cuencasLayer.focusOnBasin(currentPrefs.favoriteBasinId, true);
+        }
+      });
+    }
+  }
+
+  /**
+   * Renderiza el selector interactivo de mapas base en el panel de ajustes móvil
+   */
+  _renderMobileBasemaps() {
+    if (!this.mobileBasemapSelector) return;
+    const currentBasemapId = (this.mapManager && this.mapManager.currentBasemapId) 
+      || StorageManager.load().basemapId 
+      || StorageManager.getDefaultBasemapId();
+
+    const basemapSubtitles = {
+      esriCanvas: 'Lienzo claro minimalista',
+      esriDarkCanvas: 'Modo noche / contraste',
+      ignBase: 'Topográfico oficial España',
+      esriSatellite: 'Imágenes satélite aéreas',
+      osm: 'OpenStreetMap estándar'
+    };
+
+    const basemaps = Object.values(CONFIG.basemaps);
+    this.mobileBasemapSelector.innerHTML = basemaps.map(bm => {
+      const isActive = bm.id === currentBasemapId;
+      const sub = basemapSubtitles[bm.id] || 'Cartografía base';
+      const cleanName = bm.name.split(' (')[0];
+      return `
+        <div class="basemap-card ${isActive ? 'active' : ''}" data-basemap-id="${bm.id}" role="button" tabindex="0">
+          <div class="basemap-card-name">
+            <span>${escapeHtml(cleanName)}</span>
+            ${isActive ? `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            ` : ''}
+          </div>
+          <span class="basemap-card-sub">${escapeHtml(sub)}</span>
+        </div>
+      `;
+    }).join('');
+
+    this.mobileBasemapSelector.querySelectorAll('.basemap-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const bmId = card.getAttribute('data-basemap-id');
+        if (bmId && this.mapManager) {
+          this.mapManager.switchBasemap(bmId);
+          this.updateActiveBasemapUI(bmId);
+        }
+      });
+    });
+  }
+
+  /**
+   * Actualiza el resalte activo en el selector de mapa base móvil
+   * @param {string} activeBasemapId 
+   */
+  updateActiveBasemapUI(activeBasemapId) {
+    if (!this.mobileBasemapSelector) return;
+    this.mobileBasemapSelector.querySelectorAll('.basemap-card').forEach(card => {
+      const bmId = card.getAttribute('data-basemap-id');
+      const isActive = bmId === activeBasemapId;
+      card.classList.toggle('active', isActive);
+      const nameEl = card.querySelector('.basemap-card-name');
+      if (nameEl) {
+        const bm = Object.values(CONFIG.basemaps).find(b => b.id === bmId);
+        const nameText = bm ? bm.name.split(' (')[0] : '';
+        nameEl.innerHTML = `
+          <span>${escapeHtml(nameText)}</span>
+          ${isActive ? `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          ` : ''}
+        `;
+      }
+    });
+  }
+
+  /**
+   * Actualiza el badge indicador en el botón móvil de Capas
+   */
+  updateMobileLayersBadge() {
+    if (!this.mobileLayersBadge) return;
+    const prefs = StorageManager.load();
+    const activeLayers = prefs.activeLayers || {};
+    const count = Object.values(activeLayers).filter(Boolean).length;
+    this.mobileLayersBadge.style.display = count > 0 ? 'block' : 'none';
+  }
+
   setCuencasLayer(cuencasLayer) {
     this.cuencasLayer = cuencasLayer;
     this.renderFavoriteBadge();
 
     // Asegurar que el estado del toggle refleje cuencasLayer.isVisible
-    if (this.toggleCuencasEl && this.cuencasLayer) {
-      this.toggleCuencasEl.checked = this.cuencasLayer.isVisible;
+    if (this.cuencasLayer) {
+      if (this.toggleCuencasEl) this.toggleCuencasEl.checked = this.cuencasLayer.isVisible;
+      if (this.toggleCuencasMobileEl) this.toggleCuencasMobileEl.checked = this.cuencasLayer.isVisible;
       this._updateCuencasUIState(this.cuencasLayer.isVisible);
     }
   }
@@ -139,6 +432,9 @@ export class UIManager {
   _updateCuencasUIState(visible) {
     if (this.opacityContainerEl) {
       this.opacityContainerEl.classList.toggle('disabled', !visible);
+    }
+    if (this.cuencasOpacityContainerMobile) {
+      this.cuencasOpacityContainerMobile.classList.toggle('disabled', !visible);
     }
     if (this.statusBadge) {
       if (visible) {
@@ -234,6 +530,8 @@ export class UIManager {
     if (layerId === 'ecmwf_ifs' && this.predictionBanner) {
       this.predictionBanner.style.display = isActive ? 'flex' : 'none';
     }
+
+    this.updateMobileLayersBadge();
   }
 
   /**
@@ -1361,23 +1659,37 @@ export class UIManager {
 
 
   /**
-   * Actualiza el botón indicador de cuenca favorita en el encabezado
+   * Actualiza el botón indicador de cuenca favorita en el encabezado y en el panel de ajustes móvil
    */
   renderFavoriteBadge() {
-    if (!this.favBtnEl) return;
     const prefs = StorageManager.load();
 
-    if (prefs.favoriteBasinId && prefs.favoriteBasinName) {
-      this.favBtnEl.style.display = 'inline-flex';
-      this.favBtnEl.innerHTML = `
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-        </svg>
-        <span class="fav-label-text">${escapeHtml(prefs.favoriteBasinName)}</span>
-      `;
-      this.favBtnEl.title = `Centrar en cuenca favorita: ${prefs.favoriteBasinName}`;
-    } else {
-      this.favBtnEl.style.display = 'none';
+    // Versión Escritorio
+    if (this.favBtnEl) {
+      if (prefs.favoriteBasinId && prefs.favoriteBasinName) {
+        this.favBtnEl.style.display = 'inline-flex';
+        this.favBtnEl.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span class="fav-label-text">${escapeHtml(prefs.favoriteBasinName)}</span>
+        `;
+        this.favBtnEl.title = `Centrar en cuenca favorita: ${prefs.favoriteBasinName}`;
+      } else {
+        this.favBtnEl.style.display = 'none';
+      }
+    }
+
+    // Versión Móvil
+    if (this.btnFavoriteBasinMobile) {
+      if (prefs.favoriteBasinId && prefs.favoriteBasinName) {
+        this.btnFavoriteBasinMobile.style.display = 'flex';
+        if (this.favBasinMobileLabel) {
+          this.favBasinMobileLabel.textContent = `Centrar en ${prefs.favoriteBasinName}`;
+        }
+      } else {
+        this.btnFavoriteBasinMobile.style.display = 'none';
+      }
     }
   }
 
