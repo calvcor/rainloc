@@ -93,7 +93,7 @@ try:
         ORD_MQTT_HOST: str = "api.openradardata.eumetnet.eu"
         ORD_MQTT_PORT: int = 8884
         ORD_MQTT_USER: str = "everyone"
-        RADAR_POLL_INTERVAL_SECONDS: int = 300  # 5 minutos
+        RADAR_POLL_INTERVAL_SECONDS: int = 60  # 1 minuto
         RADAR_CACHE_TTL_HOURS: int = 24
 
         # ECMWF IFS Open Data
@@ -146,7 +146,7 @@ except ImportError:
         ORD_MQTT_HOST: str = os.getenv("ORD_MQTT_HOST", "api.openradardata.eumetnet.eu")
         ORD_MQTT_PORT: int = int(os.getenv("ORD_MQTT_PORT", "8884"))
         ORD_MQTT_USER: str = os.getenv("ORD_MQTT_USER", "everyone")
-        RADAR_POLL_INTERVAL_SECONDS: int = int(os.getenv("RADAR_POLL_INTERVAL_SECONDS", "300"))
+        RADAR_POLL_INTERVAL_SECONDS: int = int(os.getenv("RADAR_POLL_INTERVAL_SECONDS", "60"))
         RADAR_CACHE_TTL_HOURS: int = 24
         ECMWF_POLL_INTERVAL_SECONDS: int = 1800
         ECMWF_UPDATING_INTERVAL_SECONDS: int = 300

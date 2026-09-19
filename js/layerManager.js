@@ -679,6 +679,9 @@ export class LayerManager {
    */
   async _loadRadarLayer(layerGroup, opacity, forceMetaFetch = false) {
     try {
+      const oldTimeline = this.radarTimeline || [];
+      const wasLive = !this.currentRadarTimestep || (oldTimeline.length > 0 && this.currentRadarTimestep === oldTimeline[oldTimeline.length - 1]?.timestep);
+
       if (!this.radarMetadata || forceMetaFetch || !this.radarTimeline || this.radarTimeline.length === 0) {
         const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
         if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
@@ -690,8 +693,8 @@ export class LayerManager {
       const metadata = this.radarMetadata;
       const timeline = this.radarTimeline || [];
 
-      // Si no hay timestep seleccionado o ya no existe, seleccionar el más reciente (en directo)
-      if (!this.currentRadarTimestep || !timeline.some(t => t.timestep === this.currentRadarTimestep)) {
+      // Si no hay timestep seleccionado, ya no existe, o estábamos en directo (y se forzó metaFetch sin reproducción activa), seleccionar el más reciente
+      if (!this.currentRadarTimestep || !timeline.some(t => t.timestep === this.currentRadarTimestep) || (wasLive && !this.isRadarPlaying && forceMetaFetch)) {
         if (timeline.length > 0) {
           this.currentRadarTimestep = timeline[timeline.length - 1].timestep;
         } else if (metadata.latest_composite && metadata.latest_composite.timestep) {
@@ -2134,20 +2137,54 @@ export class LayerManager {
     try {
       this.radarEventSource = new EventSource(sseUrl);
 
-      this.radarEventSource.onmessage = (event) => {
+      this.radarEventSource.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'radar_update' || data.event === 'radar_init')) {
             console.log('📡 Notificación SSE de radar recibida:', data.timestep);
-            
-            // Actualizar la fecha y hora en el HUD/tarjeta
-            if (data.timestep && this.uiManager && this.uiManager.updateLayerTimestamp) {
-              this.uiManager.updateLayerTimestamp('radar', `Captura: <strong>${formatMadridDateTime(data.timestep)}</strong>`);
-            }
 
-            // Recargar la imagen del radar si la capa está activa en el mapa
-            if (this.layerStates['radar'] && this.layerStates['radar'].active) {
-              this.reloadRadarLayer();
+            const oldTimeline = this.radarTimeline || [];
+            const wasLive = !this.currentRadarTimestep || (oldTimeline.length > 0 && this.currentRadarTimestep === oldTimeline[oldTimeline.length - 1]?.timestep);
+
+            // Refrescar metadatos completos y línea temporal
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.radarMetadata = metadata;
+              this.radarTimeline = metadata.timeline || [];
+
+              // Si el usuario estaba en directo y no en animación, avanzar al nuevo fotograma
+              if (wasLive && !this.isRadarPlaying && this.radarTimeline.length > 0) {
+                this.currentRadarTimestep = this.radarTimeline[this.radarTimeline.length - 1].timestep;
+              } else if (!this.currentRadarTimestep && this.radarTimeline.length > 0) {
+                this.currentRadarTimestep = this.radarTimeline[this.radarTimeline.length - 1].timestep;
+              }
+
+              const currentStep = this.currentRadarTimestep;
+              const currentEntry = this.radarTimeline.find(t => t.timestep === currentStep);
+              const isLive = currentEntry ? (currentEntry.is_latest || currentStep === this.radarTimeline[this.radarTimeline.length - 1]?.timestep) : true;
+              const timeText = currentEntry ? currentEntry.valid_time_local : (metadata.latest_composite ? formatMadridDateTime(metadata.latest_composite.timestep) : (data.valid_time_local || '--'));
+
+              // Actualizar la fecha y hora en el HUD/tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                const liveTag = isLive ? ' <span class="radar-live-badge"><span class="sync-pulse-dot"></span> En Directo</span>' : '';
+                this.uiManager.updateLayerTimestamp('radar', `Captura: <strong>${timeText}</strong>${liveTag}`);
+              }
+
+              // Actualizar reproductor de radar en la UI
+              if (this.uiManager && this.uiManager.updateRadarPlayerUI) {
+                this.uiManager.updateRadarPlayerUI(this.radarTimeline, currentStep, this.isRadarPlaying, isLive);
+              }
+
+              // Recargar la imagen del radar si la capa está activa en el mapa
+              if (this.isLayerOnMap('radar')) {
+                this.reloadRadarLayer(false);
+              }
+
+              // Actualizar áreas de cobertura de radares si están activas
+              if (this.showRadarCoverage) {
+                this._updateRadarCoverageOverlay();
+              }
             }
           }
         } catch (e) {
@@ -2446,7 +2483,10 @@ export class LayerManager {
 
     // Refresco periódico secundario (cada 5 min = 300s por defecto)
     this._refreshTimer = setInterval(() => {
-      console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET...');
+      console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET / Radar...');
+      if (this.layerStates['radar'] && this.layerStates['radar'].active) {
+        this.reloadRadarLayer(true);
+      }
       if (this.layerStates['aemet_warnings'] && this.layerStates['aemet_warnings'].active) {
         this.reloadAemetWarnings();
       }
