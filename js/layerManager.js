@@ -24,6 +24,17 @@ export class LayerManager {
     this.lightningGroup = L.layerGroup();
     this.currentRadarMode = 'composite';
 
+    // Radar 24h Timeline & Player State
+    this.radarTimeline = [];
+    this.currentRadarTimestep = null;
+    this.isRadarPlaying = false;
+    this.radarPlaybackInterval = null;
+    this.radarPlaybackSpeed = 180; // ms per frame
+    this.radarCanvasData = null;
+    this.currentRadarOverlay = null;
+    this._radarStepRequestId = 0;
+    this._radarImageCache = new Map();
+
     // ECMWF IFS NWP Model State
     this.currentEcmwfStep = 3;
     this.currentEcmwfType = 'total'; // 'total' | 'interval'
@@ -535,71 +546,178 @@ export class LayerManager {
   }
 
   /**
-   * Carga la capa de Radar (Compuesto España o Estación Única) mediante L.imageOverlay
+   * Genera la URL para un fotograma de radar con soporte de caché y timesteps
    */
-  async _loadRadarLayer(layerGroup, opacity) {
+  _getRadarImageUrl(timestep) {
+    if (timestep) {
+      return `${CONFIG.apiBaseUrl}/radar/image?mode=composite&timestep=${encodeURIComponent(timestep)}`;
+    }
+    return `${CONFIG.apiBaseUrl}/radar/image?mode=composite&_t=${Date.now()}`;
+  }
+
+  /**
+   * Precarga fotogramas contiguos de radar para reproducción a 60 FPS sin parpadeo
+   */
+  _preloadRadarSteps(currentTimestep) {
+    if (!this.radarTimeline || this.radarTimeline.length === 0) return;
+    const curIdx = this.radarTimeline.findIndex(t => t.timestep === currentTimestep);
+    if (curIdx === -1) return;
+
+    // Precargar 6 siguientes y 3 anteriores
+    const targetIndices = [
+      curIdx + 1, curIdx + 2, curIdx + 3, curIdx + 4, curIdx + 5, curIdx + 6,
+      curIdx - 1, curIdx - 2, curIdx - 3
+    ];
+
+    const bounds = this.currentRadarBounds || [[35.0, -10.0], [44.5, 5.0]];
+
+    targetIndices.forEach(idx => {
+      if (idx >= 0 && idx < this.radarTimeline.length) {
+        const item = this.radarTimeline[idx];
+        const key = item.timestep;
+        if (!this._radarImageCache.has(key)) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const imgUrl = this._getRadarImageUrl(key);
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(img, 0, 0);
+              this._radarImageCache.set(key, {
+                img: img,
+                canvasData: {
+                  ctx: ctx,
+                  width: img.naturalWidth,
+                  height: img.naturalHeight,
+                  bounds: bounds,
+                  timestep: key,
+                  validText: item.valid_time_local
+                }
+              });
+            } catch (e) {
+              // Ignore
+            }
+          };
+          img.src = imgUrl;
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa de Radar con soporte para histórico de 24h, doble búfer y slider temporal
+   */
+  async _loadRadarLayer(layerGroup, opacity, forceMetaFetch = false) {
     try {
-      // 1. Obtener metadatos del radar (con cache busting para forzar metadatos actualizados)
-      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
-      if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
-      const metadata = await metaResp.json();
-      this.radarMetadata = metadata;
-
-      // Actualizar fecha y hora exacta de la captura en la UI (en zona horaria Europe/Madrid)
-      const ts = metadata.latest_composite && metadata.latest_composite.timestep;
-      const timestepText = ts ? formatMadridDateTime(ts) : formatMadridDateTime(new Date());
-
-      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-        this.uiManager.updateLayerTimestamp('radar', `Captura: <strong>${timestepText}</strong>`);
+      if (!this.radarMetadata || forceMetaFetch || !this.radarTimeline || this.radarTimeline.length === 0) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.radarMetadata = metadata;
+        this.radarTimeline = metadata.timeline || [];
       }
 
-      // Determinar bounds e URL de la imagen del compuesto nacional
+      const metadata = this.radarMetadata;
+      const timeline = this.radarTimeline || [];
+
+      // Si no hay timestep seleccionado o ya no existe, seleccionar el más reciente (en directo)
+      if (!this.currentRadarTimestep || !timeline.some(t => t.timestep === this.currentRadarTimestep)) {
+        if (timeline.length > 0) {
+          this.currentRadarTimestep = timeline[timeline.length - 1].timestep;
+        } else if (metadata.latest_composite && metadata.latest_composite.timestep) {
+          this.currentRadarTimestep = metadata.latest_composite.timestep;
+        }
+      }
+
+      const currentStep = this.currentRadarTimestep;
+      const currentEntry = timeline.find(t => t.timestep === currentStep);
+      const isLive = currentEntry ? (currentEntry.is_latest || currentStep === timeline[timeline.length - 1]?.timestep) : true;
+      const timeText = currentEntry ? currentEntry.valid_time_local : (metadata.latest_composite ? formatMadridDateTime(metadata.latest_composite.timestep) : '--');
+
+      // Actualizar timestamp en la tarjeta del radar
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        const liveTag = isLive ? ' <span class="radar-live-badge"><span class="sync-pulse-dot"></span> En Directo</span>' : '';
+        this.uiManager.updateLayerTimestamp('radar', `Captura: <strong>${timeText}</strong>${liveTag}`);
+      }
+
+      // Actualizar reproductor de radar en la UI
+      if (this.uiManager && this.uiManager.updateRadarPlayerUI) {
+        this.uiManager.updateRadarPlayerUI(timeline, currentStep, this.isRadarPlaying, isLive);
+      }
+
       const bounds = metadata.composite_bounds || [[35.0, -10.0], [44.5, 5.0]];
-      const imgUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=composite&_t=${Date.now()}`;
+      this.currentRadarBounds = bounds;
+      this.currentRadarMode = 'composite';
 
-      layerGroup.clearLayers();
+      const cacheKey = currentStep || 'latest';
+      const imgUrl = this._getRadarImageUrl(currentStep);
+      const requestId = ++this._radarStepRequestId;
 
-      // 1. Imagen raster de reflectividad con renderizado nítido de píxeles/celdas
-      const imageOverlay = L.imageOverlay(imgUrl, bounds, {
-        pane: 'radarPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'radar-raster-overlay'
-      });
+      const cached = this._radarImageCache.get(cacheKey);
+      if (cached && cached.canvasData) {
+        this.radarCanvasData = cached.canvasData;
+      }
 
-      imageOverlay.on('error', () => {
-        console.warn('La imagen de radar no pudo ser cargada desde el backend');
-      });
+      const swapOverlay = () => {
+        if (requestId !== this._radarStepRequestId) return;
 
-      // Crear canvas en memoria para consulta ultra-rápida (0ms) en el cliente
-      this.radarCanvasData = null;
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'radarPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'radar-raster-overlay'
+        });
+
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentRadarOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentRadarOverlay = newOverlay;
+
+        this._preloadRadarSteps(currentStep);
+      };
+
       const offscreenImg = new Image();
       offscreenImg.crossOrigin = 'anonymous';
       offscreenImg.onload = () => {
+        if (requestId !== this._radarStepRequestId) return;
+
         try {
           const canvas = document.createElement('canvas');
           canvas.width = offscreenImg.naturalWidth;
           canvas.height = offscreenImg.naturalHeight;
           const ctx = canvas.getContext('2d', { willReadFrequently: true });
           ctx.drawImage(offscreenImg, 0, 0);
-          this.radarCanvasData = {
+          const canvasData = {
             ctx: ctx,
             width: offscreenImg.naturalWidth,
             height: offscreenImg.naturalHeight,
             bounds: bounds,
-            mode: 'composite'
+            mode: 'composite',
+            timestep: currentStep,
+            validText: timeText
           };
+          this.radarCanvasData = canvasData;
+          this._radarImageCache.set(cacheKey, {
+            img: offscreenImg,
+            canvasData: canvasData
+          });
         } catch (err) {
-          console.warn('Canvas raster inaccesible para lectura local:', err);
+          // Ignore canvas context
+        }
+        swapOverlay();
+      };
+      offscreenImg.onerror = () => {
+        if (requestId === this._radarStepRequestId) {
+          swapOverlay();
         }
       };
       offscreenImg.src = imgUrl;
-
-      layerGroup.addLayer(imageOverlay);
-      this.currentRadarOverlay = imageOverlay;
-      this.currentRadarBounds = bounds;
-      this.currentRadarMode = 'composite';
 
     } catch (err) {
       console.warn('Error al cargar radar desde backend API:', err);
@@ -607,13 +725,85 @@ export class LayerManager {
   }
 
   /**
+   * Cambia el fotograma temporal del radar
+   */
+  setRadarTimestep(timestep) {
+    if (this.currentRadarTimestep === timestep && this.currentRadarOverlay) return;
+    this.currentRadarTimestep = timestep;
+    const radarGroup = this.layers['radar'];
+    if (radarGroup && this.isLayerOnMap('radar')) {
+      const opacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 0.75;
+      this._loadRadarLayer(radarGroup, opacity, false);
+    }
+  }
+
+  /**
+   * Salta al fotograma más reciente en directo
+   */
+  setRadarLive() {
+    if (this.radarTimeline && this.radarTimeline.length > 0) {
+      const latest = this.radarTimeline[this.radarTimeline.length - 1];
+      this.setRadarTimestep(latest.timestep);
+    }
+  }
+
+  /**
+   * Inicia / pausa la animación de radar de las últimas 24 horas
+   */
+  toggleRadarPlayback() {
+    if (this.isRadarPlaying) {
+      this.pauseRadarPlayback();
+    } else {
+      this.startRadarPlayback();
+    }
+  }
+
+  startRadarPlayback() {
+    if (this.isRadarPlaying) return;
+    if (!this.radarTimeline || this.radarTimeline.length === 0) return;
+
+    this.isRadarPlaying = true;
+    if (this.uiManager && this.uiManager.updateRadarPlayState) {
+      this.uiManager.updateRadarPlayState(true);
+    }
+
+    // Si estamos en el último paso, empezar desde el principio
+    const curIdx = this.radarTimeline.findIndex(t => t.timestep === this.currentRadarTimestep);
+    if (curIdx === this.radarTimeline.length - 1 || curIdx === -1) {
+      this.setRadarTimestep(this.radarTimeline[0].timestep);
+    }
+
+    this.radarPlaybackInterval = setInterval(() => {
+      if (!this.radarTimeline || this.radarTimeline.length === 0) {
+        this.pauseRadarPlayback();
+        return;
+      }
+
+      const curIdx = this.radarTimeline.findIndex(t => t.timestep === this.currentRadarTimestep);
+      const nextIdx = (curIdx + 1) % this.radarTimeline.length;
+      this.setRadarTimestep(this.radarTimeline[nextIdx].timestep);
+    }, this.radarPlaybackSpeed || 180);
+  }
+
+  pauseRadarPlayback() {
+    this.isRadarPlaying = false;
+    if (this.radarPlaybackInterval) {
+      clearInterval(this.radarPlaybackInterval);
+      this.radarPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateRadarPlayState) {
+      this.uiManager.updateRadarPlayState(false);
+    }
+  }
+
+  /**
    * Recarga la capa de radar manteniendo el grupo y estado de visualización
    */
-  reloadRadarLayer() {
+  reloadRadarLayer(forceMetaFetch = false) {
     const radarGroup = this.layers['radar'];
     if (!radarGroup) return;
     const opacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 0.75;
-    this._loadRadarLayer(radarGroup, opacity);
+    this._loadRadarLayer(radarGroup, opacity, forceMetaFetch);
   }
 
   /**

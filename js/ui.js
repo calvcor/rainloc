@@ -575,6 +575,45 @@ export class UIManager {
     if (layer.id === 'radar') {
       radarExtraControls = `
         <div class="radar-subcontrols">
+          <!-- Reproductor temporal interactivo del Radar (24h de histórico) -->
+          <div class="radar-player-panel" id="radar-player-panel">
+            <div class="radar-player-header">
+              <span class="radar-time-badge" id="radar-time-badge">
+                <span class="radar-live-dot"></span>
+                <span id="radar-time-text">En Directo</span>
+              </span>
+              <button type="button" class="radar-live-btn active" id="radar-live-btn" title="Saltar al radar en directo">
+                Directo
+              </button>
+            </div>
+
+            <!-- Controles Play / Prev / Next -->
+            <div class="radar-player-controls-row">
+              <button type="button" class="radar-step-btn" id="radar-prev-btn" title="Paso anterior (-5 min)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+              </button>
+              <button type="button" class="radar-play-btn" id="radar-play-btn" title="Reproducir bucle de 24h">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" id="radar-play-icon"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span id="radar-play-text">Animar</span>
+              </button>
+              <button type="button" class="radar-step-btn" id="radar-next-btn" title="Paso siguiente (+5 min)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+            </div>
+
+            <!-- Slider de pasos temporales (-24h hasta directo) -->
+            <div class="radar-slider-wrapper">
+              <input type="range" class="slider-glass radar-step-slider" id="radar-step-slider" min="0" max="0" step="1" value="0">
+              <div class="radar-slider-labels">
+                <span>-24h</span>
+                <span>-12h</span>
+                <span>-6h</span>
+                <span>-1h</span>
+                <span>Ahora</span>
+              </div>
+            </div>
+          </div>
+
           <div class="radar-dbz-legend">
             <span class="dbz-legend-title">Reflectividad (dBZ):</span>
             <div class="dbz-bar">
@@ -968,6 +1007,80 @@ export class UIManager {
       });
     });
 
+
+    // Controles de Reproductor Temporal de Radar (24h de histórico)
+    const radarPlayBtn = document.getElementById('radar-play-btn');
+    if (radarPlayBtn) {
+      radarPlayBtn.addEventListener('click', () => {
+        if (this.layerManager) {
+          this.layerManager.toggleRadarPlayback();
+        }
+      });
+    }
+
+    const radarLiveBtn = document.getElementById('radar-live-btn');
+    if (radarLiveBtn) {
+      radarLiveBtn.addEventListener('click', () => {
+        if (this.layerManager) {
+          this.layerManager.pauseRadarPlayback();
+          this.layerManager.setRadarLive();
+        }
+      });
+    }
+
+    const radarPrevBtn = document.getElementById('radar-prev-btn');
+    if (radarPrevBtn) {
+      radarPrevBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.radarTimeline) return;
+        this.layerManager.pauseRadarPlayback();
+        const timeline = this.layerManager.radarTimeline;
+        if (timeline.length === 0) return;
+        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+        const prevIdx = curIdx <= 0 ? 0 : curIdx - 1;
+        this.layerManager.setRadarTimestep(timeline[prevIdx].timestep);
+      });
+    }
+
+    const radarNextBtn = document.getElementById('radar-next-btn');
+    if (radarNextBtn) {
+      radarNextBtn.addEventListener('click', () => {
+        if (!this.layerManager || !this.layerManager.radarTimeline) return;
+        this.layerManager.pauseRadarPlayback();
+        const timeline = this.layerManager.radarTimeline;
+        if (timeline.length === 0) return;
+        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+        const nextIdx = (curIdx === -1 || curIdx >= timeline.length - 1) ? timeline.length - 1 : curIdx + 1;
+        this.layerManager.setRadarTimestep(timeline[nextIdx].timestep);
+      });
+    }
+
+    const radarSlider = document.getElementById('radar-step-slider');
+    if (radarSlider) {
+      const handleRadarSlider = (idx) => {
+        if (!this.layerManager || !this.layerManager.radarTimeline) return;
+        this.layerManager.pauseRadarPlayback();
+        const timeline = this.layerManager.radarTimeline;
+        if (timeline.length === 0) return;
+        const clampedIdx = Math.max(0, Math.min(idx, timeline.length - 1));
+        this.layerManager.setRadarTimestep(timeline[clampedIdx].timestep);
+      };
+
+      radarSlider.addEventListener('input', (e) => {
+        handleRadarSlider(parseInt(e.target.value, 10));
+      });
+
+      radarSlider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!this.layerManager || !this.layerManager.radarTimeline) return;
+        const timeline = this.layerManager.radarTimeline;
+        if (timeline.length === 0) return;
+        const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+        const delta = e.deltaY > 0 ? -1 : 1;
+        const newIdx = Math.max(0, Math.min(curIdx + delta, timeline.length - 1));
+        this.layerManager.pauseRadarPlayback();
+        this.layerManager.setRadarTimestep(timeline[newIdx].timestep);
+      }, { passive: false });
+    }
 
     // Controles de Rayos integrados en el Radar: Toggle de activación
     const radarLightningToggle = document.getElementById('radar-lightning-toggle');
@@ -1423,6 +1536,79 @@ export class UIManager {
         }, 1200);
       }
     });
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de Radar 24h en la UI
+   */
+  updateRadarPlayerUI(timeline, currentTimestep, isPlaying, isLive) {
+    const slider = document.getElementById('radar-step-slider');
+    const timeText = document.getElementById('radar-time-text');
+    const liveDot = document.querySelector('#radar-time-badge .radar-live-dot');
+    const liveBtn = document.getElementById('radar-live-btn');
+
+    if (slider && Array.isArray(timeline) && timeline.length > 0) {
+      slider.min = 0;
+      slider.max = timeline.length - 1;
+      const curIdx = timeline.findIndex(t => t.timestep === currentTimestep);
+      slider.value = curIdx >= 0 ? curIdx : timeline.length - 1;
+      slider.disabled = false;
+    }
+
+    const currentEntry = Array.isArray(timeline) ? timeline.find(t => t.timestep === currentTimestep) : null;
+
+    if (timeText) {
+      if (isLive) {
+        timeText.textContent = currentEntry ? `${currentEntry.valid_time_local} (Directo)` : 'En Directo';
+      } else if (currentEntry) {
+        timeText.textContent = `${currentEntry.valid_time_local} (-${currentEntry.age_text || ''})`;
+      } else {
+        timeText.textContent = currentTimestep || '--';
+      }
+    }
+
+    if (liveDot) {
+      liveDot.style.display = isLive ? 'inline-block' : 'none';
+    }
+
+    if (liveBtn) {
+      if (isLive) {
+        liveBtn.classList.add('active');
+      } else {
+        liveBtn.classList.remove('active');
+      }
+    }
+
+    this.updateRadarPlayState(isPlaying);
+  }
+
+  /**
+   * Actualiza el estado visual del botón play/pause del radar
+   */
+  updateRadarPlayState(isPlaying) {
+    const playBtn = document.getElementById('radar-play-btn');
+    const playIcon = document.getElementById('radar-play-icon');
+    const playText = document.getElementById('radar-play-text');
+
+    if (!playBtn) return;
+
+    if (isPlaying) {
+      playBtn.classList.add('playing');
+      if (playIcon) {
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      }
+      if (playText) {
+        playText.textContent = 'Pausar';
+      }
+    } else {
+      playBtn.classList.remove('playing');
+      if (playIcon) {
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+      if (playText) {
+        playText.textContent = 'Animar';
+      }
+    }
   }
 
   /**

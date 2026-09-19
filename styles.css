@@ -776,7 +776,7 @@ html, body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Sub-controles de Radar (Refresh, dBZ, Rayos) */
+/* Sub-controles de Radar (Refresh, dBZ, Rayos, Player 24h) */
 .radar-subcontrols {
   margin-top: 8px;
   padding-top: 8px;
@@ -786,6 +786,162 @@ html, body {
   gap: 8px;
 }
 
+/* Reproductor temporal de Radar (24h de histórico) */
+.radar-player-panel {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radar-player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.radar-time-badge {
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radar-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+  display: inline-block;
+  animation: radarLivePulse 1.8s infinite;
+}
+
+@keyframes radarLivePulse {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 10px #22c55e; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+.radar-live-btn {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.radar-live-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.radar-live-btn.active {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.25);
+}
+
+.radar-player-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.radar-step-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.radar-step-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.06);
+}
+
+.radar-play-btn {
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+  border: none;
+  color: #ffffff;
+  padding: 4px 14px;
+  height: 28px;
+  border-radius: 14px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+  transition: all var(--transition-fast);
+}
+
+.radar-play-btn:hover {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
+  transform: translateY(-1px);
+}
+
+.radar-play-btn.playing {
+  background: linear-gradient(135deg, #f59e0b, #eab308);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.radar-slider-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.radar-step-slider {
+  width: 100%;
+}
+
+.radar-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.radar-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: #22c55e;
+  font-weight: 600;
+  margin-left: 4px;
+}
 
 .radar-dbz-legend {
   margin-top: 2px;
