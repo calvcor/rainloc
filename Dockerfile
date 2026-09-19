@@ -10,6 +10,7 @@ COPY package.json /usr/share/nginx/html/
 COPY js/ /usr/share/nginx/html/js/
 COPY subsistemas.optimized.geojson /usr/share/nginx/html/
 COPY subsistemas.geojson /usr/share/nginx/html/
+COPY ccaa.geojson /usr/share/nginx/html/
 
 EXPOSE 80
 

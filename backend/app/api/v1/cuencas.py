@@ -48,18 +48,25 @@ def get_ccaa_data() -> Dict[str, Any]:
     if _ccaa_cache is not None:
         return _ccaa_cache
 
-    for candidate in [
+    candidates = [
         getattr(settings, "CCAA_DATA_FILE", None),
         getattr(settings, "CCAA_FILE", None),
+        getattr(settings, "BASE_DIR", Path(".")) / "ccaa.geojson",
+        getattr(settings, "BASE_DIR", Path(".")) / "data" / "ccaa.geojson",
+        Path("/app/ccaa.geojson"),
+        Path.cwd() / "ccaa.geojson",
+        Path.cwd() / "data" / "ccaa.geojson",
+        Path.cwd().parent / "ccaa.geojson",
         Path(__file__).resolve().parent.parent.parent.parent / "ccaa.geojson",
         Path(__file__).resolve().parent.parent.parent.parent / "data" / "ccaa.geojson"
-    ]:
+    ]
+    for candidate in candidates:
         if candidate and candidate.exists():
             try:
                 with open(candidate, "r", encoding="utf-8") as f:
                     _ccaa_cache = json.load(f)
                     return _ccaa_cache
-            except Exception as e:
+            except Exception:
                 pass
 
     raise HTTPException(status_code=404, detail="Archivo GeoJSON de Comunidades Autónomas no encontrado.")

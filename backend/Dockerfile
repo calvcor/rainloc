@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 COPY backend/ ./backend/
 COPY subsistemas.optimized.geojson ./subsistemas.optimized.geojson
 COPY subsistemas.geojson ./subsistemas.geojson
+COPY ccaa.geojson ./ccaa.geojson
 
 WORKDIR /app/backend
 
