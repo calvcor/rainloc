@@ -457,6 +457,7 @@ export class MultiLayerInspector {
       const subsistema = props.Subsistema || `Subsistema ${cuencaFound.feature.id || ""}`;
       const color = CONFIG.systemColors[sistema] || CONFIG.systemColors["Default"] || "#38bdf8";
       const rawSuperf = props["Superf km2"] || props["Area km2"] || props.Superficie;
+      const superfText = rawSuperf ? `${Number(rawSuperf).toLocaleString("es-ES", { maximumFractionDigits: 1 })} km²` : "";
       // Si hay un modelo de predicción activo en el mapa, consultar volumen previsto en cuenca
       const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : null;
       const isModelOnMap = this.layerManager && (this.layerManager.isLayerOnMap("ecmwf_ifs") || this.layerManager.isLayerOnMap("gfs_0p25") || this.layerManager.isLayerOnMap("arome_precip"));
