@@ -2519,17 +2519,18 @@ export class LayerManager {
     const uN = umbrales.naranja ? Number(umbrales.naranja) : null;
     const uR = umbrales.rojo ? Number(umbrales.rojo) : null;
 
-    // Calcular límites Y (incluyendo umbrales relevantes en la escala)
-    const rawMax = Math.max(...values, 0.1);
-    const thresholdMax = Math.max(uA || 0, uN || 0, uR || 0);
-    // Escala Y con margen superior para claridad visual
-    let maxY = Math.max(rawMax * 1.25, 0.5);
-    if (thresholdMax > 0 && rawMax >= thresholdMax * 0.4) {
-      maxY = Math.max(maxY, thresholdMax * 1.15);
-    } else if (uA && rawMax >= uA * 0.5) {
-      maxY = Math.max(maxY, uA * 1.2);
+    // Calcular límites Y dinámicos
+    const rawMax = Math.max(...values, 0.05);
+    const rawMin = Math.min(...values);
+    let maxY, minY;
+    if (uA && uA <= rawMax * 1.5) {
+      maxY = Math.max(rawMax * 1.15, uA * 1.05);
+    } else {
+      const span = rawMax - rawMin;
+      const margin = Math.max(span * 0.35, rawMax * 0.1, 0.1);
+      maxY = rawMax + margin;
     }
-    const minY = 0;
+    minY = Math.max(0, rawMin - Math.max((rawMax - rawMin) * 0.15, 0.05));
     const rangeY = maxY - minY || 1;
 
     // Dimensiones del viewBox SVG
@@ -2585,11 +2586,11 @@ export class LayerManager {
       yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
     }
 
-    // Ejes X y Fechas (5 etiquetas equidistantes)
+    // Ejes X y Fechas (4 etiquetas limpias)
     const xLabels = [];
-    const numXMarks = Math.min(6, points.length);
+    const numXMarks = Math.min(4, points.length);
     for (let k = 0; k < numXMarks; k++) {
-      const idx = Math.round((k / (numXMarks - 1)) * (points.length - 1));
+      const idx = Math.round((k / Math.max(1, numXMarks - 1)) * (points.length - 1));
       const pt = points[idx];
       const x = pad.left + (idx / Math.max(1, points.length - 1)) * innerW;
       const d = pt.fecha ? new Date(pt.fecha) : new Date();
@@ -2597,8 +2598,8 @@ export class LayerManager {
       const dateLabel = `${d.getDate()}/${d.getMonth() + 1}`;
       xLabels.push(`
         <g transform="translate(${x.toFixed(1)}, ${height - pad.bottom + 14})">
-          <text x="0" y="0" fill="#94a3b8" font-size="9.5" text-anchor="middle">${timeLabel}</text>
-          <text x="0" y="11" fill="#64748b" font-size="8.5" text-anchor="middle">${dateLabel}</text>
+          <text x="0" y="0" fill="#cbd5e1" font-size="10.5" font-weight="600" text-anchor="middle">${timeLabel}</text>
+          <text x="0" y="12" fill="#94a3b8" font-size="9" text-anchor="middle">${dateLabel}</text>
         </g>
       `);
     }
@@ -3409,9 +3410,17 @@ export class LayerManager {
     const rawMax = Math.max(...values, 0.1);
     const rawMin = Math.min(...values);
 
-    // Escala Y
-    let maxY = capNMN ? Math.max(capNMN * 1.08, rawMax * 1.15) : rawMax * 1.25;
-    let minY = Math.max(0, rawMin > 0 && (rawMax - rawMin) < rawMax * 0.3 ? rawMin * 0.85 : 0);
+    // Escala Y adaptativa: si capNMN es relevante (< 1.35x de rawMax), lo mostramos; de lo contrario ajustamos al rango de datos con margen
+    let maxY, minY;
+    if (capNMN && capNMN <= rawMax * 1.35) {
+      maxY = Math.max(rawMax * 1.1, capNMN * 1.05);
+      minY = Math.max(0, rawMin - Math.max((rawMax - rawMin) * 0.2, 0.1));
+    } else {
+      const span = rawMax - rawMin;
+      const margin = Math.max(span * 0.35, rawMax * 0.08, 0.1);
+      maxY = rawMax + margin;
+      minY = Math.max(0, rawMin - margin * 0.8);
+    }
     const rangeY = maxY - minY || 1;
 
     const width = 720;
@@ -3458,11 +3467,11 @@ export class LayerManager {
       yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
     }
 
-    // Ejes X y Fechas (5 etiquetas equidistantes)
+    // Ejes X y Fechas (4 etiquetas limpias)
     const xLabels = [];
-    const numXMarks = Math.min(6, points.length);
+    const numXMarks = Math.min(4, points.length);
     for (let k = 0; k < numXMarks; k++) {
-      const idx = Math.round((k / (numXMarks - 1)) * (points.length - 1));
+      const idx = Math.round((k / Math.max(1, numXMarks - 1)) * (points.length - 1));
       const pt = points[idx];
       const x = pad.left + (idx / Math.max(1, points.length - 1)) * innerW;
       const d = pt.fecha ? new Date(pt.fecha) : new Date();
@@ -3470,8 +3479,8 @@ export class LayerManager {
       const dateLabel = `${d.getDate()}/${d.getMonth() + 1}`;
       xLabels.push(`
         <g transform="translate(${x.toFixed(1)}, ${height - pad.bottom + 14})">
-          <text x="0" y="0" fill="#94a3b8" font-size="9.5" text-anchor="middle">${timeLabel}</text>
-          <text x="0" y="11" fill="#64748b" font-size="8.5" text-anchor="middle">${dateLabel}</text>
+          <text x="0" y="0" fill="#cbd5e1" font-size="10.5" font-weight="600" text-anchor="middle">${timeLabel}</text>
+          <text x="0" y="12" fill="#94a3b8" font-size="9" text-anchor="middle">${dateLabel}</text>
         </g>
       `);
     }
