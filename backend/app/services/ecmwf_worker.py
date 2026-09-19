@@ -521,8 +521,38 @@ class ECMWFWorker:
         except Exception as e:
             logger.warning(f"ECMWF: Error purgando ciclos anteriores: {e}")
 
+    def _is_remote_cycle_available(self, c_dt: datetime) -> bool:
+        """Comprueba si el primer paso (+3h) de un ciclo específico ya está disponible en AWS o Azure."""
+        cycle_str = c_dt.strftime("%Y%m%d_%Hz")
+        cycle_dir = self.cache_dir / cycle_str
+        if (cycle_dir / "manifest.json").exists():
+            return True
+
+        with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tf:
+            tmp_path = Path(tf.name)
+        try:
+            for src in DATA_SOURCES:
+                try:
+                    c = Client(source=src, maximum_retries=1, retry_after=1)
+                    c.retrieve(
+                        date=c_dt.date(),
+                        time=c_dt.hour,
+                        step=3,
+                        type="fc",
+                        param="tp",
+                        target=str(tmp_path)
+                    )
+                    if tmp_path.exists() and tmp_path.stat().st_size > 1000:
+                        return True
+                except Exception:
+                    pass
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+        return False
+
     def _detect_latest_cycle(self) -> Optional[datetime]:
-        """Detecta la fecha y hora del ciclo más reciente publicado en ECMWF Open Data (vía AWS S3 / Azure)."""
+        """Detecta la fecha y hora del ciclo más reciente publicado en ECMWF Open Data (vía AWS / Azure)."""
         now = datetime.now(timezone.utc)
         candidate_cycles = []
         for d in range(3):
@@ -534,19 +564,9 @@ class ECMWFWorker:
 
         for c_dt in candidate_cycles:
             cycle_str = c_dt.strftime("%Y%m%d_%Hz")
-            d_str = c_dt.strftime("%Y%m%d")
-            hh_str = f"{c_dt.hour:02d}"
-
-            # Comprobación directa y ultrarrápida en AWS S3 para evitar 429 en el portal central
-            aws_index_url = f"https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/{d_str}/{hh_str}z/ifs/0p25/oper/{d_str}{hh_str}0000-3h-oper-fc.index"
-            try:
-                req = urllib.request.Request(aws_index_url, headers={"User-Agent": "RainLoc-GIS/1.0"})
-                with urllib.request.urlopen(req, timeout=3) as resp:
-                    if resp.status == 200:
-                        logger.info(f"ECMWF: Ciclo disponible detectado en AWS S3: {cycle_str}")
-                        return c_dt
-            except Exception:
-                pass
+            if self._is_remote_cycle_available(c_dt):
+                logger.info(f"ECMWF: Ciclo disponible detectado: {cycle_str}")
+                return c_dt
 
         # Si no se detecta ciclo remoto accesible, utilizar el más reciente disponible en caché local
         if self.cache_dir.exists():
@@ -706,7 +726,9 @@ class ECMWFWorker:
                 pass
 
         available_steps = set(manifest_data.get("available_steps", []))
-        steps_to_process = [s for s in ECMWF_STEPS if s <= max_steps]
+        # En ECMWF IFS Open Data, las corridas intermedias (06z y 18z) solo llegan hasta +144h
+        max_cycle_step = 144 if latest_dt.hour in (6, 18) else max_steps
+        steps_to_process = [s for s in ECMWF_STEPS if s <= max_cycle_step]
 
         missing_steps = [s for s in steps_to_process if s not in available_steps]
         if not missing_steps:
@@ -832,14 +854,27 @@ class ECMWFWorker:
                     except Exception:
                         pass
 
+        # Actualizar y consolidar estado del manifiesto
+        is_all_done = len(available_steps) >= len(steps_to_process) and len(steps_to_process) > 0
+        manifest_data["available_steps"] = sorted(list(available_steps))
+        manifest_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        manifest_data["status"] = "complete" if is_all_done else ("ready" if len(available_steps) > 0 else "processing")
+        manifest_data["is_complete"] = is_all_done
+
+        # Guardar manifiesto en disco y fijar en memoria
+        with open(manifest_file, "w", encoding="utf-8") as f:
+            json.dump(manifest_data, f, indent=2)
+
+        self.current_manifest = manifest_data
+
         # Purga de ciclos anteriores (Rolling Cache - conserva 2 para stitching)
         self._purge_old_cycles(keep=2)
 
-        if new_steps_downloaded > 0:
+        if new_steps_downloaded > 0 or is_all_done:
             self.notify_ecmwf_update(
                 cycle_str=cycle_str,
                 available_steps=manifest_data.get("available_steps", []),
-                status="ready"
+                status=manifest_data["status"]
             )
 
         elapsed = time.time() - t_start
