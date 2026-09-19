@@ -1526,17 +1526,25 @@ export class LayerManager {
 
       const valStr = pt.value_mm.toFixed(1);
       const iconHtml = `
-        <div class="model-max-marker" title="Pico máximo de precipitación de ${pt.modelName}: ${valStr} mm (+${pt.step}h)">
-          <span class="max-dot"></span>
-          <span class="max-label">🎯 Máx: <span class="max-val">${valStr} mm</span></span>
+        <div class="model-max-marker" title="🎯 Máximo ${pt.modelName}: ${valStr} mm (+${pt.step}h)">
+          <span class="max-target-ping"></span>
+          <svg class="max-target-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="9.5" stroke="#ef4444" stroke-width="2" fill="rgba(15, 23, 42, 0.88)"/>
+            <circle cx="12" cy="12" r="5.5" stroke="#ef4444" stroke-width="1.4" opacity="0.85"/>
+            <circle cx="12" cy="12" r="2.5" fill="#ef4444"/>
+            <line x1="12" y1="1" x2="12" y2="4.5" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="12" y1="19.5" x2="12" y2="23" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="1" y1="12" x2="4.5" y2="12" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="19.5" y1="12" x2="23" y2="12" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
         </div>
       `;
 
       const customIcon = L.divIcon({
         className: 'model-max-marker-container',
         html: iconHtml,
-        iconSize: [110, 26],
-        iconAnchor: [55, 13]
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       });
 
       const marker = L.marker([pt.lat, pt.lon], {
