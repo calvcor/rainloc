@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Optional
 from app.config import settings
+from app.services.saih_service import saih_service
 from app.services.aemet_atom import aemet_atom_service
 from app.services.radar_worker import radar_service
 from app.services.lightning_service import lightning_service
@@ -15,17 +16,19 @@ from app.services.arome_worker import arome_worker
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos y modelos NWP (ECMWF, GFS, AROME)."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME)."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
         self._radar_task: Optional[asyncio.Task] = None
+        self._saih_task: Optional[asyncio.Task] = None
         self._ecmwf_task: Optional[asyncio.Task] = None
         self._gfs_task: Optional[asyncio.Task] = None
         self._arome_task: Optional[asyncio.Task] = None
         self._running: bool = False
         self.aemet_interval: int = settings.AEMET_REFRESH_INTERVAL_SECONDS
         self.radar_interval: int = settings.RADAR_POLL_INTERVAL_SECONDS
+        self.saih_interval: int = 300
         self.ecmwf_interval: int = getattr(settings, "ECMWF_POLL_INTERVAL_SECONDS", 1800)
         self.ecmwf_updating_interval: int = getattr(settings, "ECMWF_UPDATING_INTERVAL_SECONDS", 300)
         self.gfs_interval: int = getattr(settings, "GFS_POLL_INTERVAL_SECONDS", 1800)
@@ -132,11 +135,35 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de AROME: {e}")
 
+    async def _saih_loop(self):
+        # Primera sincronización de SAIH (caudales, embalses y lluvias)
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, saih_service.sync_static_metadata)
+            await loop.run_in_executor(None, saih_service.sync_embalses_metadata)
+            await loop.run_in_executor(None, saih_service.sync_pluvios_metadata)
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando datos SAIH: {e}")
+
+        while self._running:
+            try:
+                await asyncio.sleep(self.saih_interval)
+                if self._running:
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, saih_service.sync_static_metadata)
+                    await loop.run_in_executor(None, saih_service.sync_embalses_metadata)
+                    await loop.run_in_executor(None, saih_service.sync_pluvios_metadata)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de SAIH: {e}")
+
     def start(self):
         if not self._running:
             self._running = True
             self._aemet_task = asyncio.create_task(self._aemet_loop())
             self._radar_task = asyncio.create_task(self._radar_loop())
+            self._saih_task = asyncio.create_task(self._saih_loop())
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
             self._arome_task = asyncio.create_task(self._arome_loop())
@@ -144,7 +171,7 @@ class BackgroundScheduler:
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + ECMWF IFS + NOAA GFS + AROME).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME).")
 
     def stop(self):
         if self._running:
@@ -153,6 +180,8 @@ class BackgroundScheduler:
                 self._aemet_task.cancel()
             if self._radar_task and not self._radar_task.done():
                 self._radar_task.cancel()
+            if self._saih_task and not self._saih_task.done():
+                self._saih_task.cancel()
             if self._ecmwf_task and not self._ecmwf_task.done():
                 self._ecmwf_task.cancel()
             if self._gfs_task and not self._gfs_task.done():

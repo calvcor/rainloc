@@ -437,7 +437,7 @@ class SAIHService:
                 logger.error(f"Error al leer {STATIC_PLUVIOS_FILE}: {e}")
 
     def _is_pluvios_fresh(self) -> bool:
-        if not self._last_pluvios_sync_time:
+        if not self._last_pluvios_sync_time or len(self._pluvios) == 0:
             return False
         return (datetime.now() - self._last_pluvios_sync_time).total_seconds() < SYNC_TTL_SECONDS
 
@@ -486,6 +486,7 @@ class SAIHService:
                     nombre = (item.get("fldTNombre") or "").strip()
                     poblacion = (item.get("fldTPoblacion") or "").strip()
                     provincia = (item.get("fldTProvincia") or "").strip()
+                    subcuenca = (item.get("fldTSubCuenca") or "").strip()
                     id_estacion = str(item.get("idEstacionRemota") or "")
 
                     pluvio_obj = {
@@ -497,15 +498,21 @@ class SAIHService:
                         "lon": round(lon, 6),
                         "poblacion": poblacion,
                         "provincia": provincia,
+                        "subcuenca": subcuenca,
                         "estado": bool(item.get("fldTEstado", True)),
                         "lluvia_1h": lluvia_1h,
+                        "precipitacion_1h": lluvia_1h,
                         "fecha_1h": item.get("fecha_1h"),
                         "lluvia_4h": lluvia_4h,
+                        "precipitacion_4h": lluvia_4h,
                         "fecha_4h": item.get("fecha_4h"),
                         "lluvia_12h": lluvia_12h,
+                        "precipitacion_12h": lluvia_12h,
                         "fecha_12h": item.get("fecha_12h"),
                         "lluvia_24h": lluvia_24h,
+                        "precipitacion_24h": lluvia_24h,
                         "fecha_24h": item.get("fecha_24h"),
+                        "ultima_hora": item.get("fecha_1h") or item.get("fecha_24h") or "",
                         "unidad": "mm",
                     }
                     pluvios.append(pluvio_obj)

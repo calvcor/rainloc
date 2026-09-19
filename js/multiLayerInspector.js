@@ -803,17 +803,47 @@ export class MultiLayerInspector {
           });
 
           if (closestPluvio) {
-            const r1h = closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0;
-            const r4h = closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0;
-            const r12h = closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0;
-            const r24h = closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0;
+            const r1h = closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null
+              ? Number(closestPluvio.lluvia_1h)
+              : (closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0);
+            const r4h = closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null
+              ? Number(closestPluvio.lluvia_4h)
+              : (closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0);
+            const r12h = closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null
+              ? Number(closestPluvio.lluvia_12h)
+              : (closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0);
+            const r24h = closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null
+              ? Number(closestPluvio.lluvia_24h)
+              : (closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0);
 
             let badgeBg = "#38bdf8";
-            if (r1h >= 30 || r4h >= 60) badgeBg = "#ef4444";
-            else if (r1h >= 15 || r4h >= 30) badgeBg = "#f97316";
-            else if (r1h >= 5 || r4h >= 10) badgeBg = "#f59e0b";
+            let badgeText = `${r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : (r1h > 0 ? `${r1h.toFixed(1)} mm (1h)` : '0.0 mm')}`;
+            if (r24h >= 100 || r1h >= 20) {
+              badgeBg = "#ef4444";
+              badgeText = `🔴 ${r24h >= 100 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+            } else if (r24h >= 60 || r1h >= 10) {
+              badgeBg = "#f97316";
+              badgeText = `🟠 ${r24h >= 60 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+            } else if (r24h >= 30 || r1h >= 5) {
+              badgeBg = "#f59e0b";
+              badgeText = `🟡 ${r24h >= 30 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+            } else if (r24h >= 10) {
+              badgeBg = "#0284c7";
+              badgeText = `🔵 ${r24h.toFixed(1)} mm (24h)`;
+            } else if (r24h > 0 || r1h > 0) {
+              badgeBg = "#38bdf8";
+            } else {
+              badgeBg = "#64748b";
+              badgeText = "0.0 mm";
+            }
 
-            const metaLoc = `${closestPluvio.poblacion || '--'} (${closestPluvio.provincia || ''}) · ${closestPluvio.subcuenca || ''}`;
+            const locParts = [];
+            if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
+            if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
+            if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
+            const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
+            const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
+            const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
 
             sections.push({
               type: "lluvia",
@@ -821,7 +851,7 @@ export class MultiLayerInspector {
               headerColor: "#0284c7",
               icon: "🌧️",
               name: `${closestPluvio.nombre}`,
-              badge: `${r1h.toFixed(1)} mm (1h)`,
+              badge: badgeText,
               badgeBg: badgeBg,
               badgeColor: "#ffffff",
               details: `
@@ -845,7 +875,7 @@ export class MultiLayerInspector {
                       <div style="font-size:0.80rem; font-weight:700; color:${r24h > 0 ? '#38bdf8' : '#e2e8f0'};">${r24h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
                     </div>
                   </div>
-                  <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'}</div>
+                  <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'} ${horaText}</div>
                 </div>
               `
             });

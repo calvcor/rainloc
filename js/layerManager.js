@@ -372,6 +372,8 @@ export class LayerManager {
       // Efectos secundarios de capas SAIH y Radar
       if (layerId === 'saih_caudales') {
         if (active) {
+          const op = this.layerStates['saih_caudales'].opacity || 0.95;
+          this._loadCaudalesLayer(this.layers['saih_caudales'], op);
           if (!this._caudalesPollInterval) {
             this._caudalesPollInterval = setInterval(() => {
               if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
@@ -384,6 +386,46 @@ export class LayerManager {
           if (this._caudalesPollInterval) {
             clearInterval(this._caudalesPollInterval);
             this._caudalesPollInterval = null;
+          }
+        }
+      }
+
+      if (layerId === 'saih_embalses') {
+        if (active) {
+          const op = this.layerStates['saih_embalses'].opacity || 0.95;
+          this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
+          if (!this._embalsesPollInterval) {
+            this._embalsesPollInterval = setInterval(() => {
+              if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) {
+                const op = this.layerStates['saih_embalses'].opacity || 0.95;
+                this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
+              }
+            }, 5 * 60 * 1000);
+          }
+        } else {
+          if (this._embalsesPollInterval) {
+            clearInterval(this._embalsesPollInterval);
+            this._embalsesPollInterval = null;
+          }
+        }
+      }
+
+      if (layerId === 'saih_lluvias') {
+        if (active) {
+          const op = this.layerStates['saih_lluvias'].opacity || 0.95;
+          this._loadLluviasLayer(this.layers['saih_lluvias'], op);
+          if (!this._lluviasPollInterval) {
+            this._lluviasPollInterval = setInterval(() => {
+              if (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
+                const op = this.layerStates['saih_lluvias'].opacity || 0.95;
+                this._loadLluviasLayer(this.layers['saih_lluvias'], op);
+              }
+            }, 5 * 60 * 1000);
+          }
+        } else {
+          if (this._lluviasPollInterval) {
+            clearInterval(this._lluviasPollInterval);
+            this._lluviasPollInterval = null;
           }
         }
       }
@@ -2886,34 +2928,48 @@ export class LayerManager {
         props.lat = latlng.lat;
         props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined ? Number(props.lluvia_1h) : 0;
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined ? Number(props.lluvia_4h) : 0;
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined ? Number(props.lluvia_12h) : 0;
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined ? Number(props.lluvia_24h) : 0;
+        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+          ? Number(props.lluvia_1h)
+          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+          ? Number(props.lluvia_4h)
+          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+          ? Number(props.lluvia_12h)
+          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+          ? Number(props.lluvia_24h)
+          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
         // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra discreto)
+        let color = '#64748b'; // 0 mm (gris pizarra)
         let alertClass = 'pluvio-status-zero';
+        let alertLevelText = 'Sin lluvia acumulada';
 
         if (r24h >= 100 || r1h >= 20) {
           color = '#ef4444'; // Rojo / Torrencial
           alertClass = 'pluvio-status-extreme caudal-pulse';
+          alertLevelText = 'Lluvia Torrencial';
         } else if (r24h >= 60 || r1h >= 10) {
           color = '#f97316'; // Naranja / Muy fuerte
           alertClass = 'pluvio-status-heavy';
+          alertLevelText = 'Lluvia Muy Fuerte';
         } else if (r24h >= 30 || r1h >= 5) {
           color = '#eab308'; // Amarillo / Fuerte
           alertClass = 'pluvio-status-mod';
+          alertLevelText = 'Lluvia Fuerte';
         } else if (r24h >= 10) {
           color = '#0284c7'; // Azul / Moderada
           alertClass = 'pluvio-status-light';
+          alertLevelText = 'Lluvia Moderada';
         } else if (r24h > 0 || r1h > 0) {
           color = '#38bdf8'; // Celeste / Débil
           alertClass = 'pluvio-status-light';
+          alertLevelText = 'Lluvia Débil';
         }
 
-        // Tamaño uniforme de bola pequeña para todos los pluviómetros
-        const radius = 3.8;
+        // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
+        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
 
         const marker = L.circleMarker(latlng, {
           pane: 'lluviasPane',
@@ -2923,22 +2979,7 @@ export class LayerManager {
           fillColor: color,
           fillOpacity: Math.min(1.0, opacity * 0.92),
           className: `pluvio-marker ${alertClass}`,
-          interactive: true
-        });
-
-        // IMPORTANTE: Los puntos de lluvia NO son clickables (no abren popup/modal),
-        // pero interceptan el click para que no se seleccione la cuenca inferior accidentalmente.
-        marker.on('click', (e) => {
-          if (e) {
-            if (e.originalEvent) {
-              e.originalEvent._pluvioMarkerClicked = true;
-              e.originalEvent._stopBasinClick = true;
-              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
-              if (e.originalEvent.stopImmediatePropagation) e.originalEvent.stopImmediatePropagation();
-            }
-            L.DomEvent.stopPropagation(e);
-            L.DomEvent.preventDefault(e);
-          }
+          interactive: false
         });
 
         return marker;

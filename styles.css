@@ -2090,7 +2090,8 @@ html, body {
    Capa de Pluviómetros / Lluvias (SAIH Júcar)
 ------------------------------------------------------------- */
 .pluvio-marker {
-  cursor: default;
+  pointer-events: none !important;
+  cursor: default !important;
   transition: transform 0.15s ease, filter 0.2s ease;
 }
 
