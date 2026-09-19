@@ -357,6 +357,21 @@ class AROMEWorker:
             except Exception:
                 pass
 
+    def _load_grid_file(self, path_no_ext: Path) -> Optional[np.ndarray]:
+        """Carga matriz .npz comprimida o .npy con fallback."""
+        npz_p = path_no_ext.with_suffix(".npz")
+        if npz_p.exists():
+            try:
+                with np.load(npz_p) as d:
+                    return d["data"] if "data" in d else d[d.files[0]]
+            except Exception as e:
+                logger.warning(f"Error cargando {npz_p}: {e}")
+        npy_p = path_no_ext.with_suffix(".npy")
+        if npy_p.exists():
+            try:
+                return np.load(npy_p)
+            except Exception as e:
+                logger.warning(f"Error cargando {npy_p}: {e}")
         return None
 
     def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
@@ -376,13 +391,9 @@ class AROMEWorker:
         arr = self._in_memory_arrays.get(mem_key)
         if arr is None:
             cycle_dir = self.cache_dir / cycle_str
-            npy_path = cycle_dir / f"{prefix}_step_{step:03d}.npy"
-            if npy_path.exists():
-                try:
-                    arr = np.load(npy_path)
-                    self._in_memory_arrays[mem_key] = arr
-                except Exception as e:
-                    logger.warning(f"Error leyendo npy {npy_path}: {e}")
+            arr = self._load_grid_file(cycle_dir / f"{prefix}_step_{step:03d}")
+            if arr is not None:
+                self._in_memory_arrays[mem_key] = arr
 
         # Fallback a ciclo anterior si aún no está resuelto en el actual
         if arr is None:
@@ -398,9 +409,8 @@ class AROMEWorker:
                     arr = self._in_memory_arrays.get(prev_mem_key)
                     if arr is None:
                         prev_dir = self.cache_dir / prev_cycle_str
-                        prev_npy = prev_dir / f"{prefix}_step_{prev_step:03d}.npy"
-                        if prev_npy.exists():
-                            arr = np.load(prev_npy)
+                        arr = self._load_grid_file(prev_dir / f"{prefix}_step_{prev_step:03d}")
+                        if arr is not None:
                             self._in_memory_arrays[prev_mem_key] = arr
                 except Exception:
                     pass
@@ -828,25 +838,17 @@ class AROMEWorker:
                 prev_raw_grid: Optional[np.ndarray] = None
                 if available_steps:
                     last_step = max(available_steps)
-                    npy_path = cycle_dir / f"total_step_{last_step:03d}.npy"
-                    if npy_path.exists():
-                        try:
-                            prev_raw_grid = np.load(npy_path)
-                        except Exception:
-                            pass
+                    prev_raw_grid = self._load_grid_file(cycle_dir / f"total_step_{last_step:03d}")
 
                 for step in steps_to_process:
                     total_png = cycle_dir / f"total_step_{step:03d}.png"
                     interval_png = cycle_dir / f"interval_step_{step:03d}.png"
-                    total_npy = cycle_dir / f"total_step_{step:03d}.npy"
-                    interval_npy = cycle_dir / f"interval_step_{step:03d}.npy"
+                    total_npz = cycle_dir / f"total_step_{step:03d}.npz"
+                    interval_npz = cycle_dir / f"interval_step_{step:03d}.npz"
 
-                    # Si ya está procesado este paso en disco, saltar
-                    if total_png.exists() and interval_png.exists() and total_npy.exists() and interval_npy.exists() and step in available_steps:
-                        try:
-                            prev_raw_grid = np.load(total_npy)
-                        except Exception:
-                            pass
+                    # Si ya está procesado este paso en disco, saltar descarga
+                    if total_png.exists() and interval_png.exists() and total_npz.exists() and interval_npz.exists() and step in available_steps:
+                        prev_raw_grid = self._load_grid_file(cycle_dir / f"total_step_{step:03d}")
                         continue
 
                     # Descargar paso individual
@@ -854,7 +856,7 @@ class AROMEWorker:
                     chunk_name = self._get_chunk_name(step)
 
                     if not step_grib.exists():
-                        logger.info(f"AROME: Comprobando disponibilidad del paso +{step}h en S3...")
+                        logger.info(f"AROME: Comprobando disponibilidad del paso +{step}h en repositorios...")
                         downloaded = await asyncio.to_thread(
                             self._download_arome_chunk_or_step, date_str, hh, chunk_name, step, step_grib
                         )
@@ -867,7 +869,8 @@ class AROMEWorker:
                     grid_2d = await asyncio.to_thread(self._process_grib_to_grid, step_grib, step)
 
                     # Limpiar archivo temporal GRIB tras procesar
-                    step_grib.unlink(missing_ok=True)
+                    if step_grib.exists():
+                        step_grib.unlink()
 
                     if grid_2d is None:
                         logger.warning(f"AROME: No se pudo procesar matriz para paso +{step}h.")
@@ -886,9 +889,9 @@ class AROMEWorker:
 
                     prev_raw_grid = accum_total.copy()
 
-                    # Guardar matrices NumPy .npy
-                    np.save(total_npy, accum_total)
-                    np.save(interval_npy, interval_1h)
+                    # Guardar matrices NumPy comprimidas .npz
+                    np.savez_compressed(total_npz, data=accum_total.astype(np.float32))
+                    np.savez_compressed(interval_npz, data=interval_1h.astype(np.float32))
 
                     # Colorear y guardar imágenes PNG transparentes Web Mercator
                     rgba_total = colorize_precip_array(accum_total)

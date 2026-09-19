@@ -354,9 +354,26 @@ class ECMWFWorker:
 
         return None
 
+    def _load_grid_file(self, path_no_ext: Path) -> Optional[np.ndarray]:
+        """Carga matriz .npz comprimida o .npy con fallback."""
+        npz_p = path_no_ext.with_suffix(".npz")
+        if npz_p.exists():
+            try:
+                with np.load(npz_p) as d:
+                    return d["data"] if "data" in d else d[d.files[0]]
+            except Exception as e:
+                logger.warning(f"Error cargando {npz_p}: {e}")
+        npy_p = path_no_ext.with_suffix(".npy")
+        if npy_p.exists():
+            try:
+                return np.load(npy_p)
+            except Exception as e:
+                logger.warning(f"Error cargando {npy_p}: {e}")
+        return None
+
     def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
         """
-        Consulta en tiempo O(1) el valor de precipitación (mm) en una coordenada específica (con fallback).
+        Consulta puntual instantánea (0ms) en la matriz NumPy en memoria o disco.
         """
         if not (SPAIN_BBOX["lat_min"] <= lat <= SPAIN_BBOX["lat_max"] and
                 SPAIN_BBOX["lon_min"] <= lon <= SPAIN_BBOX["lon_max"]):
@@ -376,13 +393,10 @@ class ECMWFWorker:
 
         matrix = self._in_memory_arrays.get(cache_key)
         if matrix is None:
-            npy_path = self.cache_dir / cycle_str / f"{clean_type}_step_{step:02d}.npy"
-            if npy_path.exists():
-                try:
-                    matrix = np.load(npy_path)
-                    self._in_memory_arrays[cache_key] = matrix
-                except Exception as e:
-                    logger.error(f"Error cargando matriz .npy {npy_path}: {e}")
+            cycle_dir = self.cache_dir / cycle_str
+            matrix = self._load_grid_file(cycle_dir / f"{clean_type}_step_{step:02d}")
+            if matrix is not None:
+                self._in_memory_arrays[cache_key] = matrix
 
         # Fallback a ciclo anterior si aún no está en memoria ni en disco
         if matrix is None:
@@ -397,9 +411,9 @@ class ECMWFWorker:
                     prev_cache_key = f"{prev_cycle_str}_{clean_type}_{prev_step:02d}"
                     matrix = self._in_memory_arrays.get(prev_cache_key)
                     if matrix is None:
-                        prev_npy = self.cache_dir / prev_cycle_str / f"{clean_type}_step_{prev_step:02d}.npy"
-                        if prev_npy.exists():
-                            matrix = np.load(prev_npy)
+                        prev_dir = self.cache_dir / prev_cycle_str
+                        matrix = self._load_grid_file(prev_dir / f"{clean_type}_step_{prev_step:02d}")
+                        if matrix is not None:
                             self._in_memory_arrays[prev_cache_key] = matrix
                 except Exception:
                     pass
@@ -706,17 +720,14 @@ class ECMWFWorker:
 
         for idx, step in enumerate(steps_to_process):
             total_png_path = cycle_dir / f"total_step_{step:02d}.png"
-            total_npy_path = cycle_dir / f"total_step_{step:02d}.npy"
+            total_npz_path = cycle_dir / f"total_step_{step:02d}.npz"
             interval_png_path = cycle_dir / f"interval_step_{step:02d}.png"
-            interval_npy_path = cycle_dir / f"interval_step_{step:02d}.npy"
+            interval_npz_path = cycle_dir / f"interval_step_{step:02d}.npz"
 
             # Si ya está completamente procesado en disco, cargamos la matriz total para el siguiente delta
-            if step in available_steps and total_png_path.exists() and total_npy_path.exists() and interval_png_path.exists():
-                try:
-                    last_total_matrix = np.load(total_npy_path)
-                    continue
-                except Exception:
-                    pass
+            if step in available_steps and total_png_path.exists() and total_npz_path.exists() and interval_png_path.exists():
+                last_total_matrix = self._load_grid_file(cycle_dir / f"total_step_{step:02d}")
+                continue
 
             # Descargar archivo GRIB2 temporal para este step
             tmp_grib = cycle_dir / f"tmp_{cycle_str}_step{step:02d}.grib2"
@@ -740,13 +751,9 @@ class ECMWFWorker:
 
                 if prev_step is None or last_total_matrix is None:
                     if prev_step is not None:
-                        prev_npy = cycle_dir / f"total_step_{prev_step:02d}.npy"
-                        if prev_npy.exists():
-                            try:
-                                last_total_matrix = np.load(prev_npy)
-                                interval_matrix = np.maximum(0.0, total_matrix - last_total_matrix)
-                            except Exception:
-                                interval_matrix = total_matrix.copy()
+                        last_total_matrix = self._load_grid_file(cycle_dir / f"total_step_{prev_step:02d}")
+                        if last_total_matrix is not None:
+                            interval_matrix = np.maximum(0.0, total_matrix - last_total_matrix)
                         else:
                             interval_matrix = total_matrix.copy()
                     else:
@@ -761,9 +768,9 @@ class ECMWFWorker:
                 Image.fromarray(total_rgba, "RGBA").save(total_png_path, format="PNG", optimize=True)
                 Image.fromarray(interval_rgba, "RGBA").save(interval_png_path, format="PNG", optimize=True)
 
-                # Guardar matrices float16/float32 .npy
-                np.save(total_npy_path, total_matrix.astype(np.float32))
-                np.save(interval_npy_path, interval_matrix.astype(np.float32))
+                # Guardar matrices comprimidas .npz
+                np.savez_compressed(total_npz_path, data=total_matrix.astype(np.float32))
+                np.savez_compressed(interval_npz_path, data=interval_matrix.astype(np.float32))
 
                 # Guardar en caché de memoria para consultas 0ms
                 self._in_memory_arrays[f"{cycle_str}_total_{step:02d}"] = total_matrix

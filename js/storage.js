@@ -48,8 +48,9 @@ export class StorageManager {
         'ecmwf_ifs': 0.65,
         'gfs_0p25': 0.65
       },
-      radarMode: 'composite', // 'composite' | 'single'
-      radarStationId: 'esbnv', // Estación por defecto (Valencia / Cullera)
+      radarMode: 'mixed', // 'mixed' | 'short_range' | 'long_range' | 'single'
+      radarStationId: 'esbnv', // Estación por defecto
+      showRadarCoverage: false, // Mostrar áreas de cobertura de radar en mapa
       autoRefreshInterval: 180 // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
     };
   }
@@ -177,6 +178,14 @@ export class StorageManager {
    */
   static setRadarStationId(stationId) {
     return this.save({ radarStationId: stationId });
+  }
+
+  /**
+   * Guarda la preferencia de mostrar u ocultar áreas de cobertura del radar
+   * @param {boolean} show 
+   */
+  static setRadarCoverage(show) {
+    return this.save({ showRadarCoverage: Boolean(show) });
   }
 
   /**

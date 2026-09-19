@@ -594,11 +594,39 @@ export class UIManager {
             </div>
           </div>
 
+          <!-- Selector de Modo / Producto de Radar -->
+          <div class="radar-mode-option">
+            <div class="radar-mode-header-row">
+              <span class="subcontrol-label">Modo:</span>
+              <select class="radar-mode-select" id="radar-product-mode-select">
+                <option value="mixed" ${ (prefs.radarMode || 'mixed') === 'mixed' || (prefs.radarMode === 'composite') ? 'selected' : ''}>✨ Mixto (Corto 0.5º + Largo)</option>
+                <option value="short_range" ${prefs.radarMode === 'short_range' ? 'selected' : ''}>🎯 Corto Alcance 0.5º (Alta Def.)</option>
+                <option value="long_range" ${prefs.radarMode === 'long_range' ? 'selected' : ''}>🌐 Largo Alcance (OPERA / 250km)</option>
+              </select>
+            </div>
+            <div class="radar-mode-hint" id="radar-mode-hint">
+              ${ (prefs.radarMode === 'short_range') ? 'Mosaico Doppler 0.5º de 500m (radio ≤145km)' : ((prefs.radarMode === 'long_range') ? 'Compuesto tradicional de largo alcance (250km)' : 'Prioriza corto alcance 0.5º (≤145km) y rellena con largo alcance') }
+            </div>
+          </div>
+
           <div class="radar-source-link">
             <a href="https://radarspain.es" target="_blank" rel="noopener noreferrer" class="radar-external-link" title="Abrir RadarSpain.es en una nueva pestaña">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
               <span>Ver en RadarSpain.es ↗</span>
             </a>
+          </div>
+
+          <!-- Opción de Área de Cobertura de Radar dinámica por fotograma -->
+          <div class="radar-coverage-option">
+            <label class="radar-coverage-toggle-label">
+              <input type="checkbox" id="radar-coverage-toggle" ${prefs.showRadarCoverage ? 'checked' : ''}>
+              <span class="coverage-toggle-text">📡 Mostrar área de cobertura</span>
+            </label>
+            <div class="radar-coverage-details" id="radar-coverage-container" style="${prefs.showRadarCoverage ? '' : 'display: none;'}">
+              <span class="radar-stations-pill" id="radar-active-stations-pill">
+                ● <strong>${Object.keys(CONFIG.radarStations).length} radares con datos</strong>
+              </span>
+            </div>
           </div>
 
           <!-- Opción integrada de Rayos en Tiempo Real dentro del Radar -->
@@ -846,6 +874,43 @@ export class UIManager {
       });
     });
 
+
+    // Selector de Modo / Producto de Radar (Mixto, Corto Alcance, Largo Alcance)
+    const radarProductModeSelect = document.getElementById('radar-product-mode-select');
+    if (radarProductModeSelect) {
+      radarProductModeSelect.addEventListener('change', (e) => {
+        const selectedMode = e.target.value;
+        const hintEl = document.getElementById('radar-mode-hint');
+        if (hintEl) {
+          if (selectedMode === 'short_range') {
+            hintEl.textContent = 'Mosaico Doppler de 500m (radio ≤145km)';
+          } else if (selectedMode === 'long_range') {
+            hintEl.textContent = 'Compuesto tradicional de largo alcance (250km)';
+          } else {
+            hintEl.textContent = 'Prioriza corto alcance (≤145km) y rellena con largo alcance';
+          }
+        }
+        if (this.layerManager) {
+          this.layerManager.updateRadarMode(selectedMode);
+        }
+      });
+    }
+
+    // Controles de Cobertura de Radar: Toggle de visualización
+    const radarCoverageToggle = document.getElementById('radar-coverage-toggle');
+    if (radarCoverageToggle) {
+      radarCoverageToggle.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        const container = document.getElementById('radar-coverage-container');
+        if (container) {
+          container.style.display = isChecked ? 'flex' : 'none';
+        }
+        StorageManager.save({ showRadarCoverage: isChecked });
+        if (this.layerManager) {
+          this.layerManager.toggleRadarCoverage(isChecked);
+        }
+      });
+    }
 
     // Controles de Rayos integrados en el Radar: Toggle de activación
     const radarLightningToggle = document.getElementById('radar-lightning-toggle');
@@ -1259,6 +1324,13 @@ export class UIManager {
         } else {
           timeText.textContent = `Radar · ${currentStep || '--'}`;
         }
+      }
+
+      const activePill = document.getElementById('radar-active-stations-pill');
+      if (activePill) {
+        const total = Object.keys(CONFIG.radarStations).length;
+        const count = currentEntry?.active_radars_count ?? (currentEntry?.active_radars ? currentEntry.active_radars.length : 12);
+        activePill.innerHTML = `📡 <strong>${count}/${total}</strong> radares con datos`;
       }
 
       if (slider && timeline.length > 0) {

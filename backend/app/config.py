@@ -3,7 +3,8 @@ Configuración centralizada de la aplicación FastAPI para RainLoc
 """
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -13,6 +14,12 @@ ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
 GFS_CACHE_DIR = DATA_DIR / "gfs_cache"
 AROME_CACHE_DIR = DATA_DIR / "arome_cache"
 
+# Cargar variables de entorno desde .env (en backend/ o en la raíz del proyecto)
+if (BACKEND_DIR / ".env").exists():
+    load_dotenv(BACKEND_DIR / ".env", override=False)
+if (BASE_DIR / ".env").exists():
+    load_dotenv(BASE_DIR / ".env", override=False)
+
 # Asegurar directorios
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -20,24 +27,33 @@ ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GFS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 AROME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Catálogo de radares españoles (estaciones individuales en openradar-24h)
+# Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
-    "esbnv": {"name": "Valencia / Cullera (esbnv)", "province": "Valencia", "lat": 39.1864, "lon": -0.2520, "range_km": 240, "alt_m": 236},
-    "espma": {"name": "Murcia / Cabezo Plata (espma)", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460},
-    "esalm": {"name": "Almería / Níjar (esalm)", "province": "Almería", "lat": 36.8660, "lon": -2.0830, "range_km": 240, "alt_m": 460},
-    "esahr": {"name": "Málaga / Alhaurín (esahr)", "province": "Málaga", "lat": 36.6190, "lon": -4.6640, "range_km": 240, "alt_m": 1100},
-    "esclg": {"name": "Sevilla / El Castillo (esclg)", "province": "Sevilla", "lat": 37.6890, "lon": -6.3330, "range_km": 250, "alt_m": 686},
-    "esatn": {"name": "Madrid / Attalaya (esatn)", "province": "Madrid", "lat": 40.1780, "lon": -3.7120, "range_km": 240, "alt_m": 680},
-    "esgld": {"name": "Zaragoza / La Ginebrosa (esgld)", "province": "Zaragoza", "lat": 41.7280, "lon": -0.9230, "range_km": 240, "alt_m": 350},
-    "eslid": {"name": "Barcelona / Puig d'Arques (eslid)", "province": "Girona/Barcelona", "lat": 41.8890, "lon": 2.9970, "range_km": 240, "alt_m": 535},
-    "espdg": {"name": "Mallorca / Randa (espdg)", "province": "Illes Balears", "lat": 39.5290, "lon": 2.9230, "range_km": 240, "alt_m": 543},
-    "essft": {"name": "Cáceres / Sta. Marina (essft)", "province": "Cáceres", "lat": 39.4210, "lon": -6.3140, "range_km": 240, "alt_m": 508},
-    "essse": {"name": "San Sebastián / Igueldo (essse)", "province": "Gipuzkoa", "lat": 43.3080, "lon": -2.0400, "range_km": 240, "alt_m": 370},
-    "estjv": {"name": "A Coruña / Monte Xesteiras (estjv)", "province": "A Coruña", "lat": 42.6180, "lon": -8.5360, "range_km": 240, "alt_m": 500},
-    "esast": {"name": "Asturias / Picos Europa (esast)", "province": "Asturias", "lat": 43.1880, "lon": -5.9250, "range_km": 240, "alt_m": 1780},
-    "estde": {"name": "Tenerife / Cruz de Gala (estde)", "province": "Santa Cruz de Tenerife", "lat": 28.3109, "lon": -16.8238, "range_km": 240, "alt_m": 1340},
-    "eslpa": {"name": "Gran Canaria / Pico Gorra (eslpa)", "province": "Las Palmas", "lat": 27.9600, "lon": -15.5860, "range_km": 240, "alt_m": 1940}
+    # Radares actualmente sincronizando en EUMETNET ORD
+    "esahr": {"name": "Málaga / Alhaurín", "province": "Málaga", "lat": 36.6134, "lon": -4.6593, "range_km": 240, "alt_m": 1159, "aemet_code": "ma"},
+    "esclg": {"name": "Sevilla / El Castillo", "province": "Sevilla", "lat": 37.6887, "lon": -6.3331, "range_km": 250, "alt_m": 531, "aemet_code": "se"},
+    "esnjr": {"name": "Almería / Níjar", "province": "Almería", "lat": 36.8324, "lon": -2.0821, "range_km": 240, "alt_m": 499, "aemet_code": "am"},
+    "estjv": {"name": "Madrid / Torrejón de Velasco", "province": "Madrid", "lat": 40.1759, "lon": -3.7137, "range_km": 240, "alt_m": 717, "aemet_code": "to"},
+    "essft": {"name": "Cáceres / Sierra Fuentes", "province": "Cáceres", "lat": 39.4288, "lon": -6.2853, "range_km": 240, "alt_m": 667, "aemet_code": "cc"},
+    "esgrm": {"name": "Salamanca / Guadramiro", "province": "Salamanca", "lat": 41.0116, "lon": -6.4777, "range_km": 240, "alt_m": 793, "aemet_code": "sa"},
+    "eslid": {"name": "Valladolid", "province": "Valladolid", "lat": 41.9956, "lon": -4.6028, "range_km": 240, "alt_m": 887, "aemet_code": "vd"},
+    "essse": {"name": "País Vasco / Monte Oiz", "province": "Bizkaia/Gipuzkoa", "lat": 43.4033, "lon": -2.8419, "range_km": 240, "alt_m": 625, "aemet_code": "ss"},
+    "espdg": {"name": "Zaragoza / Perdiguera", "province": "Zaragoza", "lat": 41.7340, "lon": -0.5459, "range_km": 240, "alt_m": 835, "aemet_code": "za"},
+    "esgld": {"name": "Barcelona / Gelida", "province": "Barcelona", "lat": 41.4082, "lon": 1.8849, "range_km": 240, "alt_m": 662, "aemet_code": "ba"},
+    "esbnv": {"name": "Tenerife / Buenavista", "province": "Santa Cruz de Tenerife", "lat": 28.3109, "lon": -16.8238, "range_km": 240, "alt_m": 1367, "aemet_code": "ca"},
+    "esatn": {"name": "Gran Canaria / Artenara", "province": "Las Palmas", "lat": 28.0188, "lon": -15.6145, "range_km": 240, "alt_m": 1777, "aemet_code": "ca"},
+    # Radares en proceso de modernización o volcado a ORD (disponibles en AEMET OpenData)
+    "escul": {"name": "Valencia / Cullera", "province": "Valencia", "lat": 39.1864, "lon": -0.2520, "range_km": 240, "alt_m": 236, "aemet_code": "va"},
+    "espma": {"name": "Murcia / Cabezo de la Plata", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460, "aemet_code": "pm"},
+    "espmb": {"name": "Mallorca / Puig de Randa", "province": "Illes Balears", "lat": 39.5290, "lon": 2.9230, "range_km": 240, "alt_m": 543, "aemet_code": "pm"},
+    "esast": {"name": "Asturias / El Vidural", "province": "Asturias", "lat": 43.3420, "lon": -6.5210, "range_km": 240, "alt_m": 850, "aemet_code": "as"},
+    "escor": {"name": "A Coruña / Lousame", "province": "A Coruña", "lat": 42.8360, "lon": -8.8470, "range_km": 240, "alt_m": 680, "aemet_code": "co"}
 }
+
+# Parámetros de radar y bounding box geográfico nacional
+SPAIN_BBOX: Dict[str, float] = {"lat_min": 35.0, "lat_max": 44.5, "lon_min": -10.0, "lon_max": 5.0}
+RADAR_SHORT_RANGE_MAX_KM = 145.0  # Radio máximo efectivo para priorizar corto alcance (DBZH+VRADH)
+RADAR_SHORT_RANGE_BLEND_KM = 135.0 # Radio de inicio de transición suave hacia largo alcance
 
 try:
     from pydantic_settings import BaseSettings
@@ -67,6 +83,10 @@ try:
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = 180  # 3 minutos
         
+        # AEMET OpenData API Key (para fallback de radares regionales como Cullera, Murcia, etc.)
+        AEMET_API_KEY: Optional[str] = None
+        AEMET_OPENDATA_BASE_URL: str = "https://opendata.aemet.es/opendata/api"
+
         # Radar ORD (Open Radar Data / CloudFerro S3)
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"
@@ -119,6 +139,8 @@ except ImportError:
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
+        AEMET_API_KEY: Optional[str] = os.getenv("AEMET_API_KEY", None)
+        AEMET_OPENDATA_BASE_URL: str = os.getenv("AEMET_OPENDATA_BASE_URL", "https://opendata.aemet.es/opendata/api")
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"
         ORD_MQTT_HOST: str = os.getenv("ORD_MQTT_HOST", "api.openradardata.eumetnet.eu")

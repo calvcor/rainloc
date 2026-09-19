@@ -16,13 +16,15 @@ export class LayerManager {
     const prefs = StorageManager.load();
     this.lightningWindowMinutes = Math.min(15, Math.max(1, prefs.lightningWindow || 15));
     this.showRadarLightning = Boolean(prefs.showRadarLightning);
+    this.showRadarCoverage = Boolean(prefs.showRadarCoverage);
     this.lightningEventSource = null;
     this.radarEventSource = null;
     this.ecmwfEventSource = null;
     this.gfsEventSource = null;
     this.aromeEventSource = null;
     this.lightningGroup = L.layerGroup();
-    this.currentRadarMode = 'composite';
+    this.radarCoverageGroup = L.layerGroup();
+    this.currentRadarMode = prefs.radarMode || 'mixed';
 
     // Radar 24h Timeline & Player State
     this.radarTimeline = [];
@@ -235,6 +237,9 @@ export class LayerManager {
       if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
         this.map.removeLayer(this.lightningGroup);
       }
+      if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
+        this.map.removeLayer(this.radarCoverageGroup);
+      }
 
       // 2. Mostrar la capa de predicción activa (garantizando exclusividad de una única predicción)
       let activePredId = null;
@@ -272,9 +277,15 @@ export class LayerManager {
         const state = this.layerStates[def.id];
         if (state && state.active) {
           this._showLayerOnMap(def.id);
-          if (def.id === 'radar' && this.showRadarLightning && this.lightningGroup) {
-            if (!this.map.hasLayer(this.lightningGroup)) {
+          if (def.id === 'radar') {
+            if (this.showRadarLightning && this.lightningGroup && !this.map.hasLayer(this.lightningGroup)) {
               this.map.addLayer(this.lightningGroup);
+            }
+            if (this.showRadarCoverage && this.radarCoverageGroup) {
+              if (!this.map.hasLayer(this.radarCoverageGroup)) {
+                this.map.addLayer(this.radarCoverageGroup);
+              }
+              this._updateRadarCoverageOverlay();
             }
           }
         } else {
@@ -309,6 +320,9 @@ export class LayerManager {
         });
         if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
           this.map.removeLayer(this.lightningGroup);
+        }
+        if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
+          this.map.removeLayer(this.radarCoverageGroup);
         }
         if (this.isRadarPlaying) {
           this.pauseRadarPlayback();
@@ -465,6 +479,12 @@ export class LayerManager {
             this.reloadLightningLayer();
             this._startLightningSSE();
           }
+          if (this.showRadarCoverage) {
+            if (!this.map.hasLayer(this.radarCoverageGroup)) {
+              this.radarCoverageGroup.addTo(this.map);
+            }
+            this._updateRadarCoverageOverlay();
+          }
         } else {
           if (this.isRadarPlaying) {
             this.pauseRadarPlayback();
@@ -474,6 +494,9 @@ export class LayerManager {
           }
           if (this.map.hasLayer(this.lightningGroup)) {
             this.map.removeLayer(this.lightningGroup);
+          }
+          if (this.map.hasLayer(this.radarCoverageGroup)) {
+            this.map.removeLayer(this.radarCoverageGroup);
           }
           this._stopLightningSSE();
         }
@@ -574,10 +597,11 @@ export class LayerManager {
    * Genera la URL para un fotograma de radar con soporte de caché y timesteps
    */
   _getRadarImageUrl(timestep) {
+    const mode = this.currentRadarMode || 'mixed';
     if (timestep) {
-      return `${CONFIG.apiBaseUrl}/radar/image?mode=composite&timestep=${encodeURIComponent(timestep)}`;
+      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&timestep=${encodeURIComponent(timestep)}`;
     }
-    return `${CONFIG.apiBaseUrl}/radar/image?mode=composite&_t=${Date.now()}`;
+    return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&_t=${Date.now()}`;
   }
 
   /**
@@ -686,6 +710,11 @@ export class LayerManager {
         this.uiManager.updateLayerTimestamp('radar', `Captura: <strong>${timeText}</strong>${liveTag}`);
       }
 
+      // Actualizar áreas de cobertura de radares si están activas
+      if (this.showRadarCoverage) {
+        this._updateRadarCoverageOverlay();
+      }
+
       // Actualizar reproductor de radar en la UI
       if (this.uiManager && this.uiManager.updateRadarPlayerUI) {
         this.uiManager.updateRadarPlayerUI(timeline, currentStep, this.isRadarPlaying, isLive);
@@ -693,7 +722,7 @@ export class LayerManager {
 
       const bounds = metadata.composite_bounds || [[35.0, -10.0], [44.5, 5.0]];
       this.currentRadarBounds = bounds;
-      this.currentRadarMode = 'composite';
+      this.currentRadarMode = this.currentRadarMode || 'mixed';
 
       const imgUrl = this._getRadarImageUrl(currentStep);
       const requestId = ++this._radarStepRequestId;
@@ -753,12 +782,18 @@ export class LayerManager {
    * Cambia el fotograma temporal del radar
    */
   setRadarTimestep(timestep) {
-    if (this.currentRadarTimestep === timestep && this.currentRadarOverlay) return;
+    if (this.currentRadarTimestep === timestep && this.currentRadarOverlay) {
+      if (this.showRadarCoverage) this._updateRadarCoverageOverlay();
+      return;
+    }
     this.currentRadarTimestep = timestep;
     const radarGroup = this.layers['radar'];
     if (radarGroup && this.isLayerOnMap('radar')) {
       const opacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 0.75;
       this._loadRadarLayer(radarGroup, opacity, false);
+    }
+    if (this.showRadarCoverage) {
+      this._updateRadarCoverageOverlay();
     }
   }
 
@@ -1700,6 +1735,11 @@ export class LayerManager {
       this.reloadLightningLayer();
     }
 
+    // Actualizar áreas de cobertura si están visibles
+    if (this.showRadarCoverage) {
+      this._updateRadarCoverageOverlay();
+    }
+
     if (mode === 'single' && stationId && autoPan && this.map) {
       const stDef = CONFIG.radarStations[stationId];
       if (stDef && stDef.lat && stDef.lon) {
@@ -1708,6 +1748,162 @@ export class LayerManager {
         });
       }
     }
+  }
+
+  /**
+   * Conmuta la visualización de áreas de cobertura de los radares
+   * @param {boolean} active 
+   */
+  toggleRadarCoverage(active) {
+    this.showRadarCoverage = Boolean(active);
+    StorageManager.setRadarCoverage(this.showRadarCoverage);
+    if (this.showRadarCoverage) {
+      if (!this.map.hasLayer(this.radarCoverageGroup)) {
+        this.radarCoverageGroup.addTo(this.map);
+      }
+      this._updateRadarCoverageOverlay();
+    } else {
+      this.radarCoverageGroup.clearLayers();
+      if (this.map.hasLayer(this.radarCoverageGroup)) {
+        this.map.removeLayer(this.radarCoverageGroup);
+      }
+    }
+  }
+
+  /**
+   * Dibuja y actualiza dinámicamente las áreas de cobertura de cada radar para el instante temporal actual
+   */
+  _updateRadarCoverageOverlay() {
+    if (!this.showRadarCoverage || !this.radarCoverageGroup) return;
+    this.radarCoverageGroup.clearLayers();
+
+    if (!this.isLayerOnMap('radar')) return;
+
+    const timeline = this.radarTimeline || [];
+    const currentStep = this.currentRadarTimestep;
+    const currentEntry = timeline.find(t => t.timestep === currentStep);
+
+    // Lista de estaciones activas en este fotograma específico
+    let activeIds = (currentEntry && Array.isArray(currentEntry.active_radars) && currentEntry.active_radars.length > 0)
+      ? currentEntry.active_radars
+      : Object.keys(CONFIG.radarStations);
+
+    const mode = this.currentRadarMode || 'mixed';
+    const stations = Object.values(CONFIG.radarStations);
+
+    stations.forEach(st => {
+      // En modo single, solo representar la estación seleccionada
+      if (mode === 'single' && this.currentRadarStationId && st.id !== this.currentRadarStationId) {
+        return;
+      }
+
+      const isActive = activeIds.includes(st.id);
+      const shortKm = st.short_range_km || 145;
+      const longKm = st.range_km || 240;
+
+      if (isActive) {
+        if (mode === 'short_range') {
+          // Corto alcance 0.5º (145 km)
+          const circle = L.circle([st.lat, st.lon], {
+            radius: shortKm * 1000,
+            color: '#0284c7',
+            weight: 1.5,
+            fillColor: '#38bdf8',
+            fillOpacity: 0.05,
+            interactive: false
+          });
+          this.radarCoverageGroup.addLayer(circle);
+        } else if (mode === 'long_range') {
+          // Largo alcance (240-250 km)
+          const circle = L.circle([st.lat, st.lon], {
+            radius: longKm * 1000,
+            color: '#2563eb',
+            weight: 1.5,
+            fillColor: '#60a5fa',
+            fillOpacity: 0.04,
+            interactive: false
+          });
+          this.radarCoverageGroup.addLayer(circle);
+        } else {
+          // Modo Mixto: Anillo primario de alta resolución 0.5º + contorno tenue de largo alcance
+          const innerCircle = L.circle([st.lat, st.lon], {
+            radius: shortKm * 1000,
+            color: '#0284c7',
+            weight: 1.5,
+            dashArray: '5, 4',
+            fillColor: '#38bdf8',
+            fillOpacity: 0.06,
+            interactive: false
+          });
+          this.radarCoverageGroup.addLayer(innerCircle);
+
+          const outerCircle = L.circle([st.lat, st.lon], {
+            radius: longKm * 1000,
+            color: '#64748b',
+            weight: 1,
+            dashArray: '2, 6',
+            fill: false,
+            interactive: false
+          });
+          this.radarCoverageGroup.addLayer(outerCircle);
+        }
+
+        // Marcador central interactivo del radar
+        const marker = L.circleMarker([st.lat, st.lon], {
+          radius: 4.5,
+          color: '#0284c7',
+          fillColor: '#38bdf8',
+          fillOpacity: 0.9,
+          weight: 2
+        });
+
+        const modeDescription = mode === 'short_range' 
+          ? `Corto alcance 0.5º · ${shortKm} km`
+          : (mode === 'long_range' ? `Largo alcance · ${longKm} km` : `Mixto 0.5º (${shortKm} km) + Largo (${longKm} km)`);
+
+        marker.bindTooltip(`
+          <div class="radar-station-coverage-tooltip">
+            <div class="tooltip-st-name">${st.name}</div>
+            <div class="tooltip-st-status active">● Operativo en este instante</div>
+            <div class="tooltip-st-info">${modeDescription}</div>
+            <div class="tooltip-st-sub">Altitud: ${st.alt_m} m · Prov: ${st.province}</div>
+          </div>
+        `, { direction: 'top', offset: [0, -6], className: 'radar-coverage-leaflet-tooltip' });
+
+        this.radarCoverageGroup.addLayer(marker);
+
+      } else {
+        // Estación sin transmisión en este fotograma
+        const circle = L.circle([st.lat, st.lon], {
+          radius: (mode === 'long_range' ? longKm : shortKm) * 1000,
+          color: '#ef4444',
+          weight: 1.2,
+          dashArray: '3, 4',
+          fillColor: '#ef4444',
+          fillOpacity: 0.02,
+          interactive: false
+        });
+        this.radarCoverageGroup.addLayer(circle);
+
+        const marker = L.circleMarker([st.lat, st.lon], {
+          radius: 4,
+          color: '#ef4444',
+          fillColor: '#ef4444',
+          fillOpacity: 0.5,
+          weight: 1.5
+        });
+
+        marker.bindTooltip(`
+          <div class="radar-station-coverage-tooltip">
+            <div class="tooltip-st-name">${st.name}</div>
+            <div class="tooltip-st-status missing">⚠ Sin datos en este fotograma</div>
+            <div class="tooltip-st-sub">Provincia: ${st.province}</div>
+          </div>
+        `, { direction: 'top', offset: [0, -6], className: 'radar-coverage-leaflet-tooltip' });
+
+        this.radarCoverageGroup.addLayer(marker);
+      }
+    });
   }
 
   /**

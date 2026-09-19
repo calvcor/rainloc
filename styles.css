@@ -2082,11 +2082,174 @@ html, body {
 
 
 /* -------------------------------------------------------------
+   Selector de Modo de Producto de Radar (Mixto / Corto / Largo)
+------------------------------------------------------------- */
+.radar-mode-option {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.radar-mode-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.radar-mode-header-row .subcontrol-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.radar-mode-select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: #1e293b;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.radar-mode-select:focus,
+.radar-mode-select:hover {
+  border-color: #38bdf8;
+}
+
+.radar-mode-hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  line-height: 1.25;
+  font-style: italic;
+}
+
+/* -------------------------------------------------------------
+   Área de Cobertura de Radar Dinámica
+------------------------------------------------------------- */
+.radar-coverage-option {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radar-coverage-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #bae6fd;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.radar-coverage-toggle-label input[type="checkbox"] {
+  accent-color: #0284c7;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.radar-coverage-details {
+  display: flex;
+  align-items: center;
+  padding-left: 22px;
+}
+
+.radar-stations-pill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Tooltip de Cobertura de Radares en Leaflet */
+.radar-coverage-leaflet-tooltip {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 8px !important;
+  color: #f1f5f9 !important;
+  padding: 8px 10px !important;
+  font-size: 0.75rem !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-name {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #38bdf8;
+  margin-bottom: 2px;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-status.active {
+  color: #22c55e;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-status.missing {
+  color: #ef4444;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-info {
+  font-size: 0.7rem;
+  color: #cbd5e1;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-sub {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+/* -------------------------------------------------------------
    Controles y Estilos de Rayos en Cobertura de Radar
 ------------------------------------------------------------- */
 .radar-lightning-option {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;

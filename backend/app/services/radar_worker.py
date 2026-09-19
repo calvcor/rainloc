@@ -1,8 +1,8 @@
 """
 RainLoc - Radar Worker & Processor
 Ingesta en tiempo casi real y gestión histórica (24 horas) de radar meteorológico
-(OPERA Composite y Radares Individuales) desde CloudFerro S3 (openradar-24h)
-y notificaciones MQTT (MeteoGate / ORD).
+(Compuesto Mixto de Alta Definición, Corto Alcance DBZH+VRADH y Largo Alcance DBZH+TH / OPERA)
+desde CloudFerro S3 (openradar-24h) y notificaciones MQTT (MeteoGate / ORD).
 """
 import os
 import io
@@ -35,7 +35,13 @@ try:
 except ImportError:
     MQTT_AVAILABLE = False
 
-from app.config import settings, SPANISH_RADAR_STATIONS
+from app.config import (
+    settings,
+    SPANISH_RADAR_STATIONS,
+    RADAR_SHORT_RANGE_MAX_KM,
+    RADAR_SHORT_RANGE_BLEND_KM
+)
+from app.services.aemet_opendata import aemet_opendata_service
 
 logger = logging.getLogger("rainloc-backend.radar")
 
@@ -54,7 +60,7 @@ Y_MERC_GRID = np.linspace(Y_MERC_MAX, Y_MERC_MIN, GRID_H)
 SPAIN_GRID_LATS = np.degrees(2 * np.arctan(np.exp(Y_MERC_GRID / R_EARTH)) - np.pi/2)
 SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID_W)
 
-# Cargar índices precomputados para mapping ultrarrápido sin dependencia de pyproj en runtime
+# Cargar índices precomputados para mapping de OPERA LAEA a Web Mercator
 PRECOMPUTED_GRID_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "spain_radar_indices.npz"
 
 if PRECOMPUTED_GRID_FILE.exists():
@@ -82,6 +88,38 @@ else:
     SPAIN_COL_IDX = np.round(_x_grid / 1000.0).astype(np.int16)
     SPAIN_ROW_IDX = np.round(-_y_grid / 1000.0).astype(np.int16)
     SPAIN_VALID_MASK = (SPAIN_COL_IDX >= 0) & (SPAIN_COL_IDX < 3800) & (SPAIN_ROW_IDX >= 0) & (SPAIN_ROW_IDX < 4400)
+
+# Precomputación de geometría esférica para reproyección polar de cada radar
+_STATION_GEOM: Dict[str, Dict[str, np.ndarray]] = {}
+
+
+def _init_station_geometries():
+    """Calcula matrices 1D de distancia esférica y azimut hacia la rejilla de España para cada estación de radar."""
+    global _STATION_GEOM
+    if _STATION_GEOM:
+        return
+    lons_2d, lats_2d = np.meshgrid(SPAIN_GRID_LONS, SPAIN_GRID_LATS)
+    lat2 = np.radians(lats_2d)
+    lon2 = np.radians(lons_2d)
+
+    for st_id, st_info in SPANISH_RADAR_STATIONS.items():
+        st_lat = st_info["lat"]
+        st_lon = st_info["lon"]
+        lat1 = np.radians(st_lat)
+        lon1 = np.radians(st_lon)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
+        c = 2.0 * np.arcsin(np.minimum(1.0, np.sqrt(a)))
+        dist_m = R_EARTH * c
+        y = np.sin(dlon) * np.cos(lat2)
+        x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(dlon)
+        bearing_deg = (np.degrees(np.arctan2(y, x)) + 360.0) % 360.0
+
+        _STATION_GEOM[st_id] = {
+            "dist_m": dist_m.ravel(),
+            "bearing_deg": bearing_deg.ravel()
+        }
 
 
 def colorize_dbz_array(dbz_matrix: np.ndarray) -> np.ndarray:
@@ -156,8 +194,9 @@ def parse_timestep_info(timestep: str) -> Dict[str, Any]:
 
 class RadarService:
     """
-    Servicio central de gestión de datos de radar.
-    Gestiona la ingesta de Compuestos de España y el histórico de 24 horas (~288 fotogramas).
+    Servicio central de gestión y composición de datos de radar.
+    Gestiona la ingesta de Compuestos Mixtos, Corto Alcance y Largo Alcance en España
+    y el histórico de 24 horas (~288 fotogramas).
     """
     _instance: Optional["RadarService"] = None
 
@@ -177,6 +216,9 @@ class RadarService:
         self.composites_dir: Path = self.cache_dir / "composites"
         self.composites_dir.mkdir(parents=True, exist_ok=True)
 
+        # Precomputar matrices geométricas de radar
+        _init_station_geometries()
+
         # Metadatos del estado del radar
         self.state: Dict[str, Any] = {
             "last_updated": None,
@@ -190,10 +232,13 @@ class RadarService:
         # Histórico de fotogramas disponibles en las últimas 24 horas (orden cronológico ascendente)
         self.timeline: List[Dict[str, Any]] = []
 
-        # Cache en memoria de matriz dBZ del compuesto más reciente para inspección instantánea en hover
-        self._composite_dbz_grid: Optional[np.ndarray] = None
-        # Cache LRU en memoria de matrices históricas recientes (máx 30)
-        self._historical_dbz_grids: Dict[str, np.ndarray] = {}
+        # Cache en memoria de matrices dBZ más recientes
+        self._composite_dbz_grid: Optional[np.ndarray] = None      # Modo mixto (por defecto)
+        self._short_range_dbz_grid: Optional[np.ndarray] = None    # Modo corto alcance
+        self._long_range_dbz_grid: Optional[np.ndarray] = None     # Modo largo alcance
+
+        # Cache LRU en memoria de matrices históricas recientes (máx 40)
+        self._historical_dbz_grids: Dict[Tuple[str, str], np.ndarray] = {}
 
         # Intentar cargar matriz cacheada y timeline del disco
         self._load_cached_state()
@@ -235,7 +280,6 @@ class RadarService:
         q._loop = loop
         self._subscribers.add(q)
         try:
-            # Enviar el estado actual y la línea temporal completa inmediatamente al conectar
             initial_payload = {
                 "event": "radar_init",
                 "timestep": (self.state.get("latest_composite") or {}).get("timestep"),
@@ -286,15 +330,32 @@ class RadarService:
                     data = json.load(f)
                     self.timeline = data.get("timeline", [])
 
-            # Si no hay timeline pero hay imágenes en composites_dir, reconstruirla
             if not self.timeline and self.composites_dir.exists():
                 self._rebuild_timeline_from_disk()
 
-            comp_npy = self.cache_dir / "latest_spain_composite.npy"
-            if comp_npy.exists():
-                self._composite_dbz_grid = np.load(comp_npy)
+            self._composite_dbz_grid = self._load_grid_file(self.cache_dir / "latest_spain_composite")
+            self._short_range_dbz_grid = self._load_grid_file(self.cache_dir / "latest_short_composite")
+            self._long_range_dbz_grid = self._load_grid_file(self.cache_dir / "latest_long_composite")
         except Exception as e:
             logger.warning(f"No se pudo cargar estado/timeline de radar desde disco: {e}")
+
+    def _load_grid_file(self, path_no_ext: Path) -> Optional[np.ndarray]:
+        """Carga una matriz .npz comprimida o .npy con compatibilidad total."""
+        npz_p = path_no_ext.with_suffix(".npz")
+        if npz_p.exists():
+            try:
+                with np.load(npz_p) as d:
+                    return d["data"] if "data" in d else d[d.files[0]]
+            except Exception as e:
+                logger.warning(f"Error cargando {npz_p}: {e}")
+
+        npy_p = path_no_ext.with_suffix(".npy")
+        if npy_p.exists():
+            try:
+                return np.load(npy_p)
+            except Exception as e:
+                logger.warning(f"Error cargando {npy_p}: {e}")
+        return None
 
     def _rebuild_timeline_from_disk(self):
         """Reconstruye la lista cronológica de timesteps inspeccionando el directorio de compuestos."""
@@ -324,15 +385,32 @@ class RadarService:
         return result
 
     def get_metadata(self) -> Dict[str, Any]:
-        """Retorna metadatos, línea temporal y opciones para la UI."""
+        """Retorna metadatos, línea temporal y opciones de modos para la UI."""
         return {
             "status": self.state["status"],
             "last_updated": self.state["last_updated"],
             "modes": [
-                {"id": "composite", "name": "Radar Compuesto (España - OPERA)", "description": "Mosaico nacional de reflectividad DBZH"}
+                {
+                    "id": "mixed",
+                    "name": "Compuesto Mixto (Corto 0.5º + Largo)",
+                    "description": "Prevalece el corto alcance 0.5º de alta definición y rellena a gran distancia con largo alcance"
+                },
+                {
+                    "id": "short_range",
+                    "name": "Corto Alcance 0.5º (Alta Def. - DBZH+VRADH)",
+                    "description": "Barridos Doppler a 0.5º de elevación con 500m de resolución (radio ≤ 145 km)"
+                },
+                {
+                    "id": "long_range",
+                    "name": "Largo Alcance (OPERA / DBZH+TH)",
+                    "description": "Compuesto tradicional de largo alcance (250 km)"
+                }
             ],
+            "default_mode": "mixed",
             "latest_composite": self.state["latest_composite"],
             "composite_bounds": self.state["composite_bounds"],
+            "stations": SPANISH_RADAR_STATIONS,
+            "short_range_max_km": RADAR_SHORT_RANGE_MAX_KM,
             "timeline": self.get_timeline(),
             "color_scale": [
                 {"min_dbz": 5, "max_dbz": 15, "color": "#38bdf8", "label": "5-15 dBZ (Muy débil)"},
@@ -344,50 +422,84 @@ class RadarService:
             ]
         }
 
-    def get_composite_image_path(self, timestep: Optional[str] = None) -> Optional[Path]:
+    def get_composite_image_path(self, mode: str = "mixed", timestep: Optional[str] = None) -> Optional[Path]:
         """
-        Ruta del archivo PNG del compuesto de España solicitado o del más reciente.
+        Ruta del archivo PNG del compuesto solicitado según el modo ('mixed', 'short_range', 'long_range')
+        y el instante temporal (o el más reciente).
         """
+        prefix = "composite_"
+        if mode == "short_range":
+            prefix = "short_"
+        elif mode == "long_range":
+            prefix = "long_"
+        elif mode in ("mixed", "composite"):
+            prefix = "mixed_"
+
         if timestep:
-            p = self.composites_dir / f"composite_{timestep}.png"
+            p = self.composites_dir / f"{prefix}{timestep}.png"
             if p.exists():
                 return p
-        
-        # Fallback al compuesto más reciente
+            # Fallback a composite_{timestep}.png
+            p_fallback = self.composites_dir / f"composite_{timestep}.png"
+            if p_fallback.exists():
+                return p_fallback
+
+        # Fotograma más reciente
+        if mode == "short_range":
+            p_lat = self.cache_dir / "latest_short_composite.png"
+            if p_lat.exists():
+                return p_lat
+        elif mode == "long_range":
+            p_lat = self.cache_dir / "latest_long_composite.png"
+            if p_lat.exists():
+                return p_lat
+
         p_latest = self.cache_dir / "latest_spain_composite.png"
         return p_latest if p_latest.exists() else None
 
     def get_station_image_path(self, station_id: str, timestep: Optional[str] = None) -> Optional[Path]:
-        """Compatibilidad: retorna el compuesto nacional."""
-        return self.get_composite_image_path(timestep=timestep)
+        """Compatibilidad: retorna el compuesto mixto nacional."""
+        return self.get_composite_image_path(mode="mixed", timestep=timestep)
 
-    def get_dbz_at_point(self, lat: float, lon: float, mode: str = "composite", station_id: Optional[str] = None, timestep: Optional[str] = None) -> Optional[float]:
-        """Consulta el valor en dBZ para las coordenadas (lat, lon) dadas con interpolación de vecino más cercano."""
+    def get_dbz_at_point(self, lat: float, lon: float, mode: str = "mixed", station_id: Optional[str] = None, timestep: Optional[str] = None) -> Optional[float]:
+        """Consulta el valor en dBZ para las coordenadas (lat, lon) dadas según el modo seleccionado."""
         if not (SPAIN_BBOX["lat_min"] <= lat <= SPAIN_BBOX["lat_max"] and SPAIN_BBOX["lon_min"] <= lon <= SPAIN_BBOX["lon_max"]):
             return None
 
+        # Normalizar modo
+        norm_mode = "mixed"
+        if mode in ("short_range", "short"):
+            norm_mode = "short_range"
+        elif mode in ("long_range", "long"):
+            norm_mode = "long_range"
+
         grid = None
         if timestep:
-            # Buscar en caché en memoria o cargar desde disco
-            grid = self._historical_dbz_grids.get(timestep)
+            cache_key = (norm_mode, timestep)
+            grid = self._historical_dbz_grids.get(cache_key)
             if grid is None:
-                npy_path = self.composites_dir / f"composite_{timestep}.npy"
-                if npy_path.exists():
-                    try:
-                        grid = np.load(npy_path)
-                        # Mantener como máximo 30 matrices en memoria
-                        if len(self._historical_dbz_grids) >= 30:
-                            oldest_k = next(iter(self._historical_dbz_grids))
-                            del self._historical_dbz_grids[oldest_k]
-                        self._historical_dbz_grids[timestep] = grid
-                    except Exception as e:
-                        logger.warning(f"Error cargando npy {npy_path}: {e}")
-        
+                # Buscar archivo NPY
+                prefix = "mixed_" if norm_mode == "mixed" else ("short_" if norm_mode == "short_range" else "long_")
+                grid = self._load_grid_file(self.composites_dir / f"{prefix}{timestep}")
+                if grid is None and norm_mode == "mixed":
+                    grid = self._load_grid_file(self.composites_dir / f"composite_{timestep}")
+
+                if grid is not None:
+                    if len(self._historical_dbz_grids) >= 40:
+                        oldest_k = next(iter(self._historical_dbz_grids))
+                        del self._historical_dbz_grids[oldest_k]
+                    self._historical_dbz_grids[cache_key] = grid
+
         if grid is None:
-            grid = self._composite_dbz_grid
+            if norm_mode == "short_range":
+                grid = self._short_range_dbz_grid or self._composite_dbz_grid
+            elif norm_mode == "long_range":
+                grid = self._long_range_dbz_grid or self._composite_dbz_grid
+            else:
+                grid = self._composite_dbz_grid
 
         if grid is not None:
-            y_pt = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(lat)/2))
+            y_pt = R_EARTH * np.log(np.tan(np.pi / 4 + np.radians(lat) / 2))
             row = int(round((Y_MERC_MAX - y_pt) / (Y_MERC_MAX - Y_MERC_MIN) * (GRID_H - 1)))
             col = int(round((lon - SPAIN_BBOX["lon_min"]) / (SPAIN_BBOX["lon_max"] - SPAIN_BBOX["lon_min"]) * (GRID_W - 1)))
             row = max(0, min(row, grid.shape[0] - 1))
@@ -425,11 +537,142 @@ class RadarService:
             return None
 
     # -------------------------------------------------------------
-    # Procesamiento de HDF5 (Compuesto de España)
+    # Reproyección polar de radares individuales (Corto Alcance)
+    # -------------------------------------------------------------
+    def _map_station_short_range_scan(self, st_id: str, h5_bytes: bytes, short_grid: np.ndarray, coverage_mask: np.ndarray, max_km: float = RADAR_SHORT_RANGE_MAX_KM) -> bool:
+        """
+        Extrae el barrido de elevación más baja (dataset1) de reflectividad DBZH
+        del radar de corto alcance (DBZH_VRADH) y lo reproyecta a la rejilla de España.
+        """
+        try:
+            geom = _STATION_GEOM.get(st_id)
+            if geom is None:
+                return False
+
+            with h5py.File(io.BytesIO(h5_bytes), "r") as f:
+                # Localizar explícitamente el dataset de elevación 0.5º (haz rasante de corto alcance)
+                target_ds = None
+                for ds_key in ("dataset1", "dataset2", "dataset3"):
+                    if ds_key in f:
+                        ds = f[ds_key]
+                        el = float(ds["where"].attrs.get("elangle", 999.0)) if "where" in ds else 999.0
+                        if abs(el - 0.5) < 0.35:
+                            target_ds = ds
+                            break
+                if target_ds is None and "dataset1" in f:
+                    target_ds = f["dataset1"]
+
+                if target_ds is None:
+                    return False
+
+                w = target_ds["where"].attrs if "where" in target_ds else {}
+                nbins = int(w.get("nbins", 299))
+                nrays = int(w.get("nrays", 360))
+                rscale = float(w.get("rscale", 500.0))
+                rstart = float(w.get("rstart", 0.0))
+
+                dbz_ds = None
+                for dk in target_ds.keys():
+                    if dk.startswith("data") and target_ds[dk]["what"].attrs.get("quantity") in (b"DBZH", "DBZH"):
+                        dbz_ds = target_ds[dk]
+                        break
+                if dbz_ds is None:
+                    return False
+
+                raw = dbz_ds["data"][:]
+                what = dbz_ds["what"].attrs
+                gain = float(what.get("gain", 1.0))
+                offset = float(what.get("offset", 0.0))
+                nodata = float(what.get("nodata", 95.5))
+                undetect = float(what.get("undetect", -32.0))
+
+                phys = np.where((raw == nodata) | (raw <= undetect), -9999.0, raw * gain + offset)
+
+                dist_m = geom["dist_m"]
+                bearing_deg = geom["bearing_deg"]
+
+                ray_idx = (np.floor(bearing_deg / (360.0 / nrays))).astype(np.int16) % nrays
+                bin_idx = (np.floor((dist_m - rstart) / rscale)).astype(np.int16)
+
+                valid = (bin_idx >= 0) & (bin_idx < nbins) & (dist_m <= max_km * 1000.0)
+                flat_idx = np.flatnonzero(valid)
+                if len(flat_idx) == 0:
+                    return True
+
+                coverage_mask[flat_idx] = True
+                st_vals = phys[ray_idx[flat_idx], bin_idx[flat_idx]]
+                curr_vals = short_grid[flat_idx]
+
+                # Si no había valor asignado o el radar individual detecta mayor reflectividad, actualizar
+                short_grid[flat_idx] = np.where((curr_vals < -9000.0) | (st_vals > curr_vals), st_vals, curr_vals)
+                return True
+        except Exception as e:
+            logger.warning(f"Error procesando barrido de radar {st_id}: {e}")
+            return False
+
+    def _fetch_matching_short_range_scans(self, timestep: str) -> Dict[str, bytes]:
+        """
+        Busca y descarga en paralelo los barridos de corto alcance (DBZH_VRADH) más cercanos
+        en tiempo para todas las estaciones españolas disponibles.
+        """
+        ts_info = parse_timestep_info(timestep)
+        dt_utc = datetime.fromisoformat(ts_info["valid_time_iso"])
+        date_prefix = dt_utc.strftime("%Y/%m/%d/")
+
+        results = {}
+
+        def fetch_station(st_id: str):
+            prefix = f"{date_prefix}ES/{st_id}/PVOL/"
+            keys = self._fetch_s3_latest_keys(prefix, max_keys=200)
+            vradh_keys = [k for k in keys if "DBZH_VRADH.h5" in k]
+            if not vradh_keys:
+                return
+            
+            # Buscar la clave más próxima al timestamp deseado (en una ventana de ±15 min)
+            best_key = None
+            min_diff = 999999
+            target_ts = timestep[:13] if len(timestep) >= 13 else dt_utc.strftime("%Y%m%dT%H%M")
+            try:
+                t_target = datetime.strptime(target_ts, "%Y%m%dT%H%M").replace(tzinfo=timezone.utc)
+            except Exception:
+                t_target = dt_utc
+
+            for k in vradh_keys:
+                k_ts = k.split("@")[1] if "@" in k else ""
+                if len(k_ts) >= 13:
+                    try:
+                        k_dt = datetime.strptime(k_ts[:13], "%Y%m%dT%H%M").replace(tzinfo=timezone.utc)
+                        diff = abs((k_dt - t_target).total_seconds())
+                        if diff < min_diff and diff <= 1200: # máximo 20 min de diferencia
+                            min_diff = diff
+                            best_key = k
+                    except Exception:
+                        pass
+
+            if best_key is None and vradh_keys:
+                best_key = vradh_keys[-1]
+
+            if best_key:
+                h5_bytes = self._download_s3_file(best_key)
+                if h5_bytes:
+                    results[st_id] = h5_bytes
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            pool.map(fetch_station, list(SPANISH_RADAR_STATIONS.keys()))
+
+        return results
+
+    # -------------------------------------------------------------
+    # Procesamiento de HDF5 y Generación del Compuesto Mixto
     # -------------------------------------------------------------
     def process_opera_composite(self, h5_bytes: bytes, timestep: str) -> bool:
-        """Extrae el mosaico de España del HDF5 de OPERA, genera PNG RGBA georreferenciado y actualiza la línea temporal."""
+        """
+        Extrae el mosaico de largo alcance de OPERA, descarga los barridos de corto alcance
+        de las estaciones de AEMET, genera los 3 modos de compuesto (Mixto, Corto, Largo)
+        y actualiza la línea temporal.
+        """
         try:
+            # 1. Decodificar capa base de largo alcance (OPERA / DBZH+TH)
             with h5py.File(io.BytesIO(h5_bytes), "r") as f:
                 raw_data = f["dataset1"]["data1"]["data"][:]
                 what = f["dataset1"]["data1"]["what"].attrs
@@ -438,74 +681,134 @@ class RadarService:
                 nodata = float(what.get("nodata", 255.0))
                 undetect = float(what.get("undetect", 0.0))
 
-            # Matriz en valores físicos reales de dBZ (ODIM standard)
             dbz_phys = np.where((raw_data == nodata) | (raw_data == undetect), -9999.0, raw_data * gain + offset)
-            # Descartar ruido de fondo y ecos no meteorológicos (< 8.0 dBZ)
             dbz_phys = np.where(dbz_phys < 8.0, -9999.0, dbz_phys)
 
-            # Mapeo a la rejilla de España
-            sampled_dbz = np.full((len(SPAIN_GRID_LATS), len(SPAIN_GRID_LONS)), -9999.0, dtype=np.float32)
-            sampled_dbz[SPAIN_VALID_MASK] = dbz_phys[SPAIN_ROW_IDX[SPAIN_VALID_MASK], SPAIN_COL_IDX[SPAIN_VALID_MASK]]
+            long_grid = np.full((GRID_H, GRID_W), -9999.0, dtype=np.float32)
+            long_grid[SPAIN_VALID_MASK] = dbz_phys[SPAIN_ROW_IDX[SPAIN_VALID_MASK], SPAIN_COL_IDX[SPAIN_VALID_MASK]]
 
-            # Guardar matriz .npy histórica
-            npy_path = self.composites_dir / f"composite_{timestep}.npy"
-            np.save(npy_path, sampled_dbz)
+            # 2. Descargar y proyectar barridos de corto alcance (DBZH+VRADH)
+            short_grid_1d = np.full((GRID_H * GRID_W,), -9999.0, dtype=np.float32)
+            coverage_mask_1d = np.zeros((GRID_H * GRID_W,), dtype=bool)
 
-            # Generar y guardar imagen PNG RGBA
-            rgba = colorize_dbz_array(sampled_dbz)
-            img = Image.fromarray(rgba, "RGBA")
-            
-            out_path = self.composites_dir / f"composite_{timestep}.png"
-            img.save(out_path, format="PNG", optimize=True)
+            short_scans = self._fetch_matching_short_range_scans(timestep)
+            for st_id, st_h5 in short_scans.items():
+                self._map_station_short_range_scan(st_id, st_h5, short_grid_1d, coverage_mask_1d)
 
-            # Actualizar último compuesto si este fotograma es el más reciente o igual
+            short_grid_2d = short_grid_1d.reshape(GRID_H, GRID_W)
+            cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
+
+            # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma')
+            if aemet_opendata_service.is_configured:
+                missing_aemet = [
+                    (st_id, st_info["aemet_code"])
+                    for st_id, st_info in SPANISH_RADAR_STATIONS.items()
+                    if st_id not in short_scans and "aemet_code" in st_info
+                ]
+                if missing_aemet:
+                    def fetch_and_blend_aemet(item):
+                        st_id, aemet_code = item
+                        gif_bytes = aemet_opendata_service.fetch_regional_radar_gif(aemet_code)
+                        if gif_bytes:
+                            mapped = aemet_opendata_service.decode_and_blend_station(
+                                st_id, gif_bytes, short_grid_2d, cov_mask_2d
+                            )
+                            if mapped:
+                                short_scans[st_id] = b"AEMET_OPENDATA_FALLBACK"
+
+                    with ThreadPoolExecutor(max_workers=5) as pool:
+                        list(pool.map(fetch_and_blend_aemet, missing_aemet))
+
+            # 3. Generar el Compuesto Mixto de Alta Definición
+            # En áreas con cobertura de corto alcance (radio <= 145 km):
+            # - Si el radar de corto alcance detecta eco (>= 8 dBZ), prevalece su núcleo de alta definición.
+            # - Si el radar de corto alcance confirma atmósfera limpia (< 8 dBZ), elimina ecos espurios.
+            # En áreas sin cobertura de corto alcance (frentes lejanos, mar, etc.), se usa el largo alcance.
+            mixed_grid = long_grid.copy()
+            mixed_grid[cov_mask_2d] = short_grid_2d[cov_mask_2d]
+
+            # 4. Guardar matrices .npz comprimidas históricas (ahorro del 98% de espacio en disco)
+            np.savez_compressed(self.composites_dir / f"mixed_{timestep}.npz", data=mixed_grid)
+            np.savez_compressed(self.composites_dir / f"composite_{timestep}.npz", data=mixed_grid) # Alias estándar
+            np.savez_compressed(self.composites_dir / f"short_{timestep}.npz", data=short_grid_2d)
+            np.savez_compressed(self.composites_dir / f"long_{timestep}.npz", data=long_grid)
+
+            # 5. Generar y guardar imágenes PNG transparentes georreferenciadas
+            img_mixed = Image.fromarray(colorize_dbz_array(mixed_grid), "RGBA")
+            img_mixed.save(self.composites_dir / f"mixed_{timestep}.png", format="PNG", optimize=True)
+            img_mixed.save(self.composites_dir / f"composite_{timestep}.png", format="PNG", optimize=True)
+
+            img_short = Image.fromarray(colorize_dbz_array(short_grid_2d), "RGBA")
+            img_short.save(self.composites_dir / f"short_{timestep}.png", format="PNG", optimize=True)
+
+            img_long = Image.fromarray(colorize_dbz_array(long_grid), "RGBA")
+            img_long.save(self.composites_dir / f"long_{timestep}.png", format="PNG", optimize=True)
+
+            # 6. Actualizar fotograma más reciente
             is_latest_or_newer = True
             if self.timeline:
                 latest_existing = max(t["timestep"] for t in self.timeline)
                 if timestep < latest_existing:
                     is_latest_or_newer = False
 
+            active_ids = list(short_scans.keys())
+            active_names = [SPANISH_RADAR_STATIONS[sid]["name"] for sid in active_ids if sid in SPANISH_RADAR_STATIONS]
+            missing_ids = [sid for sid in SPANISH_RADAR_STATIONS.keys() if sid not in active_ids]
+
             if is_latest_or_newer:
-                self._composite_dbz_grid = sampled_dbz
+                self._composite_dbz_grid = mixed_grid
+                self._short_range_dbz_grid = short_grid_2d
+                self._long_range_dbz_grid = long_grid
+
                 try:
-                    np.save(self.cache_dir / "latest_spain_composite.npy", sampled_dbz)
-                    img.save(self.cache_dir / "latest_spain_composite.png", format="PNG", optimize=True)
+                    np.savez_compressed(self.cache_dir / "latest_spain_composite.npz", data=mixed_grid)
+                    np.savez_compressed(self.cache_dir / "latest_short_composite.npz", data=short_grid_2d)
+                    np.savez_compressed(self.cache_dir / "latest_long_composite.npz", data=long_grid)
+                    img_mixed.save(self.cache_dir / "latest_spain_composite.png", format="PNG", optimize=True)
+                    img_short.save(self.cache_dir / "latest_short_composite.png", format="PNG", optimize=True)
+                    img_long.save(self.cache_dir / "latest_long_composite.png", format="PNG", optimize=True)
                 except Exception as e:
                     logger.warning(f"Error actualizando latest_spain_composite: {e}")
 
                 self.state["last_updated"] = datetime.now(timezone.utc).isoformat()
+                self.state["latest_stations"] = {
+                    "active_count": len(active_ids),
+                    "total_network": len(SPANISH_RADAR_STATIONS),
+                    "active_ids": active_ids,
+                    "active_names": active_names,
+                    "missing_ids": missing_ids
+                }
                 self.state["latest_composite"] = {
                     "timestep": timestep,
                     "bounds": [[SPAIN_BBOX["lat_min"], SPAIN_BBOX["lon_min"]], [SPAIN_BBOX["lat_max"], SPAIN_BBOX["lon_max"]]],
                     "file": f"composites/composite_{timestep}.png"
                 }
 
-            # Actualizar entrada en la línea temporal
+            # 7. Actualizar entrada en la línea temporal
             ts_info = parse_timestep_info(timestep)
-            # Reemplazar o insertar
             self.timeline = [t for t in self.timeline if t["timestep"] != timestep]
             self.timeline.append({
                 "timestep": timestep,
                 "valid_time_iso": ts_info["valid_time_iso"],
                 "valid_time_local": ts_info["valid_time_local"],
                 "time_only_local": ts_info["time_only_local"],
-                "png_url": f"/api/v1/radar/image?timestep={timestep}"
+                "png_url": f"/api/v1/radar/image?timestep={timestep}",
+                "active_radars_count": len(active_ids),
+                "active_radars": active_ids
             })
             self.timeline.sort(key=lambda x: x["timestep"])
-            # Mantener un máximo de 288 fotogramas (24h completas a 5 min)
             if len(self.timeline) > 288:
                 self.timeline = self.timeline[-288:]
 
             self._save_state_to_cache()
 
             if is_latest_or_newer:
-                # Notificar inmediatamente a los clientes SSE
                 self.notify_radar_update(timestep, self.state["latest_composite"]["bounds"])
 
-            logger.info(f"Compuesto de España procesado con éxito ({timestep})")
+            logger.info(f"Compuesto Mixto de España procesado con éxito ({timestep}) con {len(short_scans)} radares de corto alcance integrados.")
             return True
         except Exception as e:
-            logger.error(f"Error procesando compuesto OPERA HDF5 ({timestep}): {e}")
+            logger.error(f"Error procesando compuesto HDF5 ({timestep}): {e}")
             return False
 
     # -------------------------------------------------------------
@@ -517,53 +820,55 @@ class RadarService:
             loop = asyncio.get_running_loop()
             now = datetime.now(timezone.utc)
 
-            # Buscar claves de hoy y de ayer para cubrir las últimas 24h
             today_prefix = now.strftime("%Y/%m/%d/")
             yesterday_prefix = (now - timedelta(days=1)).strftime("%Y/%m/%d/")
 
             comp_keys = await loop.run_in_executor(None, self._fetch_s3_latest_keys, f"{today_prefix}OPERA/COMP/")
             yesterday_keys = await loop.run_in_executor(None, self._fetch_s3_latest_keys, f"{yesterday_prefix}OPERA/COMP/")
-            
+
             all_comp_keys = yesterday_keys + comp_keys
             dbz_keys = [k for k in all_comp_keys if "DBZH.h5" in k]
-            
+
             if not dbz_keys:
                 logger.warning("Radar: No se encontraron claves DBZH en S3.")
                 return self.get_metadata()
 
-            # Conservar como máximo las últimas 288 claves (24h a 5 min)
             recent_dbz_keys = dbz_keys[-288:]
 
-            # Identificar qué claves no están aún procesadas en disco
             keys_to_download = []
             for k in recent_dbz_keys:
                 ts = k.split("@")[1] if "@" in k else now.strftime("%Y%m%dT%H%M")
-                png_file = self.composites_dir / f"composite_{ts}.png"
-                if not png_file.exists():
+                mixed_file = self.composites_dir / f"mixed_{ts}.png"
+                if not mixed_file.exists():
                     keys_to_download.append((k, ts))
 
             if keys_to_download:
-                logger.info(f"Radar: Sincronizando {len(keys_to_download)} fotogramas nuevos/pendientes de las últimas 24h...")
-                
+                logger.info(f"Radar: Sincronizando {len(keys_to_download)} fotogramas nuevos/pendientes con compuesto mixto...")
+
                 def download_and_process(item):
                     key, ts = item
                     h5_bytes = self._download_s3_file(key)
                     if h5_bytes:
                         self.process_opera_composite(h5_bytes, ts)
 
-                # Procesar en paralelo con ThreadPoolExecutor para backfill ultra-rápido
-                await loop.run_in_executor(None, lambda: list(ThreadPoolExecutor(max_workers=5).map(download_and_process, keys_to_download)))
+                # Procesar en paralelo
+                await loop.run_in_executor(None, lambda: list(ThreadPoolExecutor(max_workers=4).map(download_and_process, keys_to_download)))
+            elif recent_dbz_keys:
+                # Si no hay fotogramas nuevos pendientes, refrescar el fotograma más reciente con fallback AEMET en directo
+                latest_k = recent_dbz_keys[-1]
+                latest_ts = latest_k.split("@")[1] if "@" in latest_k else now.strftime("%Y%m%dT%H%M")
+                h5_bytes = await loop.run_in_executor(None, self._download_s3_file, latest_k)
+                if h5_bytes:
+                    await loop.run_in_executor(None, self.process_opera_composite, h5_bytes, latest_ts)
 
-            # Limpiar fotogramas con más de 25 horas de antigüedad
             self._cleanup_old_cache()
-
             return self.get_metadata()
 
     def _cleanup_old_cache(self):
         """Elimina fotogramas y archivos con más de 25 horas de antigüedad."""
         try:
             cutoff = time.time() - (25 * 3600)
-            for f in self.composites_dir.glob("composite_*.*"):
+            for f in self.composites_dir.glob("*.*"):
                 if f.stat().st_mtime < cutoff:
                     f.unlink(missing_ok=True)
             for f in self.cache_dir.glob("*.h5"):
@@ -627,5 +932,6 @@ class RadarService:
             return
         timestep = s3_key.split("@")[1] if "@" in s3_key else datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
         self.process_opera_composite(h5_bytes, timestep)
+
 
 radar_service = RadarService()

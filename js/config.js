@@ -250,23 +250,25 @@ export const CONFIG = {
     ]
   },
 
-  // Catálogo de estaciones de radar de AEMET con posición geográfica y alcance
+  // Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
   radarStations: {
-    'esbnv': { id: 'esbnv', name: 'Valencia / Cullera', province: 'Valencia', lat: 39.1864, lon: -0.2520, range_km: 240, alt_m: 236 },
-    'espma': { id: 'espma', name: 'Murcia / Cabezo Plata', province: 'Murcia', lat: 37.9940, lon: -0.9940, range_km: 240, alt_m: 460 },
-    'esalm': { id: 'esalm', name: 'Almería / Níjar', province: 'Almería', lat: 36.8660, lon: -2.0830, range_km: 240, alt_m: 460 },
-    'esahr': { id: 'esahr', name: 'Málaga / Alhaurín', province: 'Málaga', lat: 36.6190, lon: -4.6640, range_km: 240, alt_m: 1100 },
-    'esclg': { id: 'esclg', name: 'Sevilla / El Castillo', province: 'Sevilla', lat: 37.6890, lon: -6.3330, range_km: 250, alt_m: 686 },
-    'esatn': { id: 'esatn', name: 'Madrid / Attalaya', province: 'Madrid', lat: 40.1780, lon: -3.7120, range_km: 240, alt_m: 680 },
-    'esgld': { id: 'esgld', name: 'Zaragoza / La Ginebrosa', province: 'Zaragoza', lat: 41.7280, lon: -0.9230, range_km: 240, alt_m: 350 },
-    'eslid': { id: 'eslid', name: 'Barcelona / Puig d\'Arques', province: 'Girona/Barcelona', lat: 41.8890, lon: 2.9970, range_km: 240, alt_m: 535 },
-    'espdg': { id: 'espdg', name: 'Mallorca / Randa', province: 'Illes Balears', lat: 39.5290, lon: 2.9230, range_km: 240, alt_m: 543 },
-    'essft': { id: 'essft', name: 'Cáceres / Sta. Marina', province: 'Cáceres', lat: 39.4210, lon: -6.3140, range_km: 240, alt_m: 508 },
-    'essse': { id: 'essse', name: 'San Sebastián / Igueldo', province: 'Gipuzkoa', lat: 43.3080, lon: -2.0400, range_km: 240, alt_m: 370 },
-    'estjv': { id: 'estjv', name: 'A Coruña / Monte Xesteiras', province: 'A Coruña', lat: 42.6180, lon: -8.5360, range_km: 240, alt_m: 500 },
-    'esast': { id: 'esast', name: 'Asturias / Picos de Europa', province: 'Asturias', lat: 43.1880, lon: -5.9250, range_km: 240, alt_m: 1780 },
-    'estde': { id: 'estde', name: 'Tenerife / Cruz de Gala', province: 'Santa Cruz de Tenerife', lat: 28.3109, lon: -16.8238, range_km: 240, alt_m: 1340 },
-    'eslpa': { id: 'eslpa', name: 'Gran Canaria / Pico Gorra', province: 'Las Palmas', lat: 27.9600, lon: -15.5860, range_km: 240, alt_m: 1940 }
+    'esahr': { id: 'esahr', name: 'Málaga / Alhaurín', province: 'Málaga', lat: 36.6134, lon: -4.6593, range_km: 240, short_range_km: 145, alt_m: 1159 },
+    'esclg': { id: 'esclg', name: 'Sevilla / El Castillo', province: 'Sevilla', lat: 37.6887, lon: -6.3331, range_km: 250, short_range_km: 145, alt_m: 531 },
+    'esnjr': { id: 'esnjr', name: 'Almería / Níjar', province: 'Almería', lat: 36.8324, lon: -2.0821, range_km: 240, short_range_km: 145, alt_m: 499 },
+    'estjv': { id: 'estjv', name: 'Madrid / Torrejón de Velasco', province: 'Madrid', lat: 40.1759, lon: -3.7137, range_km: 240, short_range_km: 145, alt_m: 717 },
+    'essft': { id: 'essft', name: 'Cáceres / Sierra Fuentes', province: 'Cáceres', lat: 39.4288, lon: -6.2853, range_km: 240, short_range_km: 145, alt_m: 667 },
+    'esgrm': { id: 'esgrm', name: 'Salamanca / Guadramiro', province: 'Salamanca', lat: 41.0116, lon: -6.4777, range_km: 240, short_range_km: 145, alt_m: 793 },
+    'eslid': { id: 'eslid', name: 'Valladolid', province: 'Valladolid', lat: 41.9956, lon: -4.6028, range_km: 240, short_range_km: 145, alt_m: 887 },
+    'essse': { id: 'essse', name: 'País Vasco / Monte Oiz', province: 'Bizkaia/Gipuzkoa', lat: 43.4033, lon: -2.8419, range_km: 240, short_range_km: 145, alt_m: 625 },
+    'espdg': { id: 'espdg', name: 'Zaragoza / Perdiguera', province: 'Zaragoza', lat: 41.7340, lon: -0.5459, range_km: 240, short_range_km: 145, alt_m: 835 },
+    'esgld': { id: 'esgld', name: 'Barcelona / Gelida', province: 'Barcelona', lat: 41.4082, lon: 1.8849, range_km: 240, short_range_km: 145, alt_m: 662 },
+    'esbnv': { id: 'esbnv', name: 'Tenerife / Buenavista', province: 'Santa Cruz de Tenerife', lat: 28.3109, lon: -16.8238, range_km: 240, short_range_km: 145, alt_m: 1367 },
+    'esatn': { id: 'esatn', name: 'Gran Canaria / Artenara', province: 'Las Palmas', lat: 28.0188, lon: -15.6145, range_km: 240, short_range_km: 145, alt_m: 1777 },
+    'escul': { id: 'escul', name: 'Valencia / Cullera', province: 'Valencia', lat: 39.1864, lon: -0.2520, range_km: 240, short_range_km: 145, alt_m: 236 },
+    'espma': { id: 'espma', name: 'Murcia / Cabezo de la Plata', province: 'Murcia', lat: 37.9940, lon: -0.9940, range_km: 240, short_range_km: 145, alt_m: 460 },
+    'espmb': { id: 'espmb', name: 'Mallorca / Puig de Randa', province: 'Illes Balears', lat: 39.5290, lon: 2.9230, range_km: 240, short_range_km: 145, alt_m: 543 },
+    'esast': { id: 'esast', name: 'Asturias / El Vidural', province: 'Asturias', lat: 43.3420, lon: -6.5210, range_km: 240, short_range_km: 145, alt_m: 850 },
+    'escor': { id: 'escor', name: 'A Coruña / Lousame', province: 'A Coruña', lat: 42.8360, lon: -8.8470, range_km: 240, short_range_km: 145, alt_m: 680 }
   }
 };
 

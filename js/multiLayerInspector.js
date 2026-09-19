@@ -564,13 +564,18 @@ export class MultiLayerInspector {
 
             const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
 
-            const stMode = this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId
-              ? `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId}`
-              : 'Compuesto Nacional';
+            let stMode = 'Compuesto Mixto (Corto 0.5º + Largo)';
+            if (this.layerManager.currentRadarMode === 'short_range') {
+              stMode = 'Corto Alcance 0.5º (Doppler ≤145km)';
+            } else if (this.layerManager.currentRadarMode === 'long_range') {
+              stMode = 'Largo Alcance (OPERA / 250km)';
+            } else if (this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId) {
+              stMode = `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId} (0.5º)`;
+            }
 
             sections.push({
               type: "radar",
-              title: "Radar de Reflectividad (OPERA)",
+              title: "Radar Meteorológico (AEMET/OPERA)",
               headerColor: "#0284c7",
               icon: "📡",
               name: `Intensidad: ${dbzVal.toFixed(1)} dBZ`,
@@ -582,7 +587,7 @@ export class MultiLayerInspector {
                   <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
                   ${label}
                 </div>
-                <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Cobertura: ${stMode}</div>
+                <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Producto: ${stMode}</div>
               `
             });
 

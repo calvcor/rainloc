@@ -21,6 +21,19 @@ async def get_radar_metadata() -> Dict[str, Any]:
     return radar_service.get_metadata()
 
 
+@router.get("/stations", summary="Catálogo de estaciones de radar y parámetros de cobertura")
+async def get_radar_stations() -> Dict[str, Any]:
+    """
+    Retorna el catálogo verificado de radares de la red AEMET/ORD con sus coordenadas, radios y nombres.
+    """
+    meta = radar_service.get_metadata()
+    return {
+        "stations": meta.get("stations", {}),
+        "short_range_max_km": meta.get("short_range_max_km", 145.0),
+        "latest_stations": radar_service.state.get("latest_stations", {})
+    }
+
+
 @router.get("/timeline", summary="Lista cronológica de fotogramas de radar de las últimas 24 horas")
 async def get_radar_timeline() -> List[Dict[str, Any]]:
     """
@@ -32,21 +45,21 @@ async def get_radar_timeline() -> List[Dict[str, Any]]:
 
 @router.get("/image", summary="Obtener imagen PNG transparente del radar")
 async def get_radar_image(
-    mode: str = Query("composite", description="Modo: 'composite' (España) o 'single' (estación)"),
+    mode: str = Query("mixed", description="Modo: 'mixed' (compuesto mixto), 'short_range' (corto alcance), 'long_range' (largo alcance), 'composite' o 'single'"),
     station_id: Optional[str] = Query(None, description="Identificador de la estación"),
     timestep: Optional[str] = Query(None, description="Identificador del fotograma (ej: 20260919T1305)")
 ):
     """
     Retorna la imagen PNG RGBA con fondo transparente lista para Leaflet L.imageOverlay.
-    Soporta consultar fotogramas históricos de las últimas 24 horas.
+    Soporta los modos 'mixed' (recomendado), 'short_range', 'long_range' y consultar fotogramas históricos de las últimas 24 horas.
     """
-    if mode == "composite":
-        img_path = radar_service.get_composite_image_path(timestep=timestep)
+    if mode in ("mixed", "composite", "short_range", "long_range"):
+        img_path = radar_service.get_composite_image_path(mode=mode, timestep=timestep)
         if not img_path or not img_path.exists():
             raise HTTPException(status_code=404, detail="Fotograma de radar no encontrado o en proceso de descarga")
         
         # Si se solicita un timestep histórico concreto, cachear a largo plazo en Cloudflare / navegador
-        is_historical = bool(timestep and timestep in img_path.name and not img_path.name.endswith("latest_spain_composite.png"))
+        is_historical = bool(timestep and timestep in img_path.name and not img_path.name.startswith("latest_"))
         cache_control = "public, max-age=86400, s-maxage=86400" if is_historical else "public, max-age=30, s-maxage=30"
 
         return FileResponse(
@@ -72,7 +85,7 @@ async def get_radar_image(
             }
         )
     else:
-        raise HTTPException(status_code=400, detail="Modo no válido. Usa 'composite' o 'single'")
+        raise HTTPException(status_code=400, detail="Modo no válido. Usa 'mixed', 'short_range', 'long_range' o 'single'")
 
 
 @router.get("/value-at", summary="Obtener valor de reflectividad dBZ puntual")
