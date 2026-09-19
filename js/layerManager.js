@@ -3998,7 +3998,7 @@ export class LayerManager {
       return this._basinHydroCache.get(cacheKey);
     }
     try {
-      const resp = await fetch(`${CONFIG.apiBase}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(basinId)}`);
+      const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(basinId)}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       this._basinHydroCache.set(cacheKey, data);
@@ -4054,6 +4054,7 @@ export class LayerManager {
 
     const closeModal = () => {
       backdrop.style.display = 'none';
+      backdrop.setAttribute('aria-hidden', 'true');
       backdrop.classList.remove('no-anim');
       document.removeEventListener('keydown', onKeyDown);
     };
@@ -4069,6 +4070,7 @@ export class LayerManager {
     document.addEventListener('keydown', onKeyDown);
 
     backdrop.style.display = 'flex';
+    backdrop.setAttribute('aria-hidden', 'false');
 
     // Cargar datos del hidrograma
     await this.loadBasinHydroForModal(basinId, modelToUse, basinProps);
