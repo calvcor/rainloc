@@ -31,6 +31,10 @@ export class MultiLayerInspector {
     // Cache y debounce para consultas puntuales de reflectividad dBZ
     this._lastRadarLookup = null;
     this._dbzDebounceTimer = null;
+
+    // Cache espacial e in-flight tracker para consultas de precisión milimétrica en modelos (ECMWF, GFS, AROME)
+    this._modelValuesCache = new Map();
+    this._modelRequestsInFlight = new Set();
   }
 
   /**
@@ -336,6 +340,54 @@ export class MultiLayerInspector {
         // Silencioso en caso de error de red
       }
     }, 40);
+  }
+
+  _getModelCacheKey(modelKey, lat, lng, step, type) {
+    const snap = (modelKey === 'arome') ? 0.01 : 0.04;
+    const sLat = (Math.round(lat / snap) * snap).toFixed(3);
+    const sLng = (Math.round(lng / snap) * snap).toFixed(3);
+    return `${modelKey}_${step}_${type}_${sLat}_${sLng}`;
+  }
+
+  async _fetchModelValue(modelKey, lat, lng, step, type, cacheKey, fallbackMm) {
+    if (this._modelRequestsInFlight.has(cacheKey)) return;
+    this._modelRequestsInFlight.add(cacheKey);
+
+    try {
+      const url = `${CONFIG.apiBaseUrl}/models/${modelKey}/value-at?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&step=${step}&type=${type}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const val = (data && data.value_mm !== null && data.value_mm !== undefined)
+          ? Number(data.value_mm)
+          : (fallbackMm !== undefined ? fallbackMm : 0.0);
+        this._modelValuesCache.set(cacheKey, val);
+      } else {
+        this._modelValuesCache.set(cacheKey, fallbackMm !== undefined ? fallbackMm : 0.0);
+      }
+    } catch (e) {
+      this._modelValuesCache.set(cacheKey, fallbackMm !== undefined ? fallbackMm : 0.0);
+    } finally {
+      this._modelRequestsInFlight.delete(cacheKey);
+      if (this._lastLatLng) {
+        this._inspectPoint(this._lastLatLng);
+      }
+    }
+  }
+
+  _getModelIntensityMeta(mm) {
+    if (mm === null || mm === undefined || isNaN(mm)) return { label: 'Sin datos', color: '#94a3b8' };
+    if (mm >= 250) return { label: '> 250 mm (Extrema)', color: '#ffffff' };
+    if (mm >= 150) return { label: '150 - 250 mm (Torrencial)', color: '#d946ef' };
+    if (mm >= 100) return { label: '100 - 150 mm (Muy Fuerte)', color: '#ef4444' };
+    if (mm >= 70) return { label: '70 - 100 mm (Muy Fuerte)', color: '#f97316' };
+    if (mm >= 40) return { label: '40 - 70 mm (Fuerte)', color: '#facc15' };
+    if (mm >= 20) return { label: '20 - 40 mm (Moderada)', color: '#16a34a' };
+    if (mm >= 10) return { label: '10 - 20 mm (Moderada)', color: '#4ade80' };
+    if (mm >= 3) return { label: '3 - 10 mm (Ligera)', color: '#0284c7' };
+    if (mm >= 1) return { label: '1 - 3 mm (Débil)', color: '#38bdf8' };
+    if (mm >= 0.1) return { label: '0.1 - 1 mm (Muy Débil)', color: '#bae6fd' };
+    return { label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8' };
   }
 
 
@@ -801,33 +853,55 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.6 Modelos Numéricos (ECMWF IFS, AROME, ICON)
+      // 2.6 Modelos Numéricos (ECMWF IFS, GFS, AROME)
       if (this.layerManager.isLayerOnMap("ecmwf_ifs")) {
         const ecmwfPixel = this._getInstantEcmwfPixel(latlng.lat, latlng.lng);
-        const def = CONFIG.overlayLayers.prediction.find((p) => p.id === "ecmwf_ifs");
         const step = (this.layerManager && this.layerManager.currentEcmwfStep) || 3;
         const type = (this.layerManager && this.layerManager.currentEcmwfType) || 'total';
-        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo';
+        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (3h)';
+        const cacheKey = this._getModelCacheKey('ecmwf', latlng.lat, latlng.lng, step, type);
+        const hasCachedVal = this._modelValuesCache.has(cacheKey);
 
-        if (ecmwfPixel) {
+        if (ecmwfPixel || hasCachedVal) {
+          const isZeroRain = !hasCachedVal && ecmwfPixel && ecmwfPixel.mm === 0;
+          const validText = (ecmwfPixel && ecmwfPixel.validText) || `+${step}h`;
+          let displayValHtml = '';
+          let labelHtml = '';
+          let badgeBg = '#059669';
+
+          if (hasCachedVal) {
+            const exactMm = this._modelValuesCache.get(cacheKey);
+            const meta = this._getModelIntensityMeta(exactMm);
+            badgeBg = meta.color;
+            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
+          } else if (isZeroRain) {
+            badgeBg = '#94a3b8';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else {
+            badgeBg = ecmwfPixel ? ecmwfPixel.color : '#059669';
+            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ecmwfPixel ? ecmwfPixel.label : 'Consultando modelo...'}`;
+            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel ? ecmwfPixel.mm : 0.0);
+          }
+
           sections.push({
             type: "model",
             title: "ECMWF IFS (Open Data)",
             headerColor: "#059669",
             icon: "🌐",
             name: `${typeLabel} (+${step}h)`,
-            badge: ecmwfPixel.validText || `+${step}h`,
-            badgeBg: "#059669",
+            badge: validText,
+            badgeBg: badgeBg,
             details: `
               <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
                 <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
-                <span style="font-size: 0.90rem; font-weight: 700; color: ${ecmwfPixel.color};">
-                  ${ecmwfPixel.mm > 0 ? ecmwfPixel.mm.toFixed(1) : '0.0'} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span>
-                </span>
+                ${displayValHtml}
               </div>
               <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${ecmwfPixel.color}; margin-right: 4px;"></span>
-                ${ecmwfPixel.label}
+                ${labelHtml}
               </div>
             `
           });
@@ -836,30 +910,52 @@ export class MultiLayerInspector {
 
       if (this.layerManager.isLayerOnMap("gfs_0p25")) {
         const gfsPixel = this._getInstantGfsPixel(latlng.lat, latlng.lng);
-        const def = CONFIG.overlayLayers.prediction.find((p) => p.id === "gfs_0p25");
         const step = (this.layerManager && this.layerManager.currentGfsStep) || 3;
         const type = (this.layerManager && this.layerManager.currentGfsType) || 'total';
-        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo';
+        const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (3h)';
+        const cacheKey = this._getModelCacheKey('gfs', latlng.lat, latlng.lng, step, type);
+        const hasCachedVal = this._modelValuesCache.has(cacheKey);
 
-        if (gfsPixel) {
+        if (gfsPixel || hasCachedVal) {
+          const isZeroRain = !hasCachedVal && gfsPixel && gfsPixel.mm === 0;
+          const validText = (gfsPixel && gfsPixel.validText) || `+${step}h`;
+          let displayValHtml = '';
+          let labelHtml = '';
+          let badgeBg = '#2563eb';
+
+          if (hasCachedVal) {
+            const exactMm = this._modelValuesCache.get(cacheKey);
+            const meta = this._getModelIntensityMeta(exactMm);
+            badgeBg = meta.color;
+            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
+          } else if (isZeroRain) {
+            badgeBg = '#94a3b8';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else {
+            badgeBg = gfsPixel ? gfsPixel.color : '#2563eb';
+            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gfsPixel ? gfsPixel.label : 'Consultando modelo...'}`;
+            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel ? gfsPixel.mm : 0.0);
+          }
+
           sections.push({
             type: "model",
             title: "NOAA GFS (0.25°)",
             headerColor: "#2563eb",
             icon: "🌐",
             name: `${typeLabel} (+${step}h)`,
-            badge: gfsPixel.validText || `+${step}h`,
-            badgeBg: "#2563eb",
+            badge: validText,
+            badgeBg: badgeBg,
             details: `
               <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
                 <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
-                <span style="font-size: 0.90rem; font-weight: 700; color: ${gfsPixel.color};">
-                  ${gfsPixel.mm > 0 ? gfsPixel.mm.toFixed(1) : '0.0'} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span>
-                </span>
+                ${displayValHtml}
               </div>
               <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${gfsPixel.color}; margin-right: 4px;"></span>
-                ${gfsPixel.label}
+                ${labelHtml}
               </div>
             `
           });
@@ -868,30 +964,52 @@ export class MultiLayerInspector {
 
       if (this.layerManager.isLayerOnMap("arome_precip")) {
         const aromePixel = this._getInstantAromePixel(latlng.lat, latlng.lng);
-        const def = CONFIG.overlayLayers.prediction.find((p) => p.id === "arome_precip");
         const step = (this.layerManager && this.layerManager.currentAromeStep) || 1;
         const type = (this.layerManager && this.layerManager.currentAromeType) || 'total';
         const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (1h)';
+        const cacheKey = this._getModelCacheKey('arome', latlng.lat, latlng.lng, step, type);
+        const hasCachedVal = this._modelValuesCache.has(cacheKey);
 
-        if (aromePixel) {
+        if (aromePixel || hasCachedVal) {
+          const isZeroRain = !hasCachedVal && aromePixel && aromePixel.mm === 0;
+          const validText = (aromePixel && aromePixel.validText) || `+${step}h`;
+          let displayValHtml = '';
+          let labelHtml = '';
+          let badgeBg = '#8b5cf6';
+
+          if (hasCachedVal) {
+            const exactMm = this._modelValuesCache.get(cacheKey);
+            const meta = this._getModelIntensityMeta(exactMm);
+            badgeBg = meta.color;
+            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
+          } else if (isZeroRain) {
+            badgeBg = '#94a3b8';
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else {
+            badgeBg = aromePixel ? aromePixel.color : '#8b5cf6';
+            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${aromePixel ? aromePixel.label : 'Consultando modelo...'}`;
+            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel ? aromePixel.mm : 0.0);
+          }
+
           sections.push({
             type: "model",
             title: "Météo-France AROME (1.3 km)",
             headerColor: "#8b5cf6",
             icon: "⛈️",
             name: `${typeLabel} (+${step}h)`,
-            badge: aromePixel.validText || `+${step}h`,
-            badgeBg: "#8b5cf6",
+            badge: validText,
+            badgeBg: badgeBg,
             details: `
               <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
                 <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
-                <span style="font-size: 0.90rem; font-weight: 700; color: ${aromePixel.color};">
-                  ${aromePixel.mm > 0 ? aromePixel.mm.toFixed(1) : '0.0'} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span>
-                </span>
+                ${displayValHtml}
               </div>
               <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${aromePixel.color}; margin-right: 4px;"></span>
-                ${aromePixel.label}
+                ${labelHtml}
               </div>
             `
           });

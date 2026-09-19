@@ -413,6 +413,74 @@ class AROMEWorker:
         val = float(arr[y_idx, x_idx])
         return round(val, 2)
 
+    def get_max_point(self, step: int, layer_type: str = "total") -> Optional[Dict[str, Any]]:
+        """Calcula las coordenadas lat/lon exactas y el valor en mm del punto de máxima precipitación de AROME."""
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
+        if not self.current_manifest:
+            return None
+
+        cycle_str = self.current_manifest.get("cycle_str")
+        if not cycle_str:
+            return None
+
+        prefix = "total" if layer_type == "total" else "interval"
+        mem_key = f"{cycle_str}_{prefix}_{step:03d}"
+
+        arr = self._in_memory_arrays.get(mem_key)
+        if arr is None:
+            cycle_dir = self.cache_dir / cycle_str
+            npy_path = cycle_dir / f"{prefix}_step_{step:03d}.npy"
+            if npy_path.exists():
+                try:
+                    arr = np.load(npy_path)
+                    self._in_memory_arrays[mem_key] = arr
+                except Exception as e:
+                    logger.warning(f"Error leyendo npy {npy_path}: {e}")
+
+        # Fallback a ciclo anterior si aún no está resuelto
+        if arr is None:
+            prev_manifest = self._get_previous_manifest()
+            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                try:
+                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                    prev_step = step + diff_hours
+                    prev_cycle_str = prev_manifest["cycle_str"]
+                    prev_mem_key = f"{prev_cycle_str}_{prefix}_{prev_step:03d}"
+                    arr = self._in_memory_arrays.get(prev_mem_key)
+                    if arr is None:
+                        prev_dir = self.cache_dir / prev_cycle_str
+                        prev_npy = prev_dir / f"{prefix}_step_{prev_step:03d}.npy"
+                        if prev_npy.exists():
+                            arr = np.load(prev_npy)
+                            self._in_memory_arrays[prev_mem_key] = arr
+                except Exception:
+                    pass
+
+        if arr is None:
+            return None
+
+        try:
+            max_idx = np.unravel_index(np.argmax(arr), arr.shape)
+            val = float(arr[max_idx])
+            if val < 0.1:
+                return {"lat": None, "lon": None, "value_mm": round(val, 2)}
+
+            y_merc = Y_MERC_MAX - (max_idx[0] / (GRID_H - 1)) * (Y_MERC_MAX - Y_MERC_MIN)
+            lat = float(np.degrees(2 * np.arctan(np.exp(y_merc / R_EARTH)) - np.pi / 2))
+            lon = float(SPAIN_BBOX["lon_min"] + (max_idx[1] / (GRID_W - 1)) * (SPAIN_BBOX["lon_max"] - SPAIN_BBOX["lon_min"]))
+
+            return {
+                "lat": round(lat, 4),
+                "lon": round(lon, 4),
+                "value_mm": round(val, 2)
+            }
+        except Exception as e:
+            logger.error(f"Error calculando max_point AROME: {e}")
+            return None
+
     def _get_candidate_cycles(self) -> List[Tuple[datetime, str, str]]:
         """
         Genera los ciclos candidatos más recientes en orden cronológico descendente

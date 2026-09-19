@@ -445,7 +445,7 @@ export function formatEcmwfTimestamp(metadata) {
 
   const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 240 && metadata.status !== 'complete'));
 
-  if (isUpdating && maxStep > 0) {
+  if (isUpdating && maxStep > 0 && maxStep < 240) {
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
   }
 
@@ -505,7 +505,7 @@ export function formatGfsTimestamp(metadata) {
 
   const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 384 && metadata.status !== 'complete'));
 
-  if (isUpdating && maxStep > 0) {
+  if (isUpdating && maxStep > 0 && maxStep < 384) {
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
   }
 
@@ -564,7 +564,7 @@ export function formatAromeTimestamp(metadata) {
 
   const isUpdating = Boolean(metadata.is_updating || metadata.is_syncing || (maxStep > 0 && maxStep < 48 && metadata.status !== 'complete'));
 
-  if (isUpdating && maxStep > 0) {
+  if (isUpdating && maxStep > 0 && maxStep < 48) {
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${maxStep}h)</span>`;
   }
 

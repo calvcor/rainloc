@@ -374,7 +374,7 @@ export class UIManager {
           <!-- Reproductor temporal interactivo -->
           <div class="ecmwf-player-panel">
             <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="ecmwf-max-pill">Máx: -- mm</span>
+              <span class="ecmwf-max-pill" id="ecmwf-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
             </div>
 
             <!-- Controles Play / Prev / Next -->
@@ -441,7 +441,7 @@ export class UIManager {
           <!-- Reproductor temporal interactivo -->
           <div class="ecmwf-player-panel">
             <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="gfs-max-pill">Máx: -- mm</span>
+              <span class="ecmwf-max-pill" id="gfs-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
             </div>
 
             <!-- Controles Play / Prev / Next -->
@@ -508,7 +508,7 @@ export class UIManager {
           <!-- Reproductor temporal interactivo -->
           <div class="ecmwf-player-panel">
             <div class="ecmwf-player-header">
-              <span class="ecmwf-max-pill" id="arome-max-pill">Máx: -- mm</span>
+              <span class="ecmwf-max-pill" id="arome-max-pill" title="Ir al punto de precipitación máxima en el mapa">🎯 Máx: -- mm</span>
             </div>
 
             <!-- Controles Play / Prev / Next -->
@@ -812,6 +812,14 @@ export class UIManager {
       }, { passive: false });
     }
 
+    // Clic en píldora de máximo para volar directamente al punto geográfico en el mapa
+    const ecmwfMaxPill = document.getElementById('ecmwf-max-pill');
+    if (ecmwfMaxPill) {
+      ecmwfMaxPill.addEventListener('click', () => {
+        if (this.layerManager) this.layerManager.flyToModelMax('ecmwf');
+      });
+    }
+
     // =========================================================================
     // Controles Interactivos para NOAA GFS
     // =========================================================================
@@ -915,6 +923,14 @@ export class UIManager {
       }, { passive: false });
     }
 
+    // Clic en píldora de máximo GFS para volar al punto
+    const gfsMaxPill = document.getElementById('gfs-max-pill');
+    if (gfsMaxPill) {
+      gfsMaxPill.addEventListener('click', () => {
+        if (this.layerManager) this.layerManager.flyToModelMax('gfs');
+      });
+    }
+
     // =========================================================================
     // Controles Interactivos para Météo-France / AEMET AROME
     // =========================================================================
@@ -1016,6 +1032,14 @@ export class UIManager {
           this.layerManager.setAromeStep(steps[prevIdx]);
         }
       }, { passive: false });
+    }
+
+    // Clic en píldora de máximo AROME para volar al punto
+    const aromeMaxPill = document.getElementById('arome-max-pill');
+    if (aromeMaxPill) {
+      aromeMaxPill.addEventListener('click', () => {
+        if (this.layerManager) this.layerManager.flyToModelMax('arome');
+      });
     }
 
     // Botones de Sincronización Manual Inmediata
@@ -1134,7 +1158,8 @@ export class UIManager {
 
     if (maxPill && stepInfo) {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
-      maxPill.textContent = `Máx: ${maxVal !== undefined ? maxVal : '--'} mm`;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }
 
     // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
@@ -1189,7 +1214,8 @@ export class UIManager {
 
     if (maxPill && stepInfo) {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
-      maxPill.textContent = `Máx: ${maxVal !== undefined ? maxVal : '--'} mm`;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }
 
     // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
@@ -1244,7 +1270,8 @@ export class UIManager {
 
     if (maxPill && stepInfo) {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
-      maxPill.textContent = `Máx: ${maxVal !== undefined ? maxVal : '--'} mm`;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }
 
     // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
@@ -1418,9 +1445,6 @@ export class UIManager {
   setLoadedState(count) {
     const isVisible = this.cuencasLayer ? this.cuencasLayer.isVisible : true;
     this._updateCuencasUIState(isVisible);
-    if (this.featuresCountEl) {
-      this.featuresCountEl.textContent = `${count} subsistemas cargados`;
-    }
   }
 
   /**

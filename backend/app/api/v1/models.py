@@ -83,7 +83,7 @@ async def get_ecmwf_image(
 async def get_ecmwf_value_at(
     lat: float = Query(..., description="Latitud WGS84"),
     lon: float = Query(..., description="Longitud WGS84"),
-    step: int = Query(..., description="Paso de pronóstico en horas (3, 6, 9, ..., 72)"),
+    step: int = Query(..., description="Paso de pronóstico en horas (3, 6, 9, ..., 240)"),
     type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (3 horas)")
 ) -> Dict[str, Any]:
     """
@@ -98,6 +98,23 @@ async def get_ecmwf_value_at(
         "step": step,
         "type": type,
         "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/ecmwf/max-at", summary="Obtener punto y valor de máxima precipitación de ECMWF IFS")
+async def get_ecmwf_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = ecmwf_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "ECMWF IFS", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "ECMWF IFS",
+        "step": step,
+        "type": type,
+        **res,
         "unit": "mm"
     }
 
@@ -206,6 +223,23 @@ async def get_gfs_value_at(
     }
 
 
+@router.get("/gfs/max-at", summary="Obtener punto y valor de máxima precipitación de NOAA GFS")
+async def get_gfs_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = gfs_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "NOAA GFS", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "NOAA GFS",
+        "step": step,
+        "type": type,
+        **res,
+        "unit": "mm"
+    }
+
+
 @router.post("/gfs/sync", summary="Forzar sincronización de NOAA GFS en background")
 async def sync_gfs_forecast(
     background_tasks: BackgroundTasks,
@@ -306,6 +340,23 @@ async def get_arome_value_at(
         "step": step,
         "type": type,
         "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/arome/max-at", summary="Obtener punto y valor de máxima precipitación de Météo-France AROME")
+async def get_arome_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = arome_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "Météo-France AROME", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "Météo-France AROME",
+        "step": step,
+        "type": type,
+        **res,
         "unit": "mm"
     }
 

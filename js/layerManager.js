@@ -56,6 +56,13 @@ export class LayerManager {
     this.currentAromeOverlay = null;
     this._aromeStepRequestId = 0;
     this._aromeImageCache = new Map();
+
+    // Marcador de punto de máxima precipitación de modelos de predicción
+    this.modelMaxMarkerGroup = L.layerGroup();
+    if (this.map) {
+      this.modelMaxMarkerGroup.addTo(this.map);
+    }
+    this.currentMaxPoints = {};
   }
 
   /**
@@ -197,6 +204,9 @@ export class LayerManager {
     const layer = this.layers[layerId];
     if (layer && this.map && this.map.hasLayer(layer)) {
       this.map.removeLayer(layer);
+    }
+    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip') {
+      this._refreshMaxMarkers();
     }
   }
 
@@ -670,6 +680,9 @@ export class LayerManager {
         this.uiManager.updateEcmwfPlayerUI(metadata, step, type, this.isEcmwfPlaying);
       }
 
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('ecmwf', step, type);
+
       const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
       this.currentEcmwfBounds = bounds;
@@ -942,6 +955,9 @@ export class LayerManager {
       if (this.uiManager && this.uiManager.updateGfsPlayerUI) {
         this.uiManager.updateGfsPlayerUI(metadata, step, type, this.isGfsPlaying);
       }
+
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('gfs', step, type);
 
       const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
@@ -1216,6 +1232,9 @@ export class LayerManager {
         this.uiManager.updateAromePlayerUI(metadata, step, type, this.isAromePlaying);
       }
 
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('arome', step, type);
+
       const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
       const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
       this.currentAromeBounds = bounds;
@@ -1401,6 +1420,136 @@ export class LayerManager {
       else if (apiName === 'arome') this.reloadAromeLayer(true);
     } catch (e) {
       console.warn(`Error al forzar sincronización de ${apiName}:`, e);
+    }
+  }
+
+  /**
+   * Consulta el punto de máxima precipitación de un modelo numérico y actualiza su marcador en el mapa
+   */
+  async _updateModelMaxMarker(modelKey, step, type) {
+    if (!this.map) return;
+    if (!this.modelMaxMarkerGroup) {
+      this.modelMaxMarkerGroup = L.layerGroup().addTo(this.map);
+    }
+
+    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : 'arome_precip');
+    if (!this.isLayerOnMap(layerId)) {
+      if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
+        delete this.currentMaxPoints[modelKey];
+      }
+      this._refreshMaxMarkers();
+      return;
+    }
+
+    try {
+      const url = `${CONFIG.apiBaseUrl}/models/${modelKey}/max-at?step=${step}&type=${type}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (!this.currentMaxPoints) this.currentMaxPoints = {};
+
+        if (data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
+          this.currentMaxPoints[modelKey] = {
+            lat: Number(data.lat),
+            lon: Number(data.lon),
+            value_mm: Number(data.value_mm),
+            modelKey: modelKey,
+            modelName: data.model || modelKey.toUpperCase(),
+            step: step,
+            type: type
+          };
+        } else {
+          delete this.currentMaxPoints[modelKey];
+        }
+        this._refreshMaxMarkers();
+      }
+    } catch (e) {
+      // Silencioso en caso de error de red
+    }
+  }
+
+  /**
+   * Renderiza los marcadores de máximo pico en el mapa para todas las capas de modelos visibles
+   */
+  _refreshMaxMarkers() {
+    if (!this.modelMaxMarkerGroup) return;
+    this.modelMaxMarkerGroup.clearLayers();
+
+    if (!this.currentMaxPoints) return;
+
+    for (const [modelKey, pt] of Object.entries(this.currentMaxPoints)) {
+      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : 'arome_precip');
+      if (!this.isLayerOnMap(layerId)) continue;
+      if (!pt.lat || !pt.lon) continue;
+
+      const valStr = pt.value_mm.toFixed(1);
+      const iconHtml = `
+        <div class="model-max-marker" title="Pico máximo de precipitación de ${pt.modelName}: ${valStr} mm (+${pt.step}h)">
+          <span class="max-dot"></span>
+          <span class="max-label">🎯 Máx: <span class="max-val">${valStr} mm</span></span>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        className: 'model-max-marker-container',
+        html: iconHtml,
+        iconSize: [110, 26],
+        iconAnchor: [55, 13]
+      });
+
+      const marker = L.marker([pt.lat, pt.lon], {
+        icon: customIcon,
+        zIndexOffset: 1200
+      });
+
+      const typeLabel = pt.type === 'total' ? 'Acumulado Total' : 'Intervalo';
+      marker.bindPopup(`
+        <div style="font-size: 0.82rem; font-family: inherit; color: #f8fafc; padding: 4px 6px;">
+          <div style="font-weight: 700; color: #38bdf8; margin-bottom: 2px; font-size: 0.85rem;">🎯 Pico Máximo Previsto</div>
+          <div style="font-size: 0.74rem; color: #94a3b8; margin-bottom: 4px;">${pt.modelName} · ${typeLabel} (+${pt.step}h)</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #ef4444; margin: 3px 0;">${valStr} <span style="font-size: 0.75rem; font-weight: 500; color: #cbd5e1;">mm</span></div>
+          <div style="font-size: 0.70rem; color: #64748b; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 3px;">📍 Coordenadas: ${pt.lat.toFixed(3)}°, ${pt.lon.toFixed(3)}°</div>
+        </div>
+      `, { className: 'rainloc-unified-tooltip' });
+
+      this.modelMaxMarkerGroup.addLayer(marker);
+      pt.marker = marker;
+    }
+  }
+
+  /**
+   * Vuela suavemente y centra la cámara en el punto de máxima precipitación del modelo
+   */
+  flyToModelMax(modelKey) {
+    if (!this.map) return;
+    if (!modelKey) {
+      if (this.isLayerOnMap('ecmwf_ifs')) modelKey = 'ecmwf';
+      else if (this.isLayerOnMap('gfs_0p25')) modelKey = 'gfs';
+      else if (this.isLayerOnMap('arome_precip')) modelKey = 'arome';
+      else return;
+    }
+
+    const doFly = (pt) => {
+      if (!pt || pt.lat === null || pt.lon === null) return;
+      const targetZoom = Math.max(this.map.getZoom(), 8.5);
+      this.map.flyTo([pt.lat, pt.lon], targetZoom, { duration: 1.2 });
+      setTimeout(() => {
+        if (pt.marker) {
+          pt.marker.openPopup();
+        }
+      }, 1250);
+    };
+
+    if (this.currentMaxPoints && this.currentMaxPoints[modelKey] && this.currentMaxPoints[modelKey].lat !== null) {
+      doFly(this.currentMaxPoints[modelKey]);
+    } else {
+      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : this.currentAromeStep);
+      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : this.currentAromeType);
+      this._updateModelMaxMarker(modelKey, step, type).then(() => {
+        if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
+          doFly(this.currentMaxPoints[modelKey]);
+        }
+      });
     }
   }
 
