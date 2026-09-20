@@ -1480,6 +1480,7 @@ export class UIManager {
         timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h)`;
       }
 
+      const availSteps = meta.available_steps || [];
       const nativeSteps = (meta.steps || []).filter(s => !s.is_fallback).map(s => s.step);
       const nativeMax = nativeSteps.length > 0
         ? Math.max(...nativeSteps)
