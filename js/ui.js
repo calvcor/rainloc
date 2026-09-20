@@ -1486,41 +1486,40 @@ export class UIManager {
         : (meta.raw_max_step !== undefined ? meta.raw_max_step : null);
 
       if (slider && availSteps.length > 0) {
-        const minStep = availSteps[0];
-        const maxStep = availSteps[availSteps.length - 1];
+        let minStep = availSteps[0];
+        let maxStep = availSteps[availSteps.length - 1];
+        let stepInc = 3;
+
+        if (activeType === 'ecmwf_ifs') {
+          minStep = 3;
+          maxStep = 240;
+          stepInc = 3;
+        } else if (activeType === 'gfs_0p25') {
+          minStep = 3;
+          maxStep = 384;
+          stepInc = 3;
+        } else if (activeType === 'arome_precip') {
+          minStep = 1;
+          maxStep = 48;
+          stepInc = 1;
+        } else if (activeType === 'icon_eu') {
+          minStep = 1;
+          maxStep = 120;
+          stepInc = 1;
+        }
+
         slider.min = minStep;
         slider.max = maxStep;
-        slider.step = (activeType === 'arome_precip' || activeType === 'icon_eu') ? 1 : 3;
+        slider.step = stepInc;
         slider.value = curStep;
         slider.disabled = false;
-
-        // Estilizar track del slider cuando se está actualizando y hay corte entre salida nueva y anterior
-        if (downloadedMax && downloadedMax < maxStep && (meta.is_updating || meta.is_syncing)) {
-          const splitPct = Math.max(0, Math.min(100, ((downloadedMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
-          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : '#8b5cf6'));
-          slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
-          slider.title = `Nueva salida ${mainRun} disponible hasta +${downloadedMax}h (${splitPct.toFixed(0)}%). Pasos posteriores: Salida ${stepInfo?.fallback_run || 'ant.'}`;
-        } else {
-          slider.style.background = '';
-          slider.title = '';
-        }
+        slider.style.background = '';
+        slider.title = '';
       }
 
-      const isUpdatingSplit = Boolean(downloadedMax && downloadedMax < availSteps[availSteps.length - 1] && (meta.is_updating || meta.is_syncing));
-      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType || labelsContainer._lastUpdating !== isUpdatingSplit)) {
+      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType)) {
         labelsContainer._currentType = activeType;
-        labelsContainer._lastUpdating = isUpdatingSplit;
-
-        let splitNoticeHtml = '';
-        if (isUpdatingSplit) {
-          splitNoticeHtml = `
-            <div class="timeline-slider-split-notice">
-              <span>✨ Nueva salida ${mainRun}: 1h–${downloadedMax}h</span>
-              <span>📦 Resto: Salida anterior</span>
-            </div>
-          `;
-        }
-        labelsContainer.innerHTML = labelsHtml + splitNoticeHtml;
+        labelsContainer.innerHTML = labelsHtml;
       }
 
       this._updateTimelinePlayButton(isPlaying);

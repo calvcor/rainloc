@@ -1533,40 +1533,6 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.timeline-run-chip {
-  font-size: 0.62rem;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  margin-left: 4px;
-  display: inline-block;
-  vertical-align: middle;
-}
-
-.timeline-run-chip.new {
-  background: rgba(56, 189, 248, 0.18);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-}
-
-.timeline-run-chip.fallback {
-  background: rgba(245, 158, 11, 0.22);
-  color: #fbbf24;
-  border: 1px dashed rgba(245, 158, 11, 0.55);
-}
-
-.timeline-slider-split-notice {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.58rem;
-  font-weight: 600;
-  color: #fbbf24;
-  margin-top: 2px;
-  padding: 0 2px;
-  line-height: 1.2;
-}
 
 .prediction-time-exact {
   font-size: 0.95rem;
