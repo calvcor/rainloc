@@ -50,6 +50,7 @@ html {
   width: 100%;
   height: 100%;
   min-height: 100%;
+  min-height: -webkit-fill-available;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -60,6 +61,7 @@ body {
   width: 100%;
   height: 100%;
   min-height: 100%;
+  min-height: -webkit-fill-available;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -81,6 +83,7 @@ body {
   width: 100%;
   height: 100%;
   min-height: 100%;
+  min-height: -webkit-fill-available;
   overflow: hidden;
   background-color: var(--bg-app);
 }
@@ -3300,7 +3303,7 @@ body {
   /* Barra Inferior de Navegación Móvil */
   .mobile-bottom-bar {
     display: flex;
-    position: absolute;
+    position: fixed;
     bottom: 0;
     left: 0;
     right: 0;

@@ -43,7 +43,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.12">
+  <link rel="stylesheet" href="styles.css?v=3.13">
 </head>
 <body>
 
@@ -671,9 +671,24 @@
         }
       });
     }
+
+    // Sincronización dinámica de altura de viewport para iOS PWA
+    function syncViewportHeight() {
+      var h = window.innerHeight;
+      if (document.documentElement) document.documentElement.style.height = h + 'px';
+      if (document.body) document.body.style.height = h + 'px';
+      var app = document.getElementById('app-container');
+      if (app) app.style.height = h + 'px';
+    }
+    syncViewportHeight();
+    window.addEventListener('resize', syncViewportHeight, { passive: true });
+    window.addEventListener('orientationchange', function() {
+      setTimeout(syncViewportHeight, 100);
+      setTimeout(syncViewportHeight, 300);
+    }, { passive: true });
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=3.12"></script>
+  <script type="module" src="./js/app.js?v=3.13"></script>
 </body>
 </html>
