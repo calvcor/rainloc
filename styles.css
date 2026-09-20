@@ -49,9 +49,9 @@
 html, body {
   width: 100%;
   height: 100%;
-  height: -webkit-fill-available;
   height: 100dvh;
-  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--text-primary);
@@ -63,15 +63,13 @@ html, body {
 #app-container {
   display: flex;
   flex-direction: column;
-  width: 100vw;
+  width: 100%;
   width: 100dvw;
   height: 100%;
-  height: 100vh;
   height: 100dvh;
-  min-height: -webkit-fill-available;
-  min-height: 100dvh;
   position: relative;
   overflow: hidden;
+  background-color: var(--bg-app);
 }
 
 /* -------------------------------------------------------------
@@ -431,7 +429,7 @@ html, body {
 .left-sidebar-container {
   position: absolute;
   top: calc(78px + env(safe-area-inset-top, 0px));
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  bottom: 14px;
   left: calc(14px + env(safe-area-inset-left, 0px));
   width: 320px;
   z-index: 1000;
@@ -828,7 +826,7 @@ html, body {
 .timeline-bottom-player,
 .radar-bottom-player {
   position: absolute;
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  bottom: 14px;
   left: calc(348px + env(safe-area-inset-left, 0px));
   right: calc(248px + env(safe-area-inset-right, 0px));
   height: 48px;
@@ -1532,7 +1530,7 @@ html, body {
 ------------------------------------------------------------- */
 .map-legend {
   position: absolute;
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  bottom: 14px;
   right: calc(14px + env(safe-area-inset-right, 0px));
   width: 220px;
   background: var(--bg-surface);
@@ -1679,7 +1677,7 @@ html, body {
 ------------------------------------------------------------- */
 .coords-bar {
   position: absolute;
-  bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.75);
@@ -2048,7 +2046,7 @@ html, body {
 }
 
 .leaflet-bottom {
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
+  bottom: 14px !important;
 }
 
 .leaflet-left {
@@ -4053,27 +4051,27 @@ html, body {
     width: 320px;
     left: calc(14px + env(safe-area-inset-left, 0px));
     top: calc(78px + env(safe-area-inset-top, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   body.has-timeline-player .left-sidebar-container {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    bottom: 70px;
   }
 
   .map-legend {
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     width: 220px;
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease, max-height 0.35s ease;
   }
 
   body.has-timeline-player .map-legend {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    bottom: 70px;
   }
 
   body.has-timeline-player .coords-bar {
-    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    bottom: 64px;
   }
 
   .timeline-bottom-player,
@@ -4081,7 +4079,7 @@ html, body {
     position: absolute;
     left: calc(14px + env(safe-area-inset-left, 0px));
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     width: auto;
     height: 48px;
     max-height: 48px;
