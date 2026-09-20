@@ -3269,9 +3269,9 @@ body {
 @media (max-width: 767px) {
   /* Header compacto solo con Título y Logo */
   .app-header {
-    top: 8px;
-    left: 8px;
-    right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     height: 50px;
     padding: 0 12px;
     justify-content: flex-start;
@@ -3318,14 +3318,16 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    height: calc(52px + env(safe-area-inset-bottom, 0px));
+    padding-top: 3px;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgba(11, 17, 32, 0.92);
+    box-sizing: border-box;
+    background: rgba(11, 17, 32, 0.94);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     border-top: 1px solid rgba(255, 255, 255, 0.12);
     z-index: 1050;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-around;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
   }
@@ -3335,15 +3337,15 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     flex: 1;
-    height: 100%;
+    height: 46px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    font-size: 0.72rem;
+    font-size: 0.70rem;
     font-weight: 600;
     font-family: inherit;
     user-select: none;
@@ -3675,7 +3677,7 @@ body {
   }
 
   .leaflet-top {
-    top: 60px !important;
+    top: calc(66px + env(safe-area-inset-top, 0px)) !important;
   }
 
   .leaflet-control-zoom {
