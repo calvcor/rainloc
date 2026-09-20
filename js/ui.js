@@ -1480,10 +1480,11 @@ export class UIManager {
         timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h)`;
       }
 
-      const availSteps = meta.available_steps || [];
-      const downloadedMax = (meta.downloaded_max_step !== undefined && meta.downloaded_max_step > 0)
-        ? meta.downloaded_max_step
-        : (meta.raw_max_step !== undefined ? meta.raw_max_step : null);
+      const nativeSteps = (meta.steps || []).filter(s => !s.is_fallback).map(s => s.step);
+      const nativeMax = nativeSteps.length > 0
+        ? Math.max(...nativeSteps)
+        : (meta.downloaded_max_step || meta.raw_max_step || null);
+      const hasFallback = (meta.steps || []).some(s => s.is_fallback) || (nativeMax && (meta.is_updating || meta.is_syncing));
 
       if (slider && availSteps.length > 0) {
         let minStep = availSteps[0];
@@ -1513,8 +1514,17 @@ export class UIManager {
         slider.step = stepInc;
         slider.value = curStep;
         slider.disabled = false;
-        slider.style.background = '';
-        slider.title = '';
+
+        // Estilizar track del slider cuando la salida es parcial o se está actualizando (hay corte con la salida anterior)
+        if (hasFallback && nativeMax && nativeMax < maxStep) {
+          const splitPct = Math.max(0, Math.min(100, ((nativeMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
+          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : '#8b5cf6'));
+          slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
+          slider.title = `Salida ${mainRun} disponible hasta +${nativeMax}h (${splitPct.toFixed(0)}%). Pasos posteriores (+${nativeMax + 1}h a +${maxStep}h): Salida anterior`;
+        } else {
+          slider.style.background = '';
+          slider.title = '';
+        }
       }
 
       if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType)) {
