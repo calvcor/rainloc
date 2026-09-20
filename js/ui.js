@@ -1273,10 +1273,16 @@ export class UIManager {
     const activeType = this._getActiveTimelineType();
     if (!activeType) {
       bottomPlayer.style.display = 'none';
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('has-timeline-player');
+      }
       return;
     }
 
     bottomPlayer.style.display = 'flex';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('has-timeline-player');
+    }
 
     const slider = document.getElementById('timeline-step-slider');
     const timeText = document.getElementById('timeline-time-text');
