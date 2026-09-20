@@ -3301,11 +3301,10 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    height: auto;
-    min-height: 42px;
-    padding: 3px 12px max(4px, env(safe-area-inset-bottom, 4px)) 12px;
+    height: 52px;
+    padding: 0 16px 2px 16px;
     box-sizing: border-box;
-    background: rgba(11, 17, 32, 0.88);
+    background: rgba(11, 17, 32, 0.94);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid rgba(255, 255, 255, 0.10);
@@ -3320,15 +3319,15 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1px;
+    gap: 2px;
     flex: 1;
-    height: 38px;
+    height: 48px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    font-size: 0.65rem;
+    font-size: 0.68rem;
     font-weight: 600;
     font-family: inherit;
     user-select: none;
@@ -3674,12 +3673,12 @@ body {
   }
 
   .leaflet-control-scale {
-    margin-bottom: calc(50px + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: 58px !important;
     margin-left: 8px !important;
   }
 
   .leaflet-control-attribution {
-    margin-bottom: calc(48px + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: 54px !important;
     font-size: 0.60rem !important;
   }
 
@@ -3694,7 +3693,7 @@ body {
     position: absolute !important;
     left: 8px !important;
     right: 8px !important;
-    bottom: calc(52px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: 58px !important;
     height: auto !important;
     max-height: none !important;
     z-index: 1040 !important;
@@ -4068,27 +4067,27 @@ body {
     width: 320px;
     left: calc(14px + env(safe-area-inset-left, 0px));
     top: calc(78px + env(safe-area-inset-top, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   body.has-timeline-player .left-sidebar-container {
-    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    bottom: 70px;
   }
 
   .map-legend {
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     width: 220px;
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease, max-height 0.35s ease;
   }
 
   body.has-timeline-player .map-legend {
-    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    bottom: 70px;
   }
 
   body.has-timeline-player .coords-bar {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    bottom: 64px;
   }
 
   .timeline-bottom-player,
@@ -4096,7 +4095,7 @@ body {
     position: absolute;
     left: calc(14px + env(safe-area-inset-left, 0px));
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    bottom: 14px;
     width: auto;
     height: 48px;
     max-height: 48px;

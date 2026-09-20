@@ -63,12 +63,22 @@ export class PwaManager {
       setTimeout(register, 1200);
     }
 
-    // Cuando el nuevo Service Worker toma el control
+    // Cuando el nuevo Service Worker toma el control, recargar la aplicación inmediatamente
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
         refreshing = true;
-        console.log('[PWA] Service Worker actualizado.');
+        console.log('[PWA] Service Worker actualizado. Recargando para aplicar cambios...');
+        window.location.reload();
+      }
+    });
+
+    // Comprobar actualización al volver a la app (útil en iOS PWA al desbloquear pantalla)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then((reg) => {
+          if (reg) reg.update().catch(() => {});
+        });
       }
     });
   }
