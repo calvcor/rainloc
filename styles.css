@@ -3259,49 +3259,35 @@ body {
    Responsive Breakpoints: Versión Móvil (<= 767px)
 ------------------------------------------------------------- */
 @media (max-width: 767px) {
-  /* Header elegante y completo en móvil */
+  /* Header compacto solo con Título y Logo (diseño original) */
   .app-header {
-    top: calc(10px + env(safe-area-inset-top, 0px));
-    left: calc(10px + env(safe-area-inset-left, 0px));
-    right: calc(10px + env(safe-area-inset-right, 0px));
-    height: 54px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    height: 50px;
     padding: 0 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    z-index: 1000;
+    justify-content: flex-start;
+    gap: 10px;
   }
 
   .header-brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-shrink: 1;
+    gap: 10px;
   }
 
   .brand-icon {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    border-radius: 9px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
   }
 
   .brand-icon svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  .brand-titles {
-    min-width: 0;
+    width: 17px;
+    height: 17px;
   }
 
   .brand-title {
-    font-size: 0.96rem;
-    font-weight: 700;
+    font-size: 0.95rem;
     line-height: 1.15;
-    white-space: nowrap;
   }
 
   .brand-subtitle {
@@ -3309,88 +3295,29 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--text-secondary);
+    max-width: 210px;
   }
 
-  /* Área de estado y controles del header en móvil */
+  /* Ocultar área de estado y controles del header en móvil */
   .header-status-area {
-    display: flex !important;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  /* Ocultar elementos secundarios del header en móvil para mantenerlo limpio */
-  .header-status-area .opacity-control,
-  .header-status-area .cuencas-toggle-control:nth-of-type(2),
-  .header-status-area #btn-install-pwa {
     display: none !important;
   }
 
-  /* Toggle Cuencas compacto en móvil */
-  .header-status-area .cuencas-toggle-control {
-    padding: 3px 8px;
-    height: 32px;
-    gap: 6px;
-  }
-
-  .header-status-area .toggle-switch-ui {
-    width: 32px;
-    height: 18px;
-  }
-
-  .header-status-area .toggle-switch-slider:before {
-    height: 14px;
-    width: 14px;
-    left: 2px;
-    bottom: 2px;
-  }
-
-  .header-status-area input:checked + .toggle-switch-slider:before {
-    transform: translateX(14px);
-  }
-
-  .header-status-area .toggle-switch-label {
-    font-size: 0.72rem;
-  }
-
-  .header-status-area .toggle-switch-label svg {
-    display: none;
-  }
-
-  /* Botón Centrar compacto en móvil */
-  .header-status-area #btn-reset-view {
-    display: inline-flex !important;
-    align-items: center;
-    gap: 4px;
-    height: 32px;
-    padding: 0 10px;
-    font-size: 0.74rem;
-    font-weight: 600;
-    border-radius: 8px;
-  }
-
-  .header-status-area #btn-favorite-basin {
-    height: 32px;
-    padding: 0 8px;
-    font-size: 0.72rem;
-  }
-
-  /* Barra Inferior de Navegación Móvil Cómoda y Visual */
+  /* Barra Inferior de Navegación Móvil (Botones Grandes y Cómodos) */
   .mobile-bottom-bar {
     display: flex;
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    height: calc(64px + env(safe-area-inset-bottom, 0px));
-    padding-top: 6px;
+    height: calc(72px + env(safe-area-inset-bottom, 0px));
+    padding-top: 8px;
     padding-bottom: env(safe-area-inset-bottom, 0px);
     box-sizing: border-box;
     background: rgba(11, 17, 32, 0.96);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
     z-index: 1050;
     align-items: flex-start;
     justify-content: space-around;
@@ -3402,9 +3329,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
     flex: 1;
-    height: 52px;
+    height: 58px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
@@ -3423,23 +3350,23 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 28px;
-    border-radius: 14px;
+    width: 60px;
+    height: 32px;
+    border-radius: 16px;
     border: 1px solid transparent;
     transition: all 0.2s ease;
   }
 
   .mobile-nav-icon-wrapper svg {
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     stroke-width: 2.2;
   }
 
   .mobile-nav-label {
-    font-size: 0.80rem;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     line-height: 1;
   }
 
@@ -3449,23 +3376,23 @@ body {
   }
 
   .mobile-nav-btn.active .mobile-nav-icon-wrapper {
-    background: rgba(56, 189, 248, 0.18);
-    border-color: rgba(56, 189, 248, 0.45);
+    background: rgba(56, 189, 248, 0.20);
+    border-color: rgba(56, 189, 248, 0.5);
     color: #38bdf8;
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
   }
 
   .mobile-nav-btn.active .mobile-nav-label {
     color: #38bdf8;
-    font-weight: 700;
+    font-weight: 800;
   }
 
   .mobile-nav-badge-dot {
     position: absolute;
     top: 1px;
-    right: 8px;
-    width: 9px;
-    height: 9px;
+    right: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: #38bdf8;
     box-shadow: 0 0 6px #38bdf8;
@@ -3771,17 +3698,17 @@ body {
   }
 
   .leaflet-control-scale {
-    margin-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     margin-left: 10px !important;
   }
 
   .leaflet-control-attribution {
-    margin-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
     font-size: 0.60rem !important;
   }
 
   .prediction-time-banner {
-    top: calc(72px + env(safe-area-inset-top, 0px)) !important;
+    top: calc(66px + env(safe-area-inset-top, 0px)) !important;
     left: calc(10px + env(safe-area-inset-left, 0px)) !important;
     right: calc(10px + env(safe-area-inset-right, 0px)) !important;
   }
@@ -3791,7 +3718,7 @@ body {
     position: absolute !important;
     left: 10px !important;
     right: 10px !important;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     height: auto !important;
     max-height: none !important;
     z-index: 1040 !important;
