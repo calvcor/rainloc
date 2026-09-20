@@ -15,7 +15,7 @@
   <meta name="theme-color" content="#0b1120">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="RainLoc">
   <meta name="application-name" content="RainLoc">
 
@@ -40,7 +40,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=2.9">
+  <link rel="stylesheet" href="styles.css?v=3.0">
 </head>
 <body>
 
@@ -668,9 +668,28 @@
         }
       });
     }
+
+    // Corrección para WebKit iOS PWA: asegurar cobertura física 100% de la pantalla sin franjas inferiores
+    function ensureFullBleedViewport() {
+      if (typeof window !== 'undefined' && window.navigator && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches))) {
+        var screenH = window.screen.height + 'px';
+        document.documentElement.style.minHeight = screenH;
+        document.body.style.minHeight = screenH;
+        var app = document.getElementById('app-container');
+        if (app) {
+          app.style.minHeight = screenH;
+          app.style.height = screenH;
+        }
+      }
+    }
+    ensureFullBleedViewport();
+    window.addEventListener('resize', ensureFullBleedViewport, { passive: true });
+    window.addEventListener('orientationchange', function() {
+      setTimeout(ensureFullBleedViewport, 150);
+    }, { passive: true });
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=2.9"></script>
+  <script type="module" src="./js/app.js?v=3.0"></script>
 </body>
 </html>
