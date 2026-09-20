@@ -16,6 +16,7 @@ from app.config import settings, BASE_DIR
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.icon_worker import icon_worker
 
 logger = logging.getLogger("rainloc-backend.basin-hydrology")
 
@@ -203,6 +204,9 @@ class BasinHydrologyService:
         elif "arome" in model_clean:
             worker = arome_worker
             model_name = "Météo-France AROME (~1.3-2.5 km)"
+        elif "icon" in model_clean:
+            worker = icon_worker
+            model_name = "DWD ICON-EU (6.5 km)"
         else:
             worker = ecmwf_worker
             model_name = "ECMWF IFS (0.25°)"

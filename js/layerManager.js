@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -22,6 +22,7 @@ export class LayerManager {
     this.ecmwfEventSource = null;
     this.gfsEventSource = null;
     this.aromeEventSource = null;
+    this.iconEventSource = null;
     this.lightningGroup = L.layerGroup();
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
@@ -70,6 +71,17 @@ export class LayerManager {
     this._aromeStepRequestId = 0;
     this._aromeImageCache = new Map();
 
+    // DWD ICON-EU NWP Model State
+    this.currentIconStep = 1;
+    this.currentIconType = 'total'; // 'total' | 'interval'
+    this.iconMetadata = null;
+    this.iconPlaybackInterval = null;
+    this.isIconPlaying = false;
+    this.iconCanvasData = null;
+    this.currentIconOverlay = null;
+    this._iconStepRequestId = 0;
+    this._iconImageCache = new Map();
+
     // Marcador de punto de máxima precipitación de modelos de predicción
     this.modelMaxMarkerGroup = L.layerGroup();
     if (this.map) {
@@ -107,6 +119,9 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el modelo AROME (aviso reactivo de nuevos pasos)
     this._startAromeSSE();
+
+    // Iniciar conexión SSE en tiempo real para el modelo DWD ICON-EU (aviso reactivo de nuevos pasos)
+    this._startIconSSE();
 
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
@@ -184,15 +199,8 @@ export class LayerManager {
     else if (def.id === 'arome_precip') {
       this._loadAromeLayer(layerGroup, opacity);
     }
-    else if (def.id.startsWith('icon')) {
-      const demoModel = L.rectangle([[38.5, -1.2], [40.2, 0.4]], {
-        color: def.color,
-        weight: 1.5,
-        fillColor: def.color,
-        fillOpacity: opacity * 0.35,
-        dashArray: '6, 6'
-      });
-      layerGroup.addLayer(demoModel);
+    else if (def.id === 'icon_eu' || def.id.startsWith('icon')) {
+      this._loadIconLayer(layerGroup, opacity);
     }
 
     return layerGroup;
@@ -218,7 +226,7 @@ export class LayerManager {
     if (layer && this.map && this.map.hasLayer(layer)) {
       this.map.removeLayer(layer);
     }
-    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip') {
+    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'icon_eu') {
       this._refreshMaxMarkers();
     }
   }
@@ -347,6 +355,9 @@ export class LayerManager {
             if (p.id === 'arome_precip' && this.isAromePlaying) {
               this.pauseAromePlayback();
             }
+            if (p.id === 'icon_eu' && this.isIconPlaying) {
+              this.pauseIconPlayback();
+            }
           }
         });
 
@@ -368,6 +379,9 @@ export class LayerManager {
         }
         if (layerId === 'arome_precip' && this.isAromePlaying) {
           this.pauseAromePlayback();
+        }
+        if (layerId === 'icon_eu' && this.isIconPlaying) {
+          this.pauseIconPlayback();
         }
       }
       if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
@@ -392,6 +406,9 @@ export class LayerManager {
           }
           if (p.id === 'arome_precip' && this.isAromePlaying) {
             this.pauseAromePlayback();
+          }
+          if (p.id === 'icon_eu' && this.isIconPlaying) {
+            this.pauseIconPlayback();
           }
         });
 
@@ -1556,6 +1573,232 @@ export class LayerManager {
     }
   }
 
+  // =========================================================================
+  // DWD ICON-EU (6.5 km) Pipeline & Interactivity
+  // =========================================================================
+
+  /**
+   * Genera una URL estable para la imagen de un paso de ICON-EU, aprovechando el caché del navegador
+   */
+  _getIconImageUrl(step, type) {
+    const meta = this.iconMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/icon/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de ICON-EU en la memoria del navegador para transiciones fluidas
+   */
+  _preloadIconSteps(currentStep, type) {
+    if (!this.iconMetadata || !this.iconMetadata.available_steps) return;
+    const steps = this.iconMetadata.available_steps;
+    const idx = steps.indexOf(currentStep);
+    if (idx === -1) return;
+
+    if (!this._iconPreloadSet) this._iconPreloadSet = new Set();
+
+    const stepsToPreload = [];
+    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
+    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
+    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
+    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
+
+    stepsToPreload.forEach(step => {
+      for (const t of [type, (type === 'total' ? 'interval' : 'total')]) {
+        const key = `${t}_${step}`;
+        if (!this._iconPreloadSet.has(key)) {
+          this._iconPreloadSet.add(key);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = this._getIconImageUrl(step, t);
+
+          if (this._iconPreloadSet.size > 30) {
+            const first = this._iconPreloadSet.values().next().value;
+            this._iconPreloadSet.delete(first);
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo ICON-EU con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadIconLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.iconMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/icon/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.iconMetadata = metadata;
+        if (this._iconPreloadSet) this._iconPreloadSet.clear();
+      }
+
+      const metadata = this.iconMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('icon_eu', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      if (!availSteps.includes(this.currentIconStep)) {
+        this.currentIconStep = availSteps[0];
+      }
+
+      const step = this.currentIconStep;
+      const type = this.currentIconType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI de inmediato
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('icon_eu', formatIconTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateIconPlayerUI) {
+        this.uiManager.updateIconPlayerUI(metadata, step, type, this.isIconPlaying);
+      }
+
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('icon', step, type);
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentIconBounds = bounds;
+
+      const imgUrl = this._getIconImageUrl(step, type);
+      const requestId = ++this._iconStepRequestId;
+
+      const swapOverlay = () => {
+        if (requestId !== this._iconStepRequestId) return;
+
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'icon-raster-overlay'
+        });
+
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentIconOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentIconOverlay = newOverlay;
+
+        this._preloadIconSteps(step, type);
+      };
+
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = () => {
+        if (requestId !== this._iconStepRequestId) return;
+
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'icon', type: type });
+        if (probeData) {
+          this.iconCanvasData = probeData;
+        }
+
+        swapOverlay();
+      };
+
+      offscreenImg.onerror = () => {
+        if (requestId !== this._iconStepRequestId) return;
+        console.warn(`La imagen ICON-EU para paso +${step}h no pudo ser cargada.`);
+      };
+
+      offscreenImg.src = imgUrl;
+
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
+
+    } catch (err) {
+      console.warn('Error al cargar ICON-EU desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo ICON-EU
+   */
+  setIconStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentIconType || 'total';
+    if (this.currentIconStep === parsedStep && this.currentIconType === targetType && this.currentIconOverlay) {
+      return;
+    }
+    this.currentIconStep = parsedStep;
+    this.currentIconType = targetType;
+    this.reloadIconLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de ICON-EU
+   */
+  setIconType(type) {
+    if (this.currentIconType === type && this.currentIconOverlay) return;
+    this.currentIconType = type;
+    this.reloadIconLayer();
+  }
+
+  /**
+   * Recarga la capa ICON-EU con los parámetros activos
+   */
+  reloadIconLayer(forceMetaFetch = false) {
+    const iconGroup = this.layers['icon_eu'];
+    if (!iconGroup) return;
+    const opacity = (this.layerStates['icon_eu'] && this.layerStates['icon_eu'].opacity) || 0.70;
+    this._loadIconLayer(iconGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de ICON-EU
+   */
+  toggleIconPlayback() {
+    if (this.isIconPlaying) {
+      this.pauseIconPlayback();
+    } else {
+      this.startIconPlayback();
+    }
+  }
+
+  startIconPlayback() {
+    if (this.isIconPlaying) return;
+    this.isIconPlaying = true;
+    if (this.uiManager && this.uiManager.updateIconPlayState) {
+      this.uiManager.updateIconPlayState(true);
+    }
+
+    this.iconPlaybackInterval = setInterval(() => {
+      if (!this.iconMetadata || !this.iconMetadata.available_steps || this.iconMetadata.available_steps.length === 0) {
+        this.pauseIconPlayback();
+        return;
+      }
+
+      const steps = this.iconMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentIconStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setIconStep(steps[nextIdx]);
+    }, 1000);
+  }
+
+  pauseIconPlayback() {
+    this.isIconPlaying = false;
+    if (this.iconPlaybackInterval) {
+      clearInterval(this.iconPlaybackInterval);
+      this.iconPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateIconPlayState) {
+      this.uiManager.updateIconPlayState(false);
+    }
+  }
+
   /**
    * Dispara una sincronización manual inmediata con el backend para buscar nuevas salidas o pasos
    */
@@ -1566,7 +1809,9 @@ export class LayerManager {
       'gfs_0p25': 'gfs',
       'gfs': 'gfs',
       'arome_precip': 'arome',
-      'arome': 'arome'
+      'arome': 'arome',
+      'icon_eu': 'icon',
+      'icon': 'icon'
     };
     const apiName = keyMap[modelKey] || 'ecmwf';
 
@@ -1576,6 +1821,7 @@ export class LayerManager {
       if (apiName === 'ecmwf') this.reloadEcmwfLayer(true);
       else if (apiName === 'gfs') this.reloadGfsLayer(true);
       else if (apiName === 'arome') this.reloadAromeLayer(true);
+      else if (apiName === 'icon') this.reloadIconLayer(true);
     } catch (e) {
       console.warn(`Error al forzar sincronización de ${apiName}:`, e);
     }
@@ -1590,7 +1836,7 @@ export class LayerManager {
       this.modelMaxMarkerGroup = L.layerGroup().addTo(this.map);
     }
 
-    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : 'arome_precip');
+    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : 'arome_precip'));
     if (!this.isLayerOnMap(layerId)) {
       if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
         delete this.currentMaxPoints[modelKey];
@@ -1636,7 +1882,7 @@ export class LayerManager {
     if (!this.currentMaxPoints) return;
 
     for (const [modelKey, pt] of Object.entries(this.currentMaxPoints)) {
-      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : 'arome_precip');
+      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : 'arome_precip'));
       if (!this.isLayerOnMap(layerId)) continue;
       if (!pt.lat || !pt.lon) continue;
 
@@ -1692,6 +1938,7 @@ export class LayerManager {
       if (this.isLayerOnMap('ecmwf_ifs')) modelKey = 'ecmwf';
       else if (this.isLayerOnMap('gfs_0p25')) modelKey = 'gfs';
       else if (this.isLayerOnMap('arome_precip')) modelKey = 'arome';
+      else if (this.isLayerOnMap('icon_eu')) modelKey = 'icon';
       else return;
     }
 
@@ -1709,8 +1956,8 @@ export class LayerManager {
     if (this.currentMaxPoints && this.currentMaxPoints[modelKey] && this.currentMaxPoints[modelKey].lat !== null) {
       doFly(this.currentMaxPoints[modelKey]);
     } else {
-      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : this.currentAromeStep);
-      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : this.currentAromeType);
+      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : this.currentAromeStep));
+      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : this.currentAromeType));
       this._updateModelMaxMarker(modelKey, step, type).then(() => {
         if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
           doFly(this.currentMaxPoints[modelKey]);
@@ -2436,6 +2683,80 @@ export class LayerManager {
     if (this.aromeEventSource) {
       this.aromeEventSource.close();
       this.aromeEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia la suscripción SSE para el modelo DWD ICON-EU
+   */
+  _startIconSSE() {
+    if (this.iconEventSource) return;
+
+    try {
+      this.iconEventSource = new EventSource(`${CONFIG.apiBaseUrl}/models/icon/stream`);
+
+      this.iconEventSource.onmessage = async (event) => {
+        try {
+          if (!event.data) return;
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'icon_update' || data.event === 'icon_init')) {
+            console.log('🌐 Notificación SSE ICON-EU recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/icon/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.iconMetadata = metadata;
+              this._iconImageCache.clear();
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentIconStep)) {
+                this.currentIconStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('icon_eu', formatIconTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateIconPlayerUI) {
+                this.uiManager.updateIconPlayerUI(
+                  metadata,
+                  this.currentIconStep,
+                  this.currentIconType || 'total',
+                  this.isIconPlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('icon_eu')) {
+                this.reloadIconLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de ICON-EU:', e);
+        }
+      };
+
+      this.iconEventSource.onerror = (err) => {
+        console.warn('Stream SSE de ICON-EU desconectado. Intentando reconexión en 5s...', err);
+        this._stopIconSSE();
+        setTimeout(() => this._startIconSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para ICON-EU:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de ICON-EU
+   */
+  _stopIconSSE() {
+    if (this.iconEventSource) {
+      this.iconEventSource.close();
+      this.iconEventSource = null;
     }
   }
 
@@ -3979,6 +4300,7 @@ export class LayerManager {
    * Determina el modelo de predicción activo en el mapa
    */
   getActivePredictionModel() {
+    if (this.isLayerOnMap('icon_eu')) return 'icon';
     if (this.isLayerOnMap('arome_precip')) return 'arome';
     if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
     if (this.isLayerOnMap('ecmwf_ifs')) return 'ecmwf';
@@ -4103,6 +4425,7 @@ export class LayerManager {
     const modelNames = {
       ecmwf: 'ECMWF IFS (0.25°)',
       gfs: 'NOAA GFS (0.25°)',
+      icon: 'DWD ICON-EU (6.5 km)',
       arome: 'Météo-France AROME (1.3 km)'
     };
 
@@ -4116,6 +4439,10 @@ export class LayerManager {
         badgeModel.style.background = 'rgba(37, 99, 235, 0.2)';
         badgeModel.style.color = '#38bdf8';
         badgeModel.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+      } else if (modelKey === 'icon') {
+        badgeModel.style.background = 'rgba(2, 132, 199, 0.2)';
+        badgeModel.style.color = '#0284c7';
+        badgeModel.style.borderColor = 'rgba(2, 132, 199, 0.4)';
       } else {
         badgeModel.style.background = 'rgba(139, 92, 246, 0.2)';
         badgeModel.style.color = '#c084fc';

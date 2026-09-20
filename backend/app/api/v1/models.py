@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.icon_worker import icon_worker
 from app.services.basin_hydrology import basin_hydrology_service
 
 logger = logging.getLogger("rainloc-backend.models-api")
@@ -391,17 +392,128 @@ async def sync_arome_forecast(
     }
 
 
-@router.get("/icon-d2", summary="ICON-D2 Model (DWD)")
-async def get_icon_d2_model() -> Dict[str, Any]:
+# =========================================================================
+# DWD ICON-EU (0.0625° / ~6.5 km) Endpoints
+# =========================================================================
+
+@router.get("/icon/stream", summary="Stream de actualizaciones del modelo ICON-EU en tiempo real (SSE)")
+async def stream_icon():
+    """
+    Canal Server-Sent Events (SSE) para notificar inmediatamente a los clientes
+    en cuanto el servidor descarga y procesa nuevos pasos o un ciclo completo de DWD ICON-EU.
+    """
+    async def event_generator():
+        async for event in icon_worker.subscribe_stream():
+            if event.get("event") == "ping":
+                yield ": ping\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/icon/metadata", summary="Metadatos y pasos disponibles del ciclo DWD ICON-EU")
+async def get_icon_metadata() -> Dict[str, Any]:
+    """
+    Devuelve los metadatos del ciclo operativo actual de ICON-EU,
+    los pasos disponibles (ej: +1h, +2h, ..., +120h), fechas ISO y estado de actualización.
+    """
+    meta = icon_worker.get_metadata()
+    return meta
+
+
+@router.get("/icon/image", summary="Ráster PNG transparente del modelo DWD ICON-EU")
+async def get_icon_image(
+    step: int = Query(..., description="Paso de pronóstico en horas (1, 2, ..., 120)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (1 hora / 3 horas)")
+):
+    """
+    Sirve la imagen PNG georreferenciada en proyección Web Mercator
+    lista para ser consumida directamente por Leaflet (L.imageOverlay).
+    """
+    img_path = icon_worker.get_image_path(step=step, layer_type=type)
+    if not img_path or not img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Imagen ICON-EU para el paso +{step}h ({type}) no encontrada o aún no generada."
+        )
+
+    cur_cycle = icon_worker.current_manifest.get("cycle_str") if icon_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
+    return FileResponse(
+        img_path,
+        media_type="image/png",
+        headers={
+            "Cache-Control": cache_control,
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
+
+@router.get("/icon/value-at", summary="Consulta instantánea de precipitación ICON-EU en coordenadas lat/lon")
+async def get_icon_value_at(
+    lat: float = Query(..., description="Latitud WGS84"),
+    lon: float = Query(..., description="Longitud WGS84"),
+    step: int = Query(..., description="Paso de pronóstico en horas (1, 2, ..., 120)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (intervalo)")
+) -> Dict[str, Any]:
+    """
+    Consulta en O(1) (<1ms) el valor en milímetros (mm) de la predicción ICON-EU
+    para las coordenadas indicadas.
+    """
+    val = icon_worker.get_value_at(lat=lat, lon=lon, step=step, layer_type=type)
     return {
-        "model": "ICON-D2",
-        "description": "Modelo convectivo del Deutscher Wetterdienst (2.2 km)",
-        "status": "ready_for_ingestion",
-        "parameters": [
-            {"id": "accumulated_rain", "name": "Precipitación acumulada (mm)", "unit": "mm"},
-            {"id": "wind_gusts", "name": "Rachas de viento", "unit": "km/h"}
-        ],
-        "timesteps": []
+        "model": "DWD ICON-EU",
+        "lat": lat,
+        "lon": lon,
+        "step": step,
+        "type": type,
+        "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/icon/max-at", summary="Obtener punto y valor de máxima precipitación de DWD ICON-EU")
+async def get_icon_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = icon_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "DWD ICON-EU", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "DWD ICON-EU",
+        "step": step,
+        "type": type,
+        **res,
+        "unit": "mm"
+    }
+
+
+@router.post("/icon/sync", summary="Forzar sincronización de DWD ICON-EU en background")
+async def sync_icon_forecast(
+    background_tasks: BackgroundTasks,
+    max_steps: int = Query(120, description="Número máximo de horas a sincronizar (hasta +120h / 5 días)")
+) -> Dict[str, Any]:
+    """
+    Dispara la sincronización asíncrona de los pasos del modelo DWD ICON-EU.
+    """
+    logger.info(f"API: Petición manual para comprobar/sincronizar DWD ICON-EU (hasta +{max_steps}h)")
+    background_tasks.add_task(icon_worker.sync_icon_forecast, max_steps)
+    return {
+        "status": "synchronization_started",
+        "max_steps": max_steps,
+        "message": "La descarga y procesado de DWD ICON-EU ha comenzado en segundo plano."
     }
 
 

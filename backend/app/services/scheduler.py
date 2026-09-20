@@ -12,11 +12,12 @@ from app.services.lightning_service import lightning_service
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.icon_worker import icon_worker
 
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME)."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME, ICON)."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
@@ -25,6 +26,7 @@ class BackgroundScheduler:
         self._ecmwf_task: Optional[asyncio.Task] = None
         self._gfs_task: Optional[asyncio.Task] = None
         self._arome_task: Optional[asyncio.Task] = None
+        self._icon_task: Optional[asyncio.Task] = None
         self._running: bool = False
         self.aemet_interval: int = settings.AEMET_REFRESH_INTERVAL_SECONDS
         self.radar_interval: int = settings.RADAR_POLL_INTERVAL_SECONDS
@@ -35,6 +37,8 @@ class BackgroundScheduler:
         self.gfs_updating_interval: int = getattr(settings, "GFS_UPDATING_INTERVAL_SECONDS", 300)
         self.arome_interval: int = getattr(settings, "AROME_POLL_INTERVAL_SECONDS", 1800)
         self.arome_updating_interval: int = getattr(settings, "AROME_UPDATING_INTERVAL_SECONDS", 300)
+        self.icon_interval: int = getattr(settings, "ICON_POLL_INTERVAL_SECONDS", 1800)
+        self.icon_updating_interval: int = getattr(settings, "ICON_UPDATING_INTERVAL_SECONDS", 300)
 
     async def _aemet_loop(self):
         try:
@@ -135,6 +139,28 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de AROME: {e}")
 
+    async def _icon_loop(self):
+        # Primera comprobación y sincronización de ICON-EU al iniciar
+        try:
+            await icon_worker.sync_icon_forecast()
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando DWD ICON-EU: {e}")
+
+        while self._running:
+            try:
+                meta = icon_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.icon_interval if is_complete else self.icon_updating_interval
+
+                logger.debug(f"Scheduler ICON: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
+                if self._running:
+                    await icon_worker.sync_icon_forecast()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de DWD ICON-EU: {e}")
+
     async def _saih_loop(self):
         # Primera sincronización de SAIH (caudales, embalses y lluvias)
         try:
@@ -167,11 +193,12 @@ class BackgroundScheduler:
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
             self._arome_task = asyncio.create_task(self._arome_loop())
+            self._icon_task = asyncio.create_task(self._icon_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME + DWD ICON-EU).")
 
     def stop(self):
         if self._running:
@@ -188,6 +215,8 @@ class BackgroundScheduler:
                 self._gfs_task.cancel()
             if self._arome_task and not self._arome_task.done():
                 self._arome_task.cancel()
+            if self._icon_task and not self._icon_task.done():
+                self._icon_task.cancel()
             lightning_service.stop()
             logger.info("BackgroundScheduler detenido.")
 

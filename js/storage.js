@@ -33,7 +33,7 @@ export class StorageManager {
         'saih_lluvias': false,
         'aemet_warnings': false,
         'arome_precip': false,
-        'icon_d2': false,
+        'icon_eu': false,
         'ecmwf_ifs': false,
         'gfs_0p25': false
       },
@@ -44,7 +44,7 @@ export class StorageManager {
         'saih_lluvias': 0.95,
         'aemet_warnings': 0.85,
         'arome_precip': 0.75,
-        'icon_d2': 0.70,
+        'icon_eu': 0.70,
         'ecmwf_ifs': 0.65,
         'gfs_0p25': 0.65
       },

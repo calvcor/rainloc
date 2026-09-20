@@ -687,6 +687,12 @@ export class UIManager {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         </button>
       `;
+    } else if (layer.id === 'icon_eu') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="icon-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
     }
 
     // Sub-controles específicos para el Modelo ECMWF IFS (Reproductor temporal y selector total/intervalo)
@@ -762,6 +768,30 @@ export class UIManager {
       `;
     }
 
+    // Sub-controles específicos para el Modelo DWD ICON-EU (Leyenda de precipitación)
+    let iconExtraControls = '';
+    if (layer.id === 'icon_eu') {
+      iconExtraControls = `
+        <div class="ecmwf-subcontrols">
+          <div class="ecmwf-precip-legend">
+            <span class="precip-legend-title">Precipitación (mm):</span>
+            <div class="precip-bar">
+              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
+              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
+              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
+              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
+              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
+              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
+              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
+              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
+              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
+              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="layer-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
         <div class="layer-card-main">
@@ -792,6 +822,7 @@ export class UIManager {
           ${ecmwfExtraControls}
           ${gfsExtraControls}
           ${aromeExtraControls}
+          ${iconExtraControls}
         </div>
       </div>
     `;
@@ -813,8 +844,8 @@ export class UIManager {
         return `Vigencia: <strong>${nowFormatted}</strong>`;
       case 'arome_precip':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+6h)</strong>`;
-      case 'icon_d2':
-        return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 05:00 (+3h)</strong>`;
+      case 'icon_eu':
+        return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 06:00 (+1h)</strong>`;
       case 'ecmwf_ifs':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+12h)</strong>`;
       default:
@@ -956,6 +987,7 @@ export class UIManager {
     this._setupModelSyncButton('ecmwf-sync-btn', 'ecmwf');
     this._setupModelSyncButton('gfs-sync-btn', 'gfs');
     this._setupModelSyncButton('arome-sync-btn', 'arome');
+    this._setupModelSyncButton('icon-sync-btn', 'icon');
     this._setupPredictionBannerSync();
   }
 
@@ -1015,13 +1047,17 @@ export class UIManager {
           if (this.layerManager.isLayerActive('arome_precip')) {
             syncTasks.push(this.layerManager.triggerModelSync('arome'));
           }
+          if (this.layerManager.isLayerActive('icon_eu')) {
+            syncTasks.push(this.layerManager.triggerModelSync('icon'));
+          }
 
           if (syncTasks.length === 0) {
-            // Si ninguno está activo visible, sincroniza los tres
+            // Si ninguno está activo visible, sincroniza todos
             await Promise.all([
               this.layerManager.triggerModelSync('ecmwf'),
               this.layerManager.triggerModelSync('gfs'),
-              this.layerManager.triggerModelSync('arome')
+              this.layerManager.triggerModelSync('arome'),
+              this.layerManager.triggerModelSync('icon')
             ]);
           } else {
             await Promise.all(syncTasks);
@@ -1039,14 +1075,15 @@ export class UIManager {
 
   /**
    * Helper para obtener el tipo de capa con línea temporal actualmente activa en el mapa
-   * @returns {'radar' | 'ecmwf_ifs' | 'gfs_0p25' | 'arome_precip' | null}
+   * @returns {'radar' | 'ecmwf_ifs' | 'gfs_0p25' | 'arome_precip' | 'icon_eu' | null}
    */
   _getActiveTimelineType() {
     if (!this.layerManager) return null;
     if (this.layerManager.isLayerOnMap('radar')) return 'radar';
-    if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
-    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
+    if (this.layerManager.isLayerOnMap('icon_eu')) return 'icon_eu';
     if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
+    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
+    if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
     return null;
   }
 
@@ -1067,6 +1104,8 @@ export class UIManager {
           this.layerManager.toggleGfsPlayback();
         } else if (activeType === 'arome_precip') {
           this.layerManager.toggleAromePlayback();
+        } else if (activeType === 'icon_eu') {
+          this.layerManager.toggleIconPlayback();
         }
       });
     }
@@ -1125,6 +1164,7 @@ export class UIManager {
         if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('total');
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('total');
+        else if (activeType === 'icon_eu') this.layerManager.setIconType('total');
       });
       modeInterval.addEventListener('click', () => {
         if (!this.layerManager) return;
@@ -1132,6 +1172,7 @@ export class UIManager {
         if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('interval');
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('interval');
+        else if (activeType === 'icon_eu') this.layerManager.setIconType('interval');
       });
     }
 
@@ -1143,6 +1184,7 @@ export class UIManager {
         if (activeType === 'ecmwf_ifs') this.layerManager.flyToModelMax('ecmwf');
         else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
         else if (activeType === 'arome_precip') this.layerManager.flyToModelMax('arome');
+        else if (activeType === 'icon_eu') this.layerManager.flyToModelMax('icon');
       });
     }
 
@@ -1221,6 +1263,10 @@ export class UIManager {
       meta = this.layerManager.aromeMetadata;
       curStep = this.layerManager.currentAromeStep;
       setStepFn = (s) => this.layerManager.setAromeStep(s);
+    } else if (modelId === 'icon_eu' || modelId === 'icon') {
+      meta = this.layerManager.iconMetadata;
+      curStep = this.layerManager.currentIconStep;
+      setStepFn = (s) => this.layerManager.setIconStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1243,6 +1289,9 @@ export class UIManager {
     } else if (modelId === 'arome_precip' || modelId === 'arome') {
       meta = this.layerManager.aromeMetadata;
       setStepFn = (s) => this.layerManager.setAromeStep(s);
+    } else if (modelId === 'icon_eu' || modelId === 'icon') {
+      meta = this.layerManager.iconMetadata;
+      setStepFn = (s) => this.layerManager.setIconStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1363,7 +1412,7 @@ export class UIManager {
 
       this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
 
-    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip') {
+    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip' || activeType === 'icon_eu') {
       let meta = null;
       let curStep = null;
       let curType = null;
@@ -1392,6 +1441,13 @@ export class UIManager {
         isPlaying = this.layerManager.isAromePlaying;
         modelLabel = 'AROME HD';
         labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h (2d)</span>';
+      } else if (activeType === 'icon_eu') {
+        meta = this.layerManager.iconMetadata || {};
+        curStep = this.layerManager.currentIconStep || 1;
+        curType = this.layerManager.currentIconType || 'total';
+        isPlaying = this.layerManager.isIconPlaying;
+        modelLabel = 'ICON-EU (6.5km)';
+        labelsHtml = '<span>+1h</span><span>+24h (1d)</span><span>+48h (2d)</span><span>+72h (3d)</span><span>+120h (5d)</span>';
       }
 
       if (liveDot) liveDot.style.display = 'none';
@@ -1426,7 +1482,7 @@ export class UIManager {
       if (slider && availSteps.length > 0) {
         slider.min = availSteps[0];
         slider.max = availSteps[availSteps.length - 1];
-        slider.step = activeType === 'arome_precip' ? 1 : 3;
+        slider.step = (activeType === 'arome_precip' || activeType === 'icon_eu') ? 1 : 3;
         slider.value = curStep;
         slider.disabled = false;
       }
@@ -1587,7 +1643,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1644,11 +1700,68 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateAromePlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de DWD ICON-EU en la UI
+   */
+  updateIconPlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('icon-step-slider');
+    const maxPill = document.getElementById('icon-max-pill');
+    const btnTotal = document.getElementById('icon-btn-total');
+    const btnInterval = document.getElementById('icon-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
+    }
+
+    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
+    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
+      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
+      this.predictionBannerExactTime.textContent = formattedInstant;
+    }
+    if (this.predictionBannerModel) {
+      this.predictionBannerModel.textContent = `ICON-EU (+${currentStep}h)`;
+    }
+    if (this.predictionBannerMode) {
+      const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 78 ? 'Intervalo 3h' : 'Intervalo 1h');
+      this.predictionBannerMode.textContent = modeText;
+    }
+
+    // Visibilidad del banner: visible si alguna capa de predicción está activa
+    if (this.predictionBanner) {
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
+    }
+
+    this.updateIconPlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
   }
 
@@ -1701,6 +1814,27 @@ export class UIManager {
     const playBtn = document.getElementById('arome-play-btn');
     const playText = document.getElementById('arome-play-text');
     const playIcon = document.getElementById('arome-play-icon');
+
+    if (playBtn && playText && playIcon) {
+      if (isPlaying) {
+        playBtn.classList.add('playing');
+        playText.textContent = 'Pausa';
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        playBtn.classList.remove('playing');
+        playText.textContent = 'Animar';
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
+  }
+
+  /**
+   * Actualiza el estado visual del botón Play/Pausa de DWD ICON-EU
+   */
+  updateIconPlayState(isPlaying) {
+    const playBtn = document.getElementById('icon-play-btn');
+    const playText = document.getElementById('icon-play-text');
+    const playIcon = document.getElementById('icon-play-icon');
 
     if (playBtn && playText && playIcon) {
       if (isPlaying) {
