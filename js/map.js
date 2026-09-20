@@ -128,6 +128,22 @@ export class MapManager {
       });
     }
 
+    // Escuchar cambios de tamaño de ventana y orientación (p. ej. barra de herramientas de Safari en iPad/iOS)
+    if (typeof window !== 'undefined') {
+      const handleResize = () => {
+        if (this.map) {
+          this.map.invalidateSize();
+        }
+      };
+      window.addEventListener('resize', handleResize, { passive: true });
+      window.addEventListener('orientationchange', () => {
+        setTimeout(handleResize, 150);
+      }, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', handleResize, { passive: true });
+      }
+    }
+
     return this.map;
   }
 
