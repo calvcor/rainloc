@@ -77,18 +77,30 @@ export class PwaManager {
    * Captura el evento beforeinstallprompt para soporte de instalación en Chrome/Edge/Android
    */
   static _setupInstallPromptListener() {
+    const showInstallBtn = () => {
+      const btn = document.getElementById('btn-install-pwa');
+      if (btn) {
+        btn.style.display = 'inline-flex';
+        btn.onclick = async () => {
+          await PwaManager.promptInstall();
+        };
+      }
+    };
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       PwaManager.deferredPrompt = e;
       console.log('[PWA] Evento beforeinstallprompt capturado. RainLoc es instalable en Chrome/Edge.');
 
-      // Disparar evento personalizado para la aplicación
+      showInstallBtn();
       window.dispatchEvent(new CustomEvent('rainloc:installable', { detail: { prompt: e } }));
     });
 
     window.addEventListener('appinstalled', () => {
       PwaManager.deferredPrompt = null;
       PwaManager.isInstalled = true;
+      const btn = document.getElementById('btn-install-pwa');
+      if (btn) btn.style.display = 'none';
       console.log('[PWA] RainLoc se ha instalado correctamente en el dispositivo.');
     });
   }

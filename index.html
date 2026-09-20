@@ -116,6 +116,14 @@
           </svg>
           Centrar
         </button>
+        <button id="btn-install-pwa" class="btn-glass btn-install-pwa" style="display: none;" title="Instalar RainLoc como aplicación en tu dispositivo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Instalar
+        </button>
       </div>
     </header>
 
@@ -639,6 +647,19 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
           crossorigin=""></script>
+
+  <!-- Registro temprano e inmediato del Service Worker para PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(function(reg) {
+          console.log('[PWA] Service Worker registrado tempranamente en scope:', reg.scope);
+        })
+        .catch(function(err) {
+          console.warn('[PWA] Error en registro temprano de SW:', err);
+        });
+    }
+  </script>
 
   <!-- Módulo ES6 Principal -->
   <script type="module" src="./js/app.js?v=2.0"></script>
