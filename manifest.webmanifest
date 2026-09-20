@@ -2,13 +2,15 @@
   "name": "RainLoc - Visor de Cuencas Hidrográficas",
   "short_name": "RainLoc",
   "description": "Visor SIG para monitorización y anticipación de episodios de lluvias torrenciales y caudales en cuencas de la Comunitat Valenciana (CHJ).",
-  "start_url": "./index.html",
+  "start_url": "index.html",
+  "id": "rainloc-pwa-app",
   "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "any",
   "background_color": "#0b1120",
   "theme_color": "#0b1120",
+  "prefer_related_applications": false,
   "categories": ["weather", "utilities", "navigation"],
   "lang": "es-ES",
   "icons": [
@@ -17,6 +19,12 @@
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "icons/icon-512.png",
