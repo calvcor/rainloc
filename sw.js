@@ -3,7 +3,7 @@
  * Estrategia Network-First con Auto-Update para evitar atascos de caché
  */
 
-const CACHE_NAME = 'rainloc-pwa-v3.2';
+const CACHE_NAME = 'rainloc-pwa-v3.3';
 
 // Recursos críticos para el funcionamiento offline básico
 const PRECACHE_ASSETS = [
@@ -12,10 +12,16 @@ const PRECACHE_ASSETS = [
   './styles.css',
   './manifest.json',
   './manifest.webmanifest',
+  './favicon.png',
+  './favicon.jpeg',
+  './favicon.ico',
+  './apple-touch-icon.png',
+  './icons/favicon-64.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-192.png',
+  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
-  './icons/icon.svg',
   './js/app.js',
   './js/config.js',
   './js/map.js',
