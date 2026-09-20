@@ -40,7 +40,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.1">
+  <link rel="stylesheet" href="styles.css?v=3.2">
 </head>
 <body>
 
@@ -668,9 +668,52 @@
         }
       });
     }
+
+    // Corrección para WebKit iOS PWA: eliminar el chin gap inferior exclusivamente en iPhone sin afectar a iPad
+    function ensureFullBleedViewport() {
+      if (typeof window === 'undefined') return;
+
+      var isStandalone = window.navigator && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+      var isIPhone = /iPhone|iPod/.test(navigator.userAgent) ||
+                     navigator.platform === 'iPhone' ||
+                     (window.innerWidth < 768 && !/iPad|Macintosh/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent));
+      var isPortrait = window.innerHeight >= window.innerWidth;
+
+      var app = document.getElementById('app-container');
+
+      if (isStandalone && isIPhone && isPortrait) {
+        var screenH = Math.max(window.screen.width, window.screen.height) + 'px';
+        document.documentElement.style.minHeight = screenH;
+        document.documentElement.style.height = screenH;
+        document.body.style.minHeight = screenH;
+        document.body.style.height = screenH;
+        if (app) {
+          app.style.minHeight = screenH;
+          app.style.height = screenH;
+        }
+      } else {
+        document.documentElement.style.minHeight = '';
+        document.documentElement.style.height = '';
+        document.body.style.minHeight = '';
+        document.body.style.height = '';
+        if (app) {
+          app.style.minHeight = '';
+          app.style.height = '';
+        }
+      }
+    }
+
+    ensureFullBleedViewport();
+    window.addEventListener('resize', ensureFullBleedViewport, { passive: true });
+    window.addEventListener('orientationchange', function() {
+      setTimeout(ensureFullBleedViewport, 150);
+      setTimeout(ensureFullBleedViewport, 500);
+    }, { passive: true });
+    document.addEventListener('DOMContentLoaded', ensureFullBleedViewport);
+    window.addEventListener('load', ensureFullBleedViewport);
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=3.1"></script>
+  <script type="module" src="./js/app.js?v=3.2"></script>
 </body>
 </html>
