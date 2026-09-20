@@ -3303,15 +3303,15 @@ body {
     display: none !important;
   }
 
-  /* Barra Inferior de Navegación Móvil (Botones Grandes y Cómodos) */
+  /* Barra Inferior de Navegación Móvil (Compacta y Ajustada sin hueco inferior) */
   .mobile-bottom-bar {
     display: flex;
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    height: calc(72px + env(safe-area-inset-bottom, 0px));
-    padding-top: 8px;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-top: 5px;
     padding-bottom: env(safe-area-inset-bottom, 0px);
     box-sizing: border-box;
     background: rgba(11, 17, 32, 0.96);
@@ -3329,9 +3329,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 3px;
     flex: 1;
-    height: 58px;
+    height: 48px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
@@ -3350,21 +3350,21 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 60px;
-    height: 32px;
-    border-radius: 16px;
+    width: 52px;
+    height: 28px;
+    border-radius: 14px;
     border: 1px solid transparent;
     transition: all 0.2s ease;
   }
 
   .mobile-nav-icon-wrapper svg {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     stroke-width: 2.2;
   }
 
   .mobile-nav-label {
-    font-size: 0.88rem;
+    font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     line-height: 1;
