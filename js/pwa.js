@@ -16,16 +16,21 @@ export class PwaManager {
   }
 
   /**
-   * Registra el Service Worker con estrategia de actualización inmediata
+   * Registra el Service Worker con estrategia de activación inmediata y fallback seguro
    */
   static _registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
       return;
     }
 
-    window.addEventListener('load', async () => {
+    let hasRegistered = false;
+    const register = async () => {
+      if (hasRegistered) return;
+      hasRegistered = true;
+
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+        const registration = await navigator.serviceWorker.register('sw.js', { scope: './' });
+        console.log('[PWA] Service Worker registrado con éxito en scope:', registration.scope);
 
         // Si se encuentra una nueva versión del Service Worker mientras la app está abierta
         registration.addEventListener('updatefound', () => {
@@ -35,7 +40,6 @@ export class PwaManager {
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
               console.log('[PWA] Nueva versión de RainLoc lista. Activando...');
-              // Enviar mensaje para que el nuevo SW tome el control sin esperar
               newWorker.postMessage({ type: 'SKIP_WAITING' });
             }
           });
@@ -49,14 +53,22 @@ export class PwaManager {
       } catch (err) {
         console.warn('[PWA] Error al registrar el Service Worker:', err);
       }
-    });
+    };
 
-    // Cuando el nuevo Service Worker toma el control, recargar limpiamente si es necesario
+    // Si el documento ya ha cargado, registrar inmediatamente; si no, esperar al evento o timeout
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      register();
+    } else {
+      window.addEventListener('load', register, { once: true });
+      setTimeout(register, 1200);
+    }
+
+    // Cuando el nuevo Service Worker toma el control
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
         refreshing = true;
-        console.log('[PWA] Service Worker actualizado. Aplicación al día.');
+        console.log('[PWA] Service Worker actualizado.');
       }
     });
   }
@@ -66,12 +78,11 @@ export class PwaManager {
    */
   static _setupInstallPromptListener() {
     window.addEventListener('beforeinstallprompt', (e) => {
-      // Evitar que el navegador muestre su banner automático si queremos controlarlo
       e.preventDefault();
       PwaManager.deferredPrompt = e;
-      console.log('[PWA] Evento beforeinstallprompt capturado. RainLoc es instalable.');
+      console.log('[PWA] Evento beforeinstallprompt capturado. RainLoc es instalable en Chrome/Edge.');
 
-      // Disparar evento personalizado por si la UI desea mostrar un botón de "Instalar App"
+      // Disparar evento personalizado para la aplicación
       window.dispatchEvent(new CustomEvent('rainloc:installable', { detail: { prompt: e } }));
     });
 
