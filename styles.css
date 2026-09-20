@@ -4018,9 +4018,9 @@ html, body {
 
 /* -------------------------------------------------------------
    Responsive Breakpoints: Versión Tablet / iPad (769px - 1180px)
-   En anchos medios (iPad portrait y tabletas), la barra de tiempo
-   se ubica debajo del panel de controles y capas de la izquierda,
-   dejando libre el centro del mapa y ofreciendo un control táctil cómodo.
+   En anchos medios (iPad portrait y tabletas), el panel lateral se eleva
+   y la barra de tiempo se extiende desde la esquina izquierda (debajo del panel)
+   hasta la leyenda inferior derecha, ocupando todo el ancho disponible.
 ------------------------------------------------------------- */
 @media (min-width: 769px) and (max-width: 1180px) {
   .left-sidebar-container {
@@ -4032,22 +4032,22 @@ html, body {
   }
 
   body.has-timeline-player .left-sidebar-container {
-    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 
   .timeline-bottom-player,
   .radar-bottom-player {
     position: absolute;
     left: calc(14px + env(safe-area-inset-left, 0px));
+    right: calc(228px + env(safe-area-inset-right, 0px));
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    width: 320px;
-    right: auto;
-    height: auto;
-    max-height: none;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    padding: 8px 12px;
+    width: auto;
+    height: 48px;
+    max-height: 48px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
     box-sizing: border-box;
     box-shadow: var(--shadow-lg);
   }
@@ -4056,9 +4056,8 @@ html, body {
   .radar-player-left-group {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    gap: 6px;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
   .timeline-player-header,
@@ -4066,9 +4065,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 4px;
-    flex-wrap: wrap;
-    flex: 1;
-    min-width: 0;
+    flex-shrink: 0;
   }
 
   .timeline-time-badge,
@@ -4086,7 +4083,7 @@ html, body {
 
   .timeline-mode-chip {
     font-size: 0.65rem;
-    padding: 2px 6px;
+    padding: 2px 5px;
   }
 
   .timeline-max-pill {
@@ -4117,21 +4114,24 @@ html, body {
 
   .timeline-slider-wrapper,
   .radar-slider-wrapper {
-    width: 100%;
-    min-width: 0;
-    margin-top: 1px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 120px;
   }
 
   .timeline-step-slider,
   .radar-step-slider {
     width: 100%;
-    height: 6px;
+    height: 5px;
     margin: 1px 0 0 0;
   }
 
   .timeline-slider-labels,
   .radar-slider-labels {
-    font-size: 0.60rem;
+    font-size: 0.58rem;
   }
 
   .map-legend {
