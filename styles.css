@@ -656,6 +656,14 @@ body {
   flex-shrink: 0;
 }
 
+.model-flag-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .layer-card-name {
   font-size: 0.8rem;
   font-weight: 600;

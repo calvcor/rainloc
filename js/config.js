@@ -206,7 +206,7 @@ export const CONFIG = {
         badge: 'Météo-France',
         badgeType: 'model',
         color: '#8b5cf6',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>`
+        icon: '<span class="model-flag-icon">🇫🇷</span>'
       },
       {
         id: 'icon_eu',
@@ -219,7 +219,7 @@ export const CONFIG = {
         badge: 'DWD',
         badgeType: 'model',
         color: '#0284c7',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.8 19.6A2 2 0 1 0 14 16H2"></path><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"></path><path d="M9.8 4.4A2 2 0 1 1 11 8H2"></path></svg>`
+        icon: '<span class="model-flag-icon">🇩🇪</span>'
       },
       {
         id: 'ecmwf_ifs',
@@ -232,7 +232,7 @@ export const CONFIG = {
         badge: 'Global',
         badgeType: 'info',
         color: '#059669',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`
+        icon: '<span class="model-flag-icon">🇪🇺</span>'
       },
       {
         id: 'gfs_0p25',
@@ -245,7 +245,7 @@ export const CONFIG = {
         badge: 'NOAA',
         badgeType: 'info',
         color: '#2563eb',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`
+        icon: '<span class="model-flag-icon">🇺🇸</span>'
       }
     ]
   },
