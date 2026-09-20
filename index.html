@@ -6,8 +6,27 @@
   <title>RainLoc - Visor de Cuencas Hidrográficas (CHJ)</title>
   <meta name="description" content="Visor SIG para monitorización y anticipación de episodios de lluvias torrenciales en las cuencas de la Comunitat Valenciana (CHJ).">
 
-  <!-- Favicon SVG -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌧️</text></svg>">
+  <!-- Control de Caché en Navegador -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <!-- Metatags PWA y Tema -->
+  <meta name="theme-color" content="#0b1120">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RainLoc">
+  <meta name="application-name" content="RainLoc">
+
+  <!-- Manifest Web App PWA -->
+  <link rel="manifest" href="./manifest.webmanifest">
+
+  <!-- Iconos de la aplicación e iOS Touch Icons -->
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,8 +38,8 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
         crossorigin="">
 
-  <!-- Estilos de la aplicación -->
-  <link rel="stylesheet" href="styles.css">
+  <!-- Estilos de la aplicación con versionado -->
+  <link rel="stylesheet" href="styles.css?v=2.0">
 </head>
 <body>
 
@@ -621,6 +640,6 @@
           crossorigin=""></script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js"></script>
+  <script type="module" src="./js/app.js?v=2.0"></script>
 </body>
 </html>

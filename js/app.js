@@ -9,6 +9,7 @@ import { UIManager } from './ui.js';
 import { LayerManager } from './layerManager.js';
 import { StorageManager } from './storage.js';
 import { MultiLayerInspector } from './multiLayerInspector.js';
+import { PwaManager } from './pwa.js';
 
 class RainLocApp {
   constructor() {
@@ -25,6 +26,9 @@ class RainLocApp {
     console.log('🌧️ Iniciando RainLoc GIS - Monitorización de Cuencas Hidrográficas...');
 
     try {
+      // 0. Inicializar Gestor de PWA y Service Worker
+      PwaManager.init();
+
       // 1. Inicializar Gestor de UI
       this.uiManager = new UIManager();
 
