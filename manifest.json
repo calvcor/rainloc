@@ -8,7 +8,7 @@
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0b1120",
-  "theme_color": "transparent",
+  "theme_color": "#0b1120",
   "prefer_related_applications": false,
   "categories": ["weather", "utilities", "navigation"],
   "lang": "es-ES",

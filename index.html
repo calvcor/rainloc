@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>RainLoc - Visor de Cuencas Hidrográficas (CHJ)</title>
   <meta name="description" content="Visor SIG para monitorización y anticipación de episodios de lluvias torrenciales en las cuencas de la Comunitat Valenciana (CHJ).">
 
@@ -11,16 +11,9 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <!-- Metatags PWA y Tema -->
-  <meta name="theme-color" content="transparent">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RainLoc">
-  <meta name="application-name" content="RainLoc">
-
   <!-- Manifest Web App PWA -->
   <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1120">
 
   <!-- Favicon Web (favicon.png) -->
   <link rel="icon" type="image/png" href="favicon.png">
@@ -43,7 +36,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.13">
+  <link rel="stylesheet" href="styles.css?v=3.14">
 </head>
 <body>
 
@@ -671,24 +664,9 @@
         }
       });
     }
-
-    // Sincronización dinámica de altura de viewport para iOS PWA
-    function syncViewportHeight() {
-      var h = window.innerHeight;
-      if (document.documentElement) document.documentElement.style.height = h + 'px';
-      if (document.body) document.body.style.height = h + 'px';
-      var app = document.getElementById('app-container');
-      if (app) app.style.height = h + 'px';
-    }
-    syncViewportHeight();
-    window.addEventListener('resize', syncViewportHeight, { passive: true });
-    window.addEventListener('orientationchange', function() {
-      setTimeout(syncViewportHeight, 100);
-      setTimeout(syncViewportHeight, 300);
-    }, { passive: true });
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=3.13"></script>
+  <script type="module" src="./js/app.js?v=3.14"></script>
 </body>
 </html>

@@ -3300,22 +3300,21 @@ body {
     display: none !important;
   }
 
-  /* Barra Inferior de Navegación Móvil */
+  /* Barra Inferior de Navegación Móvil (Estilo Minibar) */
   .mobile-bottom-bar {
     display: flex;
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    height: 54px;
-    padding: 0;
-    margin: 0;
-    box-sizing: border-box;
-    background: rgba(11, 17, 32, 0.96);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    width: 100%;
     z-index: 1050;
+    padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px) 12px;
+    box-sizing: border-box;
+    background: rgba(11, 17, 32, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
     align-items: center;
     justify-content: space-around;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
@@ -3326,11 +3325,10 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
     flex: 1;
-    height: 100%;
-    padding: 0;
-    margin: 0;
+    padding: 4px 6px;
+    border-radius: 8px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
