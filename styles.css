@@ -46,9 +46,31 @@
   padding: 0;
 }
 
-html, body {
+html {
   width: 100%;
   height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg-app);
+}
+
+body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  width: 100vw;
+  width: 100dvw;
+  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -62,13 +84,17 @@ html, body {
 #app-container {
   display: flex;
   flex-direction: column;
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   width: 100%;
+  width: 100vw;
+  width: 100dvw;
   height: 100%;
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--bg-app);
 }
@@ -430,7 +456,7 @@ html, body {
 .left-sidebar-container {
   position: absolute;
   top: calc(78px + env(safe-area-inset-top, 0px));
-  bottom: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: calc(14px + env(safe-area-inset-left, 0px));
   width: 320px;
   z-index: 1000;
@@ -827,7 +853,7 @@ html, body {
 .timeline-bottom-player,
 .radar-bottom-player {
   position: absolute;
-  bottom: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: calc(348px + env(safe-area-inset-left, 0px));
   right: calc(248px + env(safe-area-inset-right, 0px));
   height: 48px;
@@ -1531,7 +1557,7 @@ html, body {
 ------------------------------------------------------------- */
 .map-legend {
   position: absolute;
-  bottom: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   right: calc(14px + env(safe-area-inset-right, 0px));
   width: 220px;
   background: var(--bg-surface);
@@ -1678,7 +1704,7 @@ html, body {
 ------------------------------------------------------------- */
 .coords-bar {
   position: absolute;
-  bottom: 6px;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.75);
@@ -2047,7 +2073,7 @@ html, body {
 }
 
 .leaflet-bottom {
-  bottom: 14px !important;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 .leaflet-left {
@@ -4052,27 +4078,27 @@ html, body {
     width: 320px;
     left: calc(14px + env(safe-area-inset-left, 0px));
     top: calc(78px + env(safe-area-inset-top, 0px));
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   body.has-timeline-player .left-sidebar-container {
-    bottom: 70px;
+    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   }
 
   .map-legend {
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     width: 220px;
     transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease, max-height 0.35s ease;
   }
 
   body.has-timeline-player .map-legend {
-    bottom: 70px;
+    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   }
 
   body.has-timeline-player .coords-bar {
-    bottom: 64px;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 
   .timeline-bottom-player,
@@ -4080,7 +4106,7 @@ html, body {
     position: absolute;
     left: calc(14px + env(safe-area-inset-left, 0px));
     right: calc(14px + env(safe-area-inset-right, 0px));
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     width: auto;
     height: 48px;
     max-height: 48px;
