@@ -261,7 +261,13 @@ class AROMEWorker:
 
             meta["run"] = run_str or "00z"
             avail = list(meta.get("available_steps", []))
-            steps_dict = {s["step"]: s for s in meta.get("steps", [])}
+            steps_dict = {s["step"]: dict(s) for s in meta.get("steps", [])}
+            # Asegurar que los pasos nativos tengan el tag de run
+            for s_key, s_data in steps_dict.items():
+                if "run" not in s_data:
+                    s_data["run"] = run_str
+                if "is_fallback" not in s_data:
+                    s_data["is_fallback"] = False
 
             # Si la corrida no está completa, intentar rellenar los pasos futuros desde el ciclo anterior
             if len(avail) < max_target and cycle_iso:
@@ -272,6 +278,11 @@ class AROMEWorker:
                         prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
                         diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
                         prev_steps_dict = {s["step"]: s for s in prev_manifest.get("steps", [])}
+                        prev_run = prev_manifest.get("run") or ""
+                        if not prev_run and prev_manifest.get("cycle_str"):
+                            p_parts = prev_manifest["cycle_str"].split("_")
+                            if len(p_parts) > 1:
+                                prev_run = p_parts[1].lower()
 
                         for s in AROME_STEPS:
                             if s <= max_target and s not in steps_dict:
@@ -285,8 +296,10 @@ class AROMEWorker:
                                         "valid_time_local": (valid_dt + timedelta(hours=2)).strftime("%d/%m %H:%M"),
                                         "max_total_mm": prev_item.get("max_total_mm"),
                                         "max_interval_mm": prev_item.get("max_interval_mm"),
+                                        "run": prev_run or "ant.",
                                         "is_fallback": True,
                                         "fallback_cycle": prev_manifest.get("cycle_str"),
+                                        "fallback_run": prev_run,
                                         "fallback_step": prev_s
                                     }
                                     if s not in avail:

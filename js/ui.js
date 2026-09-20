@@ -22,6 +22,7 @@ export class UIManager {
     };
     this.predictionBanner = document.getElementById('prediction-time-banner');
     this.predictionBannerModel = document.getElementById('prediction-banner-model');
+    this.predictionBannerRun = document.getElementById('prediction-banner-run');
     this.predictionBannerMode = document.getElementById('prediction-banner-mode');
     this.predictionBannerExactTime = document.getElementById('prediction-banner-exact-time');
     this.timelineBottomPlayer = document.getElementById('timeline-bottom-player');
@@ -501,8 +502,8 @@ export class UIManager {
       if (tabId === 'realtime') {
         this.predictionBanner.style.display = 'none';
       } else if (tabId === 'prediction') {
-        const isEcmwfActive = Boolean(this.layerManager && this.layerManager.layerStates['ecmwf_ifs'] && this.layerManager.layerStates['ecmwf_ifs'].active);
-        this.predictionBanner.style.display = isEcmwfActive ? 'flex' : 'none';
+        const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+        this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
       }
     }
 
@@ -533,8 +534,9 @@ export class UIManager {
       controls.style.display = isActive ? 'block' : 'none';
     }
 
-    if (layerId === 'ecmwf_ifs' && this.predictionBanner) {
-      this.predictionBanner.style.display = isActive ? 'flex' : 'none';
+    if (this.predictionBanner) {
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateUnifiedTimelinePlayer();
@@ -1418,6 +1420,7 @@ export class UIManager {
       let curType = null;
       let isPlaying = false;
       let modelLabel = '';
+      let modelFlag = '';
       let labelsHtml = '';
 
       if (activeType === 'ecmwf_ifs') {
@@ -1426,6 +1429,7 @@ export class UIManager {
         curType = this.layerManager.currentEcmwfType || 'total';
         isPlaying = this.layerManager.isEcmwfPlaying;
         modelLabel = 'ECMWF IFS';
+        modelFlag = '🇪🇺';
         labelsHtml = '<span>+3h</span><span>+72h (3d)</span><span>+144h (6d)</span><span>+240h (10d)</span>';
       } else if (activeType === 'gfs_0p25') {
         meta = this.layerManager.gfsMetadata || {};
@@ -1433,6 +1437,7 @@ export class UIManager {
         curType = this.layerManager.currentGfsType || 'total';
         isPlaying = this.layerManager.isGfsPlaying;
         modelLabel = 'NOAA GFS';
+        modelFlag = '🇺🇸';
         labelsHtml = '<span>+3h</span><span>+96h (4d)</span><span>+192h (8d)</span><span>+288h (12d)</span><span>+384h (16d)</span>';
       } else if (activeType === 'arome_precip') {
         meta = this.layerManager.aromeMetadata || {};
@@ -1440,6 +1445,7 @@ export class UIManager {
         curType = this.layerManager.currentAromeType || 'total';
         isPlaying = this.layerManager.isAromePlaying;
         modelLabel = 'AROME HD';
+        modelFlag = '🇫🇷';
         labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h (2d)</span>';
       } else if (activeType === 'icon_eu') {
         meta = this.layerManager.iconMetadata || {};
@@ -1447,6 +1453,7 @@ export class UIManager {
         curType = this.layerManager.currentIconType || 'total';
         isPlaying = this.layerManager.isIconPlaying;
         modelLabel = 'ICON-EU (6.5km)';
+        modelFlag = '🇩🇪';
         labelsHtml = '<span>+1h</span><span>+24h (1d)</span><span>+48h (2d)</span><span>+72h (3d)</span><span>+120h (5d)</span>';
       }
 
@@ -1457,6 +1464,14 @@ export class UIManager {
       if (modeInterval) modeInterval.classList.toggle('active', curType === 'interval');
 
       const stepInfo = (meta.steps || []).find(s => s.step === curStep);
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (meta.run || (meta.cycle_str ? meta.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+
+      const runBadgeHtml = isFallback
+        ? `<span class="timeline-run-chip fallback" title="Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})">Run ${stepRun} ant.</span>`
+        : `<span class="timeline-run-chip new" title="Salida activa ${stepRun}">Run ${stepRun}</span>`;
+
       if (maxPill) {
         maxPill.style.display = 'inline-flex';
         if (stepInfo) {
@@ -1472,24 +1487,53 @@ export class UIManager {
           ? formatMadridTime(stepInfo.valid_time_iso)
           : (stepInfo?.valid_time_local ? String(stepInfo.valid_time_local).trim().split(/\s+/).pop() : '');
         if (timeOnly) {
-          timeText.innerHTML = `<strong>${modelLabel}</strong> (+${curStep}h · ${timeOnly})`;
+          timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h · ${timeOnly}) ${runBadgeHtml}`;
         } else {
-          timeText.innerHTML = `<strong>${modelLabel}</strong> (+${curStep}h)`;
+          timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h) ${runBadgeHtml}`;
         }
       }
 
       const availSteps = meta.available_steps || [];
+      const downloadedMax = (meta.downloaded_max_step !== undefined && meta.downloaded_max_step > 0)
+        ? meta.downloaded_max_step
+        : (meta.raw_max_step !== undefined ? meta.raw_max_step : null);
+
       if (slider && availSteps.length > 0) {
-        slider.min = availSteps[0];
-        slider.max = availSteps[availSteps.length - 1];
+        const minStep = availSteps[0];
+        const maxStep = availSteps[availSteps.length - 1];
+        slider.min = minStep;
+        slider.max = maxStep;
         slider.step = (activeType === 'arome_precip' || activeType === 'icon_eu') ? 1 : 3;
         slider.value = curStep;
         slider.disabled = false;
+
+        // Estilizar track del slider cuando se está actualizando y hay corte entre salida nueva y anterior
+        if (downloadedMax && downloadedMax < maxStep && (meta.is_updating || meta.is_syncing)) {
+          const splitPct = Math.max(0, Math.min(100, ((downloadedMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
+          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : '#8b5cf6'));
+          slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
+          slider.title = `Nueva salida ${mainRun} disponible hasta +${downloadedMax}h (${splitPct.toFixed(0)}%). Pasos posteriores: Salida ${stepInfo?.fallback_run || 'ant.'}`;
+        } else {
+          slider.style.background = '';
+          slider.title = '';
+        }
       }
 
-      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType)) {
+      const isUpdatingSplit = Boolean(downloadedMax && downloadedMax < availSteps[availSteps.length - 1] && (meta.is_updating || meta.is_syncing));
+      if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== activeType || labelsContainer._lastUpdating !== isUpdatingSplit)) {
         labelsContainer._currentType = activeType;
-        labelsContainer.innerHTML = labelsHtml;
+        labelsContainer._lastUpdating = isUpdatingSplit;
+
+        let splitNoticeHtml = '';
+        if (isUpdatingSplit) {
+          splitNoticeHtml = `
+            <div class="timeline-slider-split-notice">
+              <span>✨ Nueva salida ${mainRun}: 1h–${downloadedMax}h</span>
+              <span>📦 Resto: Salida anterior</span>
+            </div>
+          `;
+        }
+        labelsContainer.innerHTML = labelsHtml + splitNoticeHtml;
       }
 
       this._updateTimelinePlayButton(isPlaying);
@@ -1577,7 +1621,20 @@ export class UIManager {
       this.predictionBannerExactTime.textContent = formattedInstant;
     }
     if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `ECMWF IFS (+${currentStep}h)`;
+      this.predictionBannerModel.textContent = `🇪🇺 ECMWF IFS (+${currentStep}h)`;
+    }
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
     }
     if (this.predictionBannerMode) {
       const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 144 ? 'Intervalo 6h' : 'Intervalo 3h');
@@ -1586,7 +1643,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1634,7 +1691,20 @@ export class UIManager {
       this.predictionBannerExactTime.textContent = formattedInstant;
     }
     if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `NOAA GFS (+${currentStep}h)`;
+      this.predictionBannerModel.textContent = `🇺🇸 NOAA GFS (+${currentStep}h)`;
+    }
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
     }
     if (this.predictionBannerMode) {
       const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h');
@@ -1691,7 +1761,20 @@ export class UIManager {
       this.predictionBannerExactTime.textContent = formattedInstant;
     }
     if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `AROME HD (+${currentStep}h)`;
+      this.predictionBannerModel.textContent = `🇫🇷 AROME HD (+${currentStep}h)`;
+    }
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
     }
     if (this.predictionBannerMode) {
       const modeText = currentType === 'total' ? 'Acumulado Total' : 'Intervalo 1h';
@@ -1748,7 +1831,20 @@ export class UIManager {
       this.predictionBannerExactTime.textContent = formattedInstant;
     }
     if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `ICON-EU (+${currentStep}h)`;
+      this.predictionBannerModel.textContent = `🇩🇪 ICON-EU (+${currentStep}h)`;
+    }
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
     }
     if (this.predictionBannerMode) {
       const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 78 ? 'Intervalo 3h' : 'Intervalo 1h');
