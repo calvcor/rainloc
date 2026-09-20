@@ -1464,13 +1464,7 @@ export class UIManager {
       if (modeInterval) modeInterval.classList.toggle('active', curType === 'interval');
 
       const stepInfo = (meta.steps || []).find(s => s.step === curStep);
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
       const mainRun = (meta.run || (meta.cycle_str ? meta.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-
-      const runBadgeHtml = isFallback
-        ? `<span class="timeline-run-chip fallback" title="Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})">Run ${stepRun} ant.</span>`
-        : `<span class="timeline-run-chip new" title="Salida activa ${stepRun}">Run ${stepRun}</span>`;
 
       if (maxPill) {
         maxPill.style.display = 'inline-flex';
@@ -1483,14 +1477,7 @@ export class UIManager {
       }
 
       if (timeText) {
-        const timeOnly = stepInfo?.valid_time_iso
-          ? formatMadridTime(stepInfo.valid_time_iso)
-          : (stepInfo?.valid_time_local ? String(stepInfo.valid_time_local).trim().split(/\s+/).pop() : '');
-        if (timeOnly) {
-          timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h · ${timeOnly}) ${runBadgeHtml}`;
-        } else {
-          timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h) ${runBadgeHtml}`;
-        }
+        timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${curStep}h)`;
       }
 
       const availSteps = meta.available_steps || [];
