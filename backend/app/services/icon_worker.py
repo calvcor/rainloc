@@ -473,21 +473,24 @@ class ICONWorker:
             logger.error(f"Error calculando max_point ICON: {e}")
             return None
 
-    def _determine_latest_icon_run(self) -> Tuple[datetime, str, str]:
+    def _get_candidate_cycles(self) -> List[Tuple[datetime, str, str]]:
         """
-        Determina cuál es la corrida operativa más reciente de ICON-EU disponible en DWD Open Data.
-        ICON-EU corre cada 3 horas: 00z, 03z, 06z, 09z, 12z, 15z, 18z, 21z.
-        DWD suele tardar unas ~2h 15m en publicar el primer lote.
-        Retorna (cycle_datetime_utc, date_str YYYYMMDD, hh 00|03|06|09|12|15|18|21).
+        Genera los ciclos candidatos más recientes en orden cronológico descendente
+        (8 corridas operativas diarias cada 3 horas: 00z, 03z, 06z, 09z, 12z, 15z, 18z, 21z).
         """
         now = datetime.now(timezone.utc)
-        # Retroceder 2 horas y 15 minutos para asegurar disponibilidad
-        ref_time = now - timedelta(hours=2, minutes=15)
-        run_hour = (ref_time.hour // 3) * 3
-        cycle_dt = ref_time.replace(hour=run_hour, minute=0, second=0, microsecond=0)
-        date_str = cycle_dt.strftime("%Y%m%d")
-        hh = f"{cycle_dt.hour:02d}"
-        return cycle_dt, date_str, hh
+        candidates = []
+        # Comenzar desde la hora actual UTC hacia atrás en saltos de 3 horas
+        base_hour = (now.hour // 3) * 3
+        current_dt = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+
+        for i in range(8):
+            dt = current_dt - timedelta(hours=i * 3)
+            date_str = dt.strftime("%Y%m%d")
+            hh = f"{dt.hour:02d}"
+            candidates.append((dt, date_str, hh))
+
+        return candidates
 
     def _download_and_decompress_icon_step(self, date_str: str, hh: str, step: int, dest_grib_path: Path) -> bool:
         """
@@ -613,6 +616,7 @@ class ICONWorker:
     async def sync_icon_forecast(self, max_steps: Optional[int] = None):
         """
         Sincroniza la previsión operativa de ICON-EU de forma progresiva.
+        Comprueba en orden cronológico inverso las corridas recientes (12z, 09z, 06z, 03z, 00z...).
         Por cada paso descargado y procesado, genera el PNG Web Mercator,
         guarda la matriz .npz y notifica vía SSE en tiempo real a los clientes.
         """
@@ -623,10 +627,59 @@ class ICONWorker:
         async with self._sync_lock:
             self._is_syncing = True
             try:
-                cycle_dt, date_str, hh = self._determine_latest_icon_run()
+                candidate_cycles = self._get_candidate_cycles()
+                selected_cycle = None
+                cycle_dir = None
+                temp_grib_dir = None
+                target_max_step = None
+                steps_to_process = None
+
+                # 1. Encontrar el ciclo operativo más reciente con datos disponibles
+                for cycle_dt, date_str, hh in candidate_cycles:
+                    test_cycle_str = f"{date_str}_{hh}z"
+                    test_cycle_dir = self.cache_dir / test_cycle_str
+                    test_manifest = test_cycle_dir / "manifest.json"
+
+                    # A. Si ya está procesado en disco y tiene pasos válidos
+                    if test_manifest.exists():
+                        try:
+                            with open(test_manifest, "r", encoding="utf-8") as f:
+                                meta = json.load(f)
+                                if meta.get("available_steps") and len(meta.get("available_steps")) > 0:
+                                    selected_cycle = (cycle_dt, date_str, hh)
+                                    cycle_dir = test_cycle_dir
+                                    break
+                        except Exception:
+                            pass
+
+                    # B. Comprobar disponibilidad remota descargando el paso +1h
+                    test_temp_grib = test_cycle_dir / "temp_grib"
+                    test_temp_grib.mkdir(parents=True, exist_ok=True)
+                    test_step_1_grib = test_temp_grib / f"test_icon_step_001.grib2"
+
+                    logger.debug(f"ICON: Comprobando disponibilidad del ciclo {test_cycle_str} en DWD Open Data...")
+                    downloaded = await asyncio.to_thread(
+                        self._download_and_decompress_icon_step, date_str, hh, 1, test_step_1_grib
+                    )
+
+                    if downloaded:
+                        selected_cycle = (cycle_dt, date_str, hh)
+                        cycle_dir = test_cycle_dir
+                        if test_step_1_grib.exists():
+                            test_step_1_grib.unlink()
+                        break
+                    else:
+                        if test_step_1_grib.exists():
+                            test_step_1_grib.unlink()
+                        logger.info(f"ICON: Ciclo {test_cycle_str} no publicado aún en DWD. Comprobando ciclo anterior...")
+
+                if not selected_cycle:
+                    logger.warning("ICON: No se encontró ningún ciclo disponible ni en DWD Open Data ni en caché local.")
+                    return
+
+                cycle_dt, date_str, hh = selected_cycle
                 cycle_str = f"{date_str}_{hh}z"
                 cycle_iso = cycle_dt.isoformat()
-                cycle_dir = self.cache_dir / cycle_str
                 cycle_dir.mkdir(parents=True, exist_ok=True)
                 temp_grib_dir = cycle_dir / "temp_grib"
                 temp_grib_dir.mkdir(parents=True, exist_ok=True)
@@ -640,7 +693,7 @@ class ICONWorker:
 
                 steps_to_process = [s for s in candidate_steps if s <= target_max_step]
 
-                logger.info(f"ICON: Iniciando sincronización para ciclo {cycle_str} (hasta +{target_max_step}h, {len(steps_to_process)} pasos)...")
+                logger.info(f"ICON: Sincronizando ciclo activo {cycle_str} (hasta +{target_max_step}h, {len(steps_to_process)} pasos)...")
 
                 available_steps: List[int] = []
                 step_entries: List[Dict[str, Any]] = []
