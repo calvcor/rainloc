@@ -1397,6 +1397,8 @@ export class UIManager {
         const curIdx = timeline.findIndex(t => t.timestep === currentStep);
         slider.value = curIdx >= 0 ? curIdx : timeline.length - 1;
         slider.disabled = false;
+        slider.style.background = '';
+        slider.title = '';
       }
 
       if (labelsContainer && (!labelsContainer._currentType || labelsContainer._currentType !== 'radar')) {
