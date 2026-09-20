@@ -47,11 +47,6 @@
 }
 
 html, body {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   width: 100%;
   height: 100%;
   margin: 0;
@@ -65,7 +60,9 @@ html, body {
 
 /* Contenedor principal de la aplicación */
 #app-container {
-  position: fixed;
+  display: flex;
+  flex-direction: column;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -1521,7 +1518,7 @@ html, body {
   transform: scale(1.05);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .prediction-time-banner {
     left: 14px;
     right: 14px;
@@ -3241,9 +3238,9 @@ html, body {
 }
 
 /* -------------------------------------------------------------
-   Responsive Breakpoints: Versión Móvil (<= 768px)
+   Responsive Breakpoints: Versión Móvil (<= 767px)
 ------------------------------------------------------------- */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   /* Header compacto solo con Título y Logo */
   .app-header {
     top: 8px;
@@ -4050,7 +4047,7 @@ html, body {
    - El panel de capas izquierdo y la leyenda del mapa derecha se elevan
      sincronizadamente (bottom: 72px) para situarse justo encima del reproductor.
 ------------------------------------------------------------- */
-@media (min-width: 769px) and (max-width: 1180px) {
+@media (min-width: 768px) and (max-width: 1180px) {
   .left-sidebar-container {
     width: 320px;
     left: calc(14px + env(safe-area-inset-left, 0px));

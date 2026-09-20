@@ -6,7 +6,6 @@
   "id": "rainloc-pwa-app",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "any",
   "background_color": "#0b1120",
   "theme_color": "#0b1120",
