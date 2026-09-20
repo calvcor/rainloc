@@ -1421,8 +1421,8 @@ html, body {
 ------------------------------------------------------------- */
 .prediction-time-banner {
   position: absolute;
-  top: 78px;
-  left: 348px;
+  top: calc(78px + env(safe-area-inset-top, 0px));
+  left: calc(348px + env(safe-area-inset-left, 0px));
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -1520,9 +1520,9 @@ html, body {
 
 @media (max-width: 767px) {
   .prediction-time-banner {
-    left: 14px;
-    right: 14px;
-    top: 78px;
+    left: calc(14px + env(safe-area-inset-left, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
+    top: calc(78px + env(safe-area-inset-top, 0px));
   }
 }
 
@@ -3668,9 +3668,9 @@ html, body {
   }
 
   .prediction-time-banner {
-    top: 66px !important;
-    left: 8px !important;
-    right: 8px !important;
+    top: calc(66px + env(safe-area-inset-top, 0px)) !important;
+    left: calc(8px + env(safe-area-inset-left, 0px)) !important;
+    right: calc(8px + env(safe-area-inset-right, 0px)) !important;
   }
 
   .timeline-bottom-player,

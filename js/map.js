@@ -128,20 +128,44 @@ export class MapManager {
       });
     }
 
+    // Observador de cambios de tamaño en el contenedor del mapa (crítico para PWA standalone en iOS/iPad)
+    if (typeof ResizeObserver !== 'undefined') {
+      const mapContainer = document.getElementById(this.containerId);
+      if (mapContainer) {
+        const resizeObserver = new ResizeObserver(() => {
+          if (this.map) {
+            this.map.invalidateSize({ pan: false });
+          }
+        });
+        resizeObserver.observe(mapContainer);
+      }
+    }
+
     // Escuchar cambios de tamaño de ventana y orientación (p. ej. barra de herramientas de Safari en iPad/iOS)
     if (typeof window !== 'undefined') {
       const handleResize = () => {
         if (this.map) {
-          this.map.invalidateSize();
+          this.map.invalidateSize({ pan: false });
         }
       };
       window.addEventListener('resize', handleResize, { passive: true });
       window.addEventListener('orientationchange', () => {
         setTimeout(handleResize, 150);
+        setTimeout(handleResize, 500);
       }, { passive: true });
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', handleResize, { passive: true });
       }
+      window.addEventListener('load', handleResize, { passive: true });
+
+      // Ráfaga de recalculación inicial para PWAs instaladas que inician con dimensiones de pantalla dinámicas
+      [50, 150, 300, 600, 1200].forEach((delay) => {
+        setTimeout(() => {
+          if (this.map) {
+            this.map.invalidateSize({ pan: false });
+          }
+        }, delay);
+      });
     }
 
     return this.map;
