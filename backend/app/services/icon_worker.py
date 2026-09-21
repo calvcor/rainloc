@@ -224,25 +224,35 @@ class ICONWorker:
         except Exception as e:
             logger.warning(f"ICON: No se pudo cargar manifiesto previo: {e}")
 
-    def _get_previous_manifest(self) -> Optional[Dict[str, Any]]:
-        """Devuelve el manifiesto del ciclo inmediatamente anterior para hibridación de pasos futuros."""
+    def _get_fallback_manifests(self) -> List[Dict[str, Any]]:
+        """Devuelve la lista de manifiestos anteriores en orden descendente (más reciente primero)."""
+        manifests = []
         try:
             dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
             if len(dirs) < 2:
-                return None
+                return []
             dirs.sort(key=lambda d: d.name, reverse=True)
-            prev_dir = dirs[1]
-            with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
-                return json.load(f)
+            for prev_dir in dirs[1:]:
+                try:
+                    with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
+                        manifests.append(json.load(f))
+                except Exception:
+                    continue
         except Exception:
             pass
-        return None
+        return manifests
+
+    def _get_previous_manifest(self) -> Optional[Dict[str, Any]]:
+        """Devuelve el manifiesto del ciclo inmediatamente anterior (compatibilidad)."""
+        fallback_list = self._get_fallback_manifests()
+        return fallback_list[0] if fallback_list else None
 
     def get_metadata(self) -> Dict[str, Any]:
         """
         Devuelve los metadatos del ciclo actual con hibridación temporal inteligente (Stitching):
-        Si la corrida actual sólo tiene los primeros pasos, rellena los pasos futuros
-        restantes a partir de la corrida anterior para que el usuario nunca pierda horizonte.
+        Si la corrida actual es intermedia (03z, 09z, 15z, 21z) o está descargándose,
+        rellena los pasos futuros hasta +120h a partir de las corridas anteriores
+        para que el usuario nunca pierda horizonte temporal.
         """
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
@@ -276,46 +286,48 @@ class ICONWorker:
                     s_data["is_fallback"] = False
 
             is_main = run_str in ("00z", "06z", "12z", "18z")
-            target_steps = ICON_MAIN_STEPS if is_main else ICON_SHORT_STEPS
-            max_target = getattr(settings, "ICON_MAX_STEPS", 120 if is_main else 30)
+            native_target_steps = ICON_MAIN_STEPS if is_main else ICON_SHORT_STEPS
+            target_steps = ICON_MAIN_STEPS
+            max_target = getattr(settings, "ICON_MAX_STEPS", 120)
 
-            # Si la corrida no está completa, intentar rellenar los pasos futuros desde el ciclo anterior
+            # Si la corrida no alcanza el horizonte completo de 120h (p.ej. corrida intermedia o en descarga), rellenar desde ciclos previos
             if len(avail) < len([s for s in target_steps if s <= max_target]) and cycle_iso:
-                prev_manifest = self._get_previous_manifest()
-                if prev_manifest and prev_manifest.get("cycle") and prev_manifest.get("steps"):
-                    try:
-                        latest_dt = datetime.fromisoformat(cycle_iso.replace("Z", "+00:00"))
-                        prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                        diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                        prev_steps_dict = {s["step"]: s for s in prev_manifest.get("steps", [])}
-                        prev_run = prev_manifest.get("run") or ""
-                        if not prev_run and prev_manifest.get("cycle_str"):
-                            p_parts = prev_manifest["cycle_str"].split("_")
-                            if len(p_parts) > 1:
-                                prev_run = p_parts[1].lower()
+                fallback_manifests = self._get_fallback_manifests()
+                for prev_manifest in fallback_manifests:
+                    if prev_manifest and prev_manifest.get("cycle") and prev_manifest.get("steps"):
+                        try:
+                            latest_dt = datetime.fromisoformat(cycle_iso.replace("Z", "+00:00"))
+                            prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                            diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                            prev_steps_dict = {s["step"]: s for s in prev_manifest.get("steps", [])}
+                            prev_run = prev_manifest.get("run") or ""
+                            if not prev_run and prev_manifest.get("cycle_str"):
+                                p_parts = prev_manifest["cycle_str"].split("_")
+                                if len(p_parts) > 1:
+                                    prev_run = p_parts[1].lower()
 
-                        for s in target_steps:
-                            if s <= max_target and s not in steps_dict:
-                                prev_s = s + diff_hours
-                                if prev_s in prev_steps_dict:
-                                    prev_item = prev_steps_dict[prev_s]
-                                    valid_dt = latest_dt + timedelta(hours=s)
-                                    steps_dict[s] = {
-                                        "step": s,
-                                        "valid_time_iso": valid_dt.isoformat(),
-                                        "valid_time_local": (valid_dt + timedelta(hours=2)).strftime("%d/%m %H:%M"),
-                                        "max_total_mm": prev_item.get("max_total_mm"),
-                                        "max_interval_mm": prev_item.get("max_interval_mm"),
-                                        "run": prev_run or "ant.",
-                                        "is_fallback": True,
-                                        "fallback_cycle": prev_manifest.get("cycle_str"),
-                                        "fallback_run": prev_run,
-                                        "fallback_step": prev_s
-                                    }
-                                    if s not in avail:
-                                        avail.append(s)
-                    except Exception as e:
-                        logger.debug(f"ICON stitching calculation error: {e}")
+                            for s in target_steps:
+                                if s <= max_target and s not in steps_dict:
+                                    prev_s = s + diff_hours
+                                    if prev_s in prev_steps_dict:
+                                        prev_item = prev_steps_dict[prev_s]
+                                        valid_dt = latest_dt + timedelta(hours=s)
+                                        steps_dict[s] = {
+                                            "step": s,
+                                            "valid_time_iso": valid_dt.isoformat(),
+                                            "valid_time_local": (valid_dt + timedelta(hours=2)).strftime("%d/%m %H:%M"),
+                                            "max_total_mm": prev_item.get("max_total_mm"),
+                                            "max_interval_mm": prev_item.get("max_interval_mm"),
+                                            "run": prev_run or "ant.",
+                                            "is_fallback": True,
+                                            "fallback_cycle": prev_manifest.get("cycle_str"),
+                                            "fallback_run": prev_run,
+                                            "fallback_step": prev_s
+                                        }
+                                        if s not in avail:
+                                            avail.append(s)
+                        except Exception as e:
+                            logger.debug(f"ICON stitching calculation error: {e}")
 
             avail.sort()
             sorted_steps = [steps_dict[s] for s in avail if s in steps_dict]
@@ -325,7 +337,7 @@ class ICONWorker:
             meta["max_step"] = max_step
             raw_avail = list(self.current_manifest.get("available_steps", []))
             raw_max_step = max(raw_avail) if raw_avail else 0
-            raw_complete = (len(raw_avail) >= len([s for s in target_steps if s <= max_target]))
+            raw_complete = (len(raw_avail) >= len([s for s in native_target_steps if s <= max_target]))
             meta["raw_available_steps"] = raw_avail
             meta["downloaded_max_step"] = raw_max_step
             meta["raw_max_step"] = raw_max_step
@@ -350,7 +362,7 @@ class ICONWorker:
         }
 
     def get_image_path(self, step: int, layer_type: str = "total") -> Optional[Path]:
-        """Devuelve la ruta al archivo PNG del paso y tipo solicitados (con soporte de fallback al ciclo anterior)."""
+        """Devuelve la ruta al archivo PNG del paso y tipo solicitados (con soporte de fallback a ciclos anteriores)."""
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
         if not self.current_manifest:
@@ -365,20 +377,20 @@ class ICONWorker:
         if img_path.exists():
             return img_path
 
-        # Fallback a ciclo anterior si aún no está resuelto
-        prev_manifest = self._get_previous_manifest()
-        if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
-            try:
-                latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
-                prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                prev_step = step + diff_hours
-                prev_dir = self.cache_dir / prev_manifest["cycle_str"]
-                prev_img = prev_dir / f"{prefix}_step_{prev_step:03d}.png"
-                if prev_img.exists():
-                    return prev_img
-            except Exception:
-                pass
+        # Fallback a ciclos anteriores si aún no está resuelto
+        for prev_manifest in self._get_fallback_manifests():
+            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                try:
+                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                    prev_step = step + diff_hours
+                    prev_dir = self.cache_dir / prev_manifest["cycle_str"]
+                    prev_img = prev_dir / f"{prefix}_step_{prev_step:03d}.png"
+                    if prev_img.exists():
+                        return prev_img
+                except Exception:
+                    pass
 
         return None
 
@@ -420,25 +432,28 @@ class ICONWorker:
             if arr is not None:
                 self._in_memory_arrays[mem_key] = arr
 
-        # Fallback a ciclo anterior si aún no está resuelto en el actual
+        # Fallback a ciclos anteriores si aún no está resuelto en el actual
         if arr is None:
-            prev_manifest = self._get_previous_manifest()
-            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
-                try:
-                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
-                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                    prev_step = step + diff_hours
-                    prev_cycle_str = prev_manifest["cycle_str"]
-                    prev_mem_key = f"{prev_cycle_str}_{prefix}_{prev_step:03d}"
-                    arr = self._in_memory_arrays.get(prev_mem_key)
-                    if arr is None:
-                        prev_dir = self.cache_dir / prev_cycle_str
-                        arr = self._load_grid_file(prev_dir / f"{prefix}_step_{prev_step:03d}")
-                        if arr is not None:
-                            self._in_memory_arrays[prev_mem_key] = arr
-                except Exception:
-                    pass
+            for prev_manifest in self._get_fallback_manifests():
+                if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                    try:
+                        latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                        prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                        diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                        prev_step = step + diff_hours
+                        prev_cycle_str = prev_manifest["cycle_str"]
+                        prev_mem_key = f"{prev_cycle_str}_{prefix}_{prev_step:03d}"
+                        arr = self._in_memory_arrays.get(prev_mem_key)
+                        if arr is None:
+                            prev_dir = self.cache_dir / prev_cycle_str
+                            arr = self._load_grid_file(prev_dir / f"{prefix}_step_{prev_step:03d}")
+                            if arr is not None:
+                                self._in_memory_arrays[prev_mem_key] = arr
+                                return arr
+                        else:
+                            return arr
+                    except Exception:
+                        pass
 
         return arr
 
@@ -852,8 +867,8 @@ class ICONWorker:
                 if temp_grib_dir.exists():
                     shutil.rmtree(temp_grib_dir, ignore_errors=True)
 
-                # Mantener sólo los 3 ciclos más recientes en disco
-                self._prune_old_cycles(keep=3)
+                # Mantener los 5 ciclos más recientes en disco para garantizar retención de corridas principales de 120h
+                self._prune_old_cycles(keep=5)
 
                 logger.info(f"ICON: Sincronización finalizada para {cycle_str}. Pasos listos: {len(available_steps)}.")
 
