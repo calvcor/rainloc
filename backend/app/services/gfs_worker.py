@@ -741,19 +741,43 @@ class GFSWorker:
                     if step_grib.exists():
                         step_grib.unlink()
 
-                    # En GFS, APCP para f003 es 0-3h acc. En pasos posteriores, APCP puede ser acumulado
-                    # total o intervalo según la hora del pronóstico. Normalizamos acumulado total e intervalo:
-                    accum_total = np.maximum(grid_2d, 0.0)
-                    if prev_raw_grid is not None:
-                        # Si APCP es estrictamente acumulado continuo
-                        if np.nanmean(accum_total) >= np.nanmean(prev_raw_grid):
-                            interval_3h = np.maximum(accum_total - prev_raw_grid, 0.0)
+                    # Reconstrucción precisa de acumulado total e intervalo según la especificación NOAA GFS:
+                    # GFS emite APCP en ciclos de acumulación de 6h (pasos % 6 == 3 son intervalos 3h, pasos % 6 == 0 son bloques 6h).
+                    grid_clean = np.maximum(grid_2d, 0.0)
+
+                    if step % 6 == 3:
+                        interval_3h = grid_clean
+                        if step == 3:
+                            accum_total = interval_3h
                         else:
-                            # Si en este paso APCP ya viene como intervalo 3h
-                            interval_3h = np.maximum(accum_total, 0.0)
-                            accum_total = prev_raw_grid + interval_3h
+                            base_total = self._load_grid_file(cycle_dir / f"total_step_{step-3:03d}")
+                            if base_total is None:
+                                base_total = prev_raw_grid if prev_raw_grid is not None else np.zeros_like(grid_clean)
+                            accum_total = base_total + interval_3h
+                    elif step % 6 == 0:
+                        base_total = self._load_grid_file(cycle_dir / f"total_step_{step-6:03d}") if step > 6 else np.zeros_like(grid_clean)
+                        if base_total is None and step > 6:
+                            base_total = prev_raw_grid if prev_raw_grid is not None else np.zeros_like(grid_clean)
+
+                        accum_total = (base_total if base_total is not None else np.zeros_like(grid_clean)) + grid_clean
+
+                        step_minus_3_interval = self._load_grid_file(cycle_dir / f"interval_step_{step-3:03d}")
+                        if step_minus_3_interval is not None:
+                            interval_3h = np.maximum(grid_clean - step_minus_3_interval, 0.0)
+                        else:
+                            prev_step_total = self._load_grid_file(cycle_dir / f"total_step_{step-3:03d}")
+                            if prev_step_total is not None:
+                                interval_3h = np.maximum(accum_total - prev_step_total, 0.0)
+                            else:
+                                interval_3h = grid_clean.copy()
                     else:
-                        interval_3h = accum_total.copy()
+                        interval_3h = grid_clean
+                        prev_total = prev_raw_grid
+                        if prev_total is None:
+                            prior_steps = [s for s in available_steps if s < step]
+                            if prior_steps:
+                                prev_total = self._load_grid_file(cycle_dir / f"total_step_{max(prior_steps):03d}")
+                        accum_total = (prev_total if prev_total is not None else np.zeros_like(grid_clean)) + interval_3h
 
                     prev_raw_grid = accum_total.copy()
 
