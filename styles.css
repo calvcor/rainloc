@@ -1243,12 +1243,13 @@ body {
   font-weight: 700;
 }
 
-.aemet-period-btn.active[data-severity-level="yellow"] {
-  color: #0f172a;
+/* Al estar activo el botón completo ya tiene el color del aviso, ocultamos el punto para que el texto quede 100% centrado */
+.aemet-period-btn.active .aemet-btn-dot {
+  display: none !important;
 }
 
-.aemet-period-btn.active[data-severity-level="yellow"] .aemet-btn-dot {
-  box-shadow: 0 0 4px #0f172a;
+.aemet-period-btn.active[data-severity-level="yellow"] {
+  color: #0f172a;
 }
 
 /* Sub-controles del Modelo ECMWF IFS (Reproductor temporal, selector de modo y leyenda) */
