@@ -794,6 +794,21 @@ export class UIManager {
       `;
     }
 
+    // Sub-controles específicos para Avisos AEMET (Selector de periodo: Activos ahora / Mañana / Pasado)
+    let aemetExtraControls = '';
+    if (layer.id === 'aemet_warnings') {
+      const selectedPeriod = (this.layerManager && this.layerManager.currentAemetPeriod) || prefs.aemetPeriod || 'now';
+      aemetExtraControls = `
+        <div class="aemet-subcontrols">
+          <div class="aemet-period-selector" role="group" aria-label="Periodo de avisos AEMET">
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'now' ? 'active' : ''}" data-period="now" title="Avisos en vigor en este momento">Activos ahora</button>
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'tomorrow' ? 'active' : ''}" data-period="tomorrow" title="Avisos previstos para mañana">Mañana</button>
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'after_tomorrow' ? 'active' : ''}" data-period="after_tomorrow" title="Avisos previstos para pasado mañana">Pasado</button>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="layer-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
         <div class="layer-card-main">
@@ -820,6 +835,7 @@ export class UIManager {
             <span class="layer-opacity-value" id="val-${layer.id}">${opacityPct}%</span>
           </div>
           <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
+          ${aemetExtraControls}
           ${radarExtraControls}
           ${ecmwfExtraControls}
           ${gfsExtraControls}
@@ -868,6 +884,20 @@ export class UIManager {
   }
 
   /**
+   * Actualiza el estado visual activo de los botones de periodo de Avisos AEMET
+   * @param {string} period 
+   */
+  updateAemetPeriodButtons(period) {
+    document.querySelectorAll('.aemet-period-btn').forEach(btn => {
+      if (btn.getAttribute('data-period') === period) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  /**
    * Vincula listeners interactivos a los switches y sliders de capas
    */
   _bindLayerCardEvents() {
@@ -907,6 +937,18 @@ export class UIManager {
       });
     });
 
+    // Selector de periodo de Avisos AEMET (Activos ahora, Mañana, Pasado)
+    document.querySelectorAll('.aemet-period-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const period = e.currentTarget.getAttribute('data-period');
+        document.querySelectorAll('.aemet-period-btn').forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+
+        if (this.layerManager) {
+          this.layerManager.setAemetPeriod(period);
+        }
+      });
+    });
 
     // Selector de Modo / Producto de Radar (Mixto, Corto Alcance, Largo Alcance)
     const radarProductModeSelect = document.getElementById('radar-product-mode-select');

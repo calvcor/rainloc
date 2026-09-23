@@ -1171,6 +1171,51 @@ body {
 
 
 
+/* Sub-controles de Avisos AEMET (Selector de periodo temporal) */
+.aemet-subcontrols {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aemet-period-selector {
+  display: flex;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.aemet-period-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.70rem;
+  font-weight: 600;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.aemet-period-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.aemet-period-btn.active {
+  color: #ffffff;
+  background: var(--accent-cyan, #0284c7);
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.4);
+}
+
 /* Sub-controles del Modelo ECMWF IFS (Reproductor temporal, selector de modo y leyenda) */
 .ecmwf-subcontrols {
   margin-top: 8px;

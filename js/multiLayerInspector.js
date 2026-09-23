@@ -614,19 +614,36 @@ export class MultiLayerInspector {
             const event = topWarning.event || topWarning.headline || "Aviso Meteorológico";
             const sev = topWarning.severity || "Aviso";
             const color = topWarning.color || "#f59e0b";
-            const expires = topWarning.expires ? new Date(topWarning.expires).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
             const area = topWarning.area_desc || "";
+            
+            const currentPeriod = this.layerManager.currentAemetPeriod || 'now';
+            let title = "AEMET Meteoalerta (Activo)";
+            if (currentPeriod === 'tomorrow') {
+              title = "AEMET Meteoalerta (Mañana)";
+            } else if (currentPeriod === 'after_tomorrow') {
+              title = "AEMET Meteoalerta (Pasado)";
+            }
+
+            let timeDetail = "";
+            if (topWarning.expires) {
+              const expDate = new Date(topWarning.expires);
+              if (currentPeriod === 'now') {
+                timeDetail = ` · Hasta ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+              } else {
+                timeDetail = ` · Hasta ${expDate.toLocaleDateString([], { day: "2-digit", month: "2-digit" })} ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+              }
+            }
 
             sections.push({
               type: "warning",
-              title: "AEMET Meteoalerta (Activo)",
+              title: title,
               headerColor: color,
               icon: "⚠️",
               name: event,
               badge: sev,
               badgeBg: color,
               badgeColor: "#000",
-              details: `📍 ${area}${expires ? " · Hasta " + expires : ""}`
+              details: `📍 ${area}${timeDetail}`
             });
           }
         }

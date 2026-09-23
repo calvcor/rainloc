@@ -4,7 +4,8 @@ Mantiene el estado en memoria y persiste periódicamente un snapshot en disco.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -92,20 +93,47 @@ class WeatherStateManager:
         except Exception as e:
             logger.error(f"Error al guardar snapshot del estado: {e}")
 
-    def get_aemet_warnings_geojson(self, only_active_now: bool = True) -> Dict[str, Any]:
+    def get_aemet_warnings_geojson(self, period: str = "now", only_active_now: Optional[bool] = None) -> Dict[str, Any]:
         """
-        Devuelve la FeatureCollection de avisos.
-        Si only_active_now=True (por defecto), filtra ESTRICTAMENTE los avisos cuyo periodo
-        de vigencia (onset <= ahora <= expires) esté en curso en este momento.
-        También agrupa y consolida avisos por zona para evitar polígonos duplicados o stackeados.
+        Devuelve la FeatureCollection de avisos de AEMET filtrada por periodo temporal y consolidada por zona.
+        Periodos soportados:
+        - "now" / "today" / "active_now": Avisos en vigor en este instante preciso (onset <= ahora <= expires).
+        - "tomorrow" / "manana": Avisos vigentes en cualquier momento durante el día de mañana (huso Europe/Madrid).
+        - "after_tomorrow" / "pasado": Avisos vigentes durante el día de pasado mañana (huso Europe/Madrid).
+        - "all": Todos los avisos disponibles en el feed ATOM.
         """
         all_features = self.aemet_warnings.get("features", [])
         
-        if not only_active_now:
-            return self.aemet_warnings
+        # Retrocompatibilidad con el parámetro legacy only_active_now
+        if only_active_now is False and (not isinstance(period, str) or period == "now"):
+            period_mode = "all"
+        else:
+            raw_period = (period if isinstance(period, str) else "now").lower().strip()
+            if raw_period in ("now", "today", "active_now", "hoy"):
+                period_mode = "now"
+            elif raw_period in ("tomorrow", "manana", "mañana"):
+                period_mode = "tomorrow"
+            elif raw_period in ("after_tomorrow", "pasado", "day_after_tomorrow"):
+                period_mode = "after_tomorrow"
+            elif raw_period == "all":
+                period_mode = "all"
+            else:
+                period_mode = "now"
 
-        now = datetime.now(timezone.utc)
-        active_features: List[Dict[str, Any]] = []
+        tz_madrid = ZoneInfo("Europe/Madrid")
+        now_madrid = datetime.now(tz_madrid)
+        now_utc = datetime.now(timezone.utc)
+
+        today_start = now_madrid.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = now_madrid.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        tomorrow_start = today_start + timedelta(days=1)
+        tomorrow_end = today_end + timedelta(days=1)
+
+        after_tomorrow_start = today_start + timedelta(days=2)
+        after_tomorrow_end = today_end + timedelta(days=2)
+
+        matched_features: List[Dict[str, Any]] = []
 
         for f in all_features:
             props = f.get("properties", {})
@@ -117,15 +145,34 @@ class WeatherStateManager:
             try:
                 onset = datetime.fromisoformat(onset_str)
                 expires = datetime.fromisoformat(expires_str)
-                # Solo avisos en vigor exactamente AHORA
-                if onset <= now <= expires:
-                    active_features.append(f)
-            except Exception:
+
+                # Garantizar compatibilidad horaria con o sin tzinfo
+                if onset.tzinfo is None:
+                    onset = onset.replace(tzinfo=timezone.utc)
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+
+                if period_mode == "now":
+                    # Solo avisos en vigor exactamente AHORA
+                    if onset <= now_utc <= expires:
+                        matched_features.append(f)
+                elif period_mode == "tomorrow":
+                    # Avisos vigentes en cualquier intervalo de mañana
+                    if onset <= tomorrow_end and expires >= tomorrow_start:
+                        matched_features.append(f)
+                elif period_mode == "after_tomorrow":
+                    # Avisos vigentes en cualquier intervalo de pasado mañana
+                    if onset <= after_tomorrow_end and expires >= after_tomorrow_start:
+                        matched_features.append(f)
+                else: # "all"
+                    matched_features.append(f)
+            except Exception as e:
+                logger.warning(f"Error comprobando vigencia de aviso: {e}")
                 continue
 
         # Consolidar por zona geográfica (area_desc) para evitar polígonos solapados/stackeados
         by_area: Dict[str, List[Dict[str, Any]]] = {}
-        for f in active_features:
+        for f in matched_features:
             area = f.get("properties", {}).get("area_desc", "Zona")
             by_area.setdefault(area, []).append(f)
 
@@ -149,13 +196,16 @@ class WeatherStateManager:
 
                 for sub in feats:
                     sub_p = sub.get("properties", {})
-                    combined_events.append(sub_p.get("event", ""))
+                    evt = sub_p.get("event", "")
+                    if evt:
+                        combined_events.append(evt)
                     all_warnings_info.append({
                         "event": sub_p.get("event"),
                         "severity": sub_p.get("severity"),
                         "color": sub_p.get("color"),
                         "headline": sub_p.get("headline"),
                         "description": sub_p.get("description"),
+                        "onset": sub_p.get("onset"),
                         "expires": sub_p.get("expires")
                     })
                     if sub_p.get("description"):
@@ -178,14 +228,22 @@ class WeatherStateManager:
             else:
                 consolidated_features.append(top_feat)
 
+        period_labels = {
+            "now": "Activos ahora",
+            "tomorrow": f"Mañana ({tomorrow_start.strftime('%d/%m/%Y')})",
+            "after_tomorrow": f"Pasado mañana ({after_tomorrow_start.strftime('%d/%m/%Y')})",
+            "all": "Todos los avisos del feed"
+        }
+
         return {
             "type": "FeatureCollection",
             "metadata": {
                 **self.aemet_warnings.get("metadata", {}),
-                "filter": "active_now",
-                "timestamp_utc": now.isoformat(),
+                "filter": period_mode,
+                "period_label": period_labels.get(period_mode, "Avisos AEMET"),
+                "timestamp_utc": now_utc.isoformat(),
                 "feed_total_warnings": len(all_features),
-                "active_now_count": len(consolidated_features)
+                "active_warnings_count": len(consolidated_features)
             },
             "features": consolidated_features
         }

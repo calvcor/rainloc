@@ -51,7 +51,8 @@ export class StorageManager {
       radarMode: 'mixed', // 'mixed' | 'short_range' | 'long_range' | 'single'
       radarStationId: 'esbnv', // Estación por defecto
       showRadarCoverage: false, // Mostrar áreas de cobertura de radar en mapa
-      autoRefreshInterval: 180 // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
+      autoRefreshInterval: 180, // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
+      aemetPeriod: 'now' // 'now' | 'tomorrow' | 'after_tomorrow'
     };
   }
 
@@ -194,6 +195,14 @@ export class StorageManager {
    */
   static setAutoRefreshInterval(intervalSec) {
     return this.save({ autoRefreshInterval: parseInt(intervalSec, 10) });
+  }
+
+  /**
+   * Guarda el periodo temporal seleccionado para avisos AEMET ('now' | 'tomorrow' | 'after_tomorrow')
+   * @param {string} period 
+   */
+  static setAemetPeriod(period) {
+    return this.save({ aemetPeriod: period });
   }
 
   /**

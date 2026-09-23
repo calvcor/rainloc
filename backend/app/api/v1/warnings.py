@@ -2,26 +2,31 @@
 Endpoints para Avisos Meteorológicos Adversos (AEMET Meteoalerta)
 Servidos desde el almacén central del estado del tiempo (WeatherStateManager).
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, BackgroundTasks, Query
 from app.services.weather_state import weather_state_manager
 from app.services.aemet_atom import aemet_atom_service
 
 router = APIRouter(prefix="/warnings", tags=["Avisos Meteorológicos"])
 
-@router.get("/aemet", summary="Obtener GeoJSON de avisos meteorológicos activos de AEMET")
+@router.get("/aemet", summary="Obtener GeoJSON de avisos meteorológicos de AEMET por periodo")
 async def get_aemet_warnings(
-    only_active_now: bool = Query(
-        True,
-        description="Si es True, devuelve exclusivamente los avisos vigentes en este instante preciso (onset <= ahora <= expires) y consolida avisos solapados"
+    period: str = Query(
+        "now",
+        description="Periodo temporal: 'now' (activos ahora), 'tomorrow' (mañana), 'after_tomorrow' (pasado mañana), o 'all'"
+    ),
+    only_active_now: Optional[bool] = Query(
+        None,
+        description="Legacy: Si es True equivale a period='now', si es False equivale a period='all'"
     )
 ) -> Dict[str, Any]:
     """
-    Devuelve la colección de avisos de AEMET en formato GeoJSON FeatureCollection.
-    Por defecto filtra estrictamente los avisos ACTIVOS AHORA MISMO, evitando mostrar
-    avisos futuros de mañana o pasado mañana o avisos caducados.
+    Devuelve la colección de avisos de AEMET en formato GeoJSON FeatureCollection según el periodo seleccionado
+    (Activos ahora, Mañana o Pasado) con consolidación automática de avisos solapados por comarca/zona.
     """
-    return weather_state_manager.get_aemet_warnings_geojson(only_active_now=only_active_now)
+    effective_period = period if isinstance(period, str) else "now"
+    effective_only_active = only_active_now if isinstance(only_active_now, bool) else None
+    return weather_state_manager.get_aemet_warnings_geojson(period=effective_period, only_active_now=effective_only_active)
 
 @router.get("/status", summary="Estado de sincronización del feed ATOM de AEMET")
 async def get_aemet_status() -> Dict[str, Any]:

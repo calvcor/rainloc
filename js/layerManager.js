@@ -26,6 +26,7 @@ export class LayerManager {
     this.lightningGroup = L.layerGroup();
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
+    this.currentAemetPeriod = prefs.aemetPeriod || 'now';
 
     // Radar 24h Timeline & Player State
     this.radarTimeline = [];
@@ -564,9 +565,13 @@ export class LayerManager {
 
   /**
    * Carga asíncrona de avisos AEMET en vivo desde el Backend API
+   * @param {L.LayerGroup} layerGroup
+   * @param {number} initialOpacity
+   * @param {string} [period] 'now' | 'tomorrow' | 'after_tomorrow'
    */
-  async _loadAemetWarnings(layerGroup, initialOpacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/warnings/aemet?_t=${Date.now()}`;
+  async _loadAemetWarnings(layerGroup, initialOpacity, period = this.currentAemetPeriod) {
+    const activePeriod = period || this.currentAemetPeriod || 'now';
+    const apiUrl = `${CONFIG.apiBaseUrl}/warnings/aemet?period=${encodeURIComponent(activePeriod)}&_t=${Date.now()}`;
     try {
       const resp = await fetch(apiUrl);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -590,13 +595,28 @@ export class LayerManager {
             }
           });
           layerGroup.addLayer(warningLayer);
+          
           if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-            this.uiManager.updateLayerTimestamp('aemet_warnings', `Vigencia: <strong>${formatMadridDateTime(new Date())}</strong>`);
+            let label = `Vigencia: <strong>${formatMadridDateTime(new Date())}</strong>`;
+            if (activePeriod === 'tomorrow') {
+              const countText = geojson.features.length === 1 ? '1 aviso' : `${geojson.features.length} avisos`;
+              label = `Vigencia: <strong>Mañana</strong> (${countText})`;
+            } else if (activePeriod === 'after_tomorrow') {
+              const countText = geojson.features.length === 1 ? '1 aviso' : `${geojson.features.length} avisos`;
+              label = `Vigencia: <strong>Pasado mañana</strong> (${countText})`;
+            }
+            this.uiManager.updateLayerTimestamp('aemet_warnings', label);
           }
         } else {
-          // 0 avisos meteorológicos en vigor en este momento
+          // 0 avisos meteorológicos en vigor en este periodo
           if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-            this.uiManager.updateLayerTimestamp('aemet_warnings', `Sin avisos activos ahora`);
+            let emptyLabel = 'Sin avisos activos ahora';
+            if (activePeriod === 'tomorrow') {
+              emptyLabel = 'Sin avisos para mañana';
+            } else if (activePeriod === 'after_tomorrow') {
+              emptyLabel = 'Sin avisos para pasado mañana';
+            }
+            this.uiManager.updateLayerTimestamp('aemet_warnings', emptyLabel);
           }
         }
         return;
@@ -2187,13 +2207,26 @@ export class LayerManager {
   }
 
   /**
+   * Cambia el periodo de visualización de avisos AEMET ('now' | 'tomorrow' | 'after_tomorrow')
+   * @param {string} period 
+   */
+  setAemetPeriod(period) {
+    this.currentAemetPeriod = period || 'now';
+    StorageManager.setAemetPeriod(this.currentAemetPeriod);
+    this.reloadAemetWarnings();
+    if (this.uiManager && this.uiManager.updateAemetPeriodButtons) {
+      this.uiManager.updateAemetPeriodButtons(this.currentAemetPeriod);
+    }
+  }
+
+  /**
    * Recarga los avisos de AEMET
    */
   reloadAemetWarnings() {
     const aemetGroup = this.layers['aemet_warnings'];
     if (!aemetGroup) return;
     const opacity = (this.layerStates['aemet_warnings'] && this.layerStates['aemet_warnings'].opacity) || 0.85;
-    this._loadAemetWarnings(aemetGroup, opacity);
+    this._loadAemetWarnings(aemetGroup, opacity, this.currentAemetPeriod);
   }
 
   /**
