@@ -141,6 +141,9 @@ class ECMWFWorker:
         if not run_str and len(cycle_str) >= 2:
             run_str = cycle_str[-2:].lower()
         
+        is_intermediate = (run_str in ("06z", "18z", "6z", "18z"))
+        target_max = 144 if is_intermediate else 240
+        is_complete = (max_step >= target_max)
         payload = {
             "event": "ecmwf_update",
             "cycle_str": cycle_str,
@@ -148,8 +151,8 @@ class ECMWFWorker:
             "step_added": step_added,
             "available_steps": available_steps,
             "max_step": max_step,
-            "is_complete": (max_step >= 240),
-            "is_updating": is_syncing or (max_step < 240 and status != "complete"),
+            "is_complete": is_complete,
+            "is_updating": is_syncing or (max_step < target_max and status != "complete"),
             "status": status,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -308,10 +311,11 @@ class ECMWFWorker:
             meta["available_steps"] = avail
             meta["steps"] = sorted_steps
             max_step = max(avail) if avail else 0
-            meta["max_step"] = max_step
             raw_avail = list(self.current_manifest.get("available_steps", []))
             raw_max_step = max(raw_avail) if raw_avail else 0
-            raw_complete = (len(raw_avail) >= len([s for s in ECMWF_STEPS if s <= max_target]))
+            is_intermediate = (run_str in ("06z", "18z", "6z", "18z"))
+            target_max = 144 if is_intermediate else max_target
+            raw_complete = (len(raw_avail) >= len([s for s in ECMWF_STEPS if s <= target_max]))
             meta["raw_available_steps"] = raw_avail
             meta["downloaded_max_step"] = raw_max_step
             meta["raw_max_step"] = raw_max_step
