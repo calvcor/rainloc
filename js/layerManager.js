@@ -579,6 +579,12 @@ export class LayerManager {
       
       if (geojson && Array.isArray(geojson.features)) {
         layerGroup.clearLayers();
+
+        // Actualizar colores e indicadores de los botones con el resumen de periodos
+        if (geojson.metadata && geojson.metadata.periods_summary && this.uiManager && this.uiManager.updateAemetPeriodStyles) {
+          this.uiManager.updateAemetPeriodStyles(geojson.metadata.periods_summary);
+        }
+
         if (geojson.features.length > 0) {
           const warningLayer = L.geoJSON(geojson, {
             pane: 'warningsPane',

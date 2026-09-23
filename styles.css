@@ -1193,7 +1193,7 @@ body {
 .aemet-period-btn {
   flex: 1;
   background: transparent;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
   font-size: 0.70rem;
   font-weight: 600;
@@ -1203,17 +1203,52 @@ body {
   transition: all var(--transition-fast);
   text-align: center;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.aemet-period-btn .aemet-btn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: none;
 }
 
 .aemet-period-btn:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
 }
 
+/* Botón con aviso activo según severidad máxima del día */
+.aemet-period-btn[data-severity-color] {
+  border-color: rgba(var(--period-color-rgb, 250, 204, 21), 0.40);
+  background: rgba(var(--period-color-rgb, 250, 204, 21), 0.12);
+  color: var(--text-primary);
+}
+
+.aemet-period-btn[data-severity-color]:hover {
+  background: rgba(var(--period-color-rgb, 250, 204, 21), 0.22);
+  border-color: var(--period-color);
+}
+
+/* Estado activo seleccionado */
 .aemet-period-btn.active {
   color: #ffffff;
-  background: var(--accent-cyan, #0284c7);
-  box-shadow: 0 0 8px rgba(2, 132, 199, 0.4);
+  background: var(--period-color, var(--accent-cyan, #0284c7));
+  border-color: var(--period-color, var(--accent-cyan, #0284c7));
+  box-shadow: 0 0 10px rgba(var(--period-color-rgb, 2, 132, 199), 0.5);
+  font-weight: 700;
+}
+
+.aemet-period-btn.active[data-severity-level="yellow"] {
+  color: #0f172a;
+}
+
+.aemet-period-btn.active[data-severity-level="yellow"] .aemet-btn-dot {
+  box-shadow: 0 0 4px #0f172a;
 }
 
 /* Sub-controles del Modelo ECMWF IFS (Reproductor temporal, selector de modo y leyenda) */

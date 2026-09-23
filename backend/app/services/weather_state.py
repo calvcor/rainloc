@@ -20,6 +20,13 @@ SEVERITY_RANK = {
     "green": 1, "verde": 1, "minor": 1
 }
 
+SEVERITY_COLORS = {
+    "red": "#EF4444", "rojo": "#EF4444", "extreme": "#EF4444",
+    "orange": "#FB923C", "naranja": "#FB923C", "severe": "#FB923C",
+    "yellow": "#FACC15", "amarillo": "#FACC15", "moderate": "#FACC15",
+    "green": "#22C55E", "verde": "#22C55E", "minor": "#22C55E"
+}
+
 class WeatherStateManager:
     """
     Singleton que centraliza el estado actual del tiempo:
@@ -235,6 +242,8 @@ class WeatherStateManager:
             "all": "Todos los avisos del feed"
         }
 
+        periods_summary = self.compute_periods_summary()
+
         return {
             "type": "FeatureCollection",
             "metadata": {
@@ -243,29 +252,120 @@ class WeatherStateManager:
                 "period_label": period_labels.get(period_mode, "Avisos AEMET"),
                 "timestamp_utc": now_utc.isoformat(),
                 "feed_total_warnings": len(all_features),
-                "active_warnings_count": len(consolidated_features)
+                "active_warnings_count": len(consolidated_features),
+                "periods_summary": periods_summary
             },
             "features": consolidated_features
         }
+
+    def compute_periods_summary(self) -> Dict[str, Any]:
+        """
+        Calcula el resumen de avisos para cada periodo (ahora, mañana, pasado)
+        incluyendo el conteo de avisos y el color/nivel de severidad máximo nacional.
+        """
+        all_features = self.aemet_warnings.get("features", [])
+        tz_madrid = ZoneInfo("Europe/Madrid")
+        now_madrid = datetime.now(tz_madrid)
+        now_utc = datetime.now(timezone.utc)
+
+        today_start = now_madrid.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = now_madrid.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        tomorrow_start = today_start + timedelta(days=1)
+        tomorrow_end = today_end + timedelta(days=1)
+
+        after_tomorrow_start = today_start + timedelta(days=2)
+        after_tomorrow_end = today_end + timedelta(days=2)
+
+        periods = {
+            "now": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": "Activos ahora"},
+            "tomorrow": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": f"Mañana ({tomorrow_start.strftime('%d/%m')})"},
+            "after_tomorrow": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": f"Pasado ({after_tomorrow_start.strftime('%d/%m')})"},
+        }
+
+        rank_to_color = {
+            4: "#EF4444",
+            3: "#FB923C",
+            2: "#FACC15",
+            1: "#22C55E"
+        }
+        rank_to_severity = {
+            4: "extreme",
+            3: "severe",
+            2: "moderate",
+            1: "minor"
+        }
+
+        for f in all_features:
+            props = f.get("properties", {})
+            onset_str = props.get("onset") or props.get("effective")
+            expires_str = props.get("expires")
+            if not onset_str or not expires_str:
+                continue
+
+            try:
+                onset = datetime.fromisoformat(onset_str)
+                expires = datetime.fromisoformat(expires_str)
+                if onset.tzinfo is None:
+                    onset = onset.replace(tzinfo=timezone.utc)
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+
+                sev = props.get("severity", "").lower()
+                color = props.get("color")
+                rank = SEVERITY_RANK.get(sev, 0)
+                if rank == 0 and color:
+                    if color.lower() in ("#ef4444", "#dc2626", "#b91c1c"):
+                        rank = 4
+                    elif color.lower() in ("#fb923c", "#f97316", "#ea580c"):
+                        rank = 3
+                    elif color.lower() in ("#facc15", "#eab308", "#ca8a04"):
+                        rank = 2
+                    elif color.lower() in ("#22c55e", "#16a34a"):
+                        rank = 1
+
+                # 1. Comprobar "now"
+                if onset <= now_utc <= expires:
+                    p = periods["now"]
+                    p["count"] += 1
+                    if rank > p["max_rank"]:
+                        p["max_rank"] = rank
+                        p["max_severity"] = rank_to_severity.get(rank, sev)
+                        p["max_color"] = color or rank_to_color.get(rank)
+
+                # 2. Comprobar "tomorrow"
+                if onset <= tomorrow_end and expires >= tomorrow_start:
+                    p = periods["tomorrow"]
+                    p["count"] += 1
+                    if rank > p["max_rank"]:
+                        p["max_rank"] = rank
+                        p["max_severity"] = rank_to_severity.get(rank, sev)
+                        p["max_color"] = color or rank_to_color.get(rank)
+
+                # 3. Comprobar "after_tomorrow"
+                if onset <= after_tomorrow_end and expires >= after_tomorrow_start:
+                    p = periods["after_tomorrow"]
+                    p["count"] += 1
+                    if rank > p["max_rank"]:
+                        p["max_rank"] = rank
+                        p["max_severity"] = rank_to_severity.get(rank, sev)
+                        p["max_color"] = color or rank_to_color.get(rank)
+
+            except Exception:
+                continue
+
+        return periods
 
     def get_aemet_status(self) -> Dict[str, Any]:
         """Devuelve los metadatos de sincronización con AEMET."""
         now = datetime.now(timezone.utc)
         all_features = self.aemet_warnings.get("features", [])
-        active_now_count = 0
-        for f in all_features:
-            p = f.get("properties", {})
-            o, e = p.get("onset") or p.get("effective"), p.get("expires")
-            if o and e:
-                try:
-                    if datetime.fromisoformat(o) <= now <= datetime.fromisoformat(e):
-                        active_now_count += 1
-                except Exception:
-                    pass
+        periods_summary = self.compute_periods_summary()
 
         meta = dict(self.aemet_warnings.get("metadata", {}))
         meta["feed_total_warnings"] = len(all_features)
-        meta["active_now_count"] = active_now_count
+        meta["active_now_count"] = periods_summary["now"]["count"]
+        meta["periods_summary"] = periods_summary
         return meta
 
     def record_304_not_modified(self) -> None:

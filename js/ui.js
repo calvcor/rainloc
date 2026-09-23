@@ -801,9 +801,9 @@ export class UIManager {
       aemetExtraControls = `
         <div class="aemet-subcontrols">
           <div class="aemet-period-selector" role="group" aria-label="Periodo de avisos AEMET">
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'now' ? 'active' : ''}" data-period="now" title="Avisos en vigor en este momento">Activos ahora</button>
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'tomorrow' ? 'active' : ''}" data-period="tomorrow" title="Avisos previstos para mañana">Mañana</button>
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'after_tomorrow' ? 'active' : ''}" data-period="after_tomorrow" title="Avisos previstos para pasado mañana">Pasado</button>
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'now' ? 'active' : ''}" data-period="now" title="Avisos en vigor en este momento"><span class="aemet-btn-dot"></span>Activos ahora</button>
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'tomorrow' ? 'active' : ''}" data-period="tomorrow" title="Avisos previstos para mañana"><span class="aemet-btn-dot"></span>Mañana</button>
+            <button type="button" class="aemet-period-btn ${selectedPeriod === 'after_tomorrow' ? 'active' : ''}" data-period="after_tomorrow" title="Avisos previstos para pasado mañana"><span class="aemet-btn-dot"></span>Pasado</button>
           </div>
         </div>
       `;
@@ -893,6 +893,61 @@ export class UIManager {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
+      }
+    });
+  }
+
+  /**
+   * Colorea dinámicamente los botones de periodo de Avisos AEMET con el nivel y color de aviso máximo nacional
+   * @param {Object} periodsSummary Resumen con { now: { max_color, max_rank, ... }, tomorrow: ..., after_tomorrow: ... }
+   */
+  updateAemetPeriodStyles(periodsSummary) {
+    if (!periodsSummary) return;
+    const levelRgbMap = {
+      red: '239, 68, 68',
+      orange: '251, 146, 60',
+      yellow: '250, 204, 21',
+      green: '34, 197, 94'
+    };
+
+    Object.entries(periodsSummary).forEach(([period, info]) => {
+      const btn = document.querySelector(`.aemet-period-btn[data-period="${period}"]`);
+      if (!btn) return;
+
+      let dot = btn.querySelector('.aemet-btn-dot');
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.className = 'aemet-btn-dot';
+        btn.prepend(dot);
+      }
+
+      if (info && info.max_color && info.max_rank > 0) {
+        const sev = (info.max_severity || 'yellow').toLowerCase();
+        let level = 'yellow';
+        if (sev.includes('red') || sev.includes('rojo') || sev.includes('extreme') || info.max_rank === 4) {
+          level = 'red';
+        } else if (sev.includes('orange') || sev.includes('naranja') || sev.includes('severe') || info.max_rank === 3) {
+          level = 'orange';
+        } else if (sev.includes('yellow') || sev.includes('amarillo') || sev.includes('moderate') || info.max_rank === 2) {
+          level = 'yellow';
+        } else if (sev.includes('green') || sev.includes('verde') || info.max_rank === 1) {
+          level = 'green';
+        }
+
+        const rgb = levelRgbMap[level] || '250, 204, 21';
+        btn.setAttribute('data-severity-color', info.max_color);
+        btn.setAttribute('data-severity-level', level);
+        btn.style.setProperty('--period-color', info.max_color);
+        btn.style.setProperty('--period-color-rgb', rgb);
+        dot.style.backgroundColor = info.max_color;
+        dot.style.boxShadow = `0 0 6px ${info.max_color}`;
+        dot.style.display = 'inline-block';
+      } else {
+        btn.removeAttribute('data-severity-color');
+        btn.removeAttribute('data-severity-level');
+        btn.style.removeProperty('--period-color');
+        btn.style.removeProperty('--period-color-rgb');
+        dot.style.display = 'none';
       }
     });
   }
