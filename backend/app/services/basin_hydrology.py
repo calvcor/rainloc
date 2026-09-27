@@ -196,24 +196,21 @@ class BasinHydrologyService:
         worker = None
         model_name = "Modelo Meteorológico"
 
-        if "ecmwf" in model_clean:
-            worker = ecmwf_worker
-            model_name = "ECMWF IFS (0.25°)"
-        elif "gfs" in model_clean:
-            worker = gfs_worker
-            model_name = "NOAA GFS (0.25°)"
-        elif "arome" in model_clean:
+        if "arome" in model_clean:
             worker = arome_worker
-            model_name = "Météo-France AROME (~1.3-2.5 km)"
+            model_name = "Météo-France AROME (1.3 km)"
         elif "icon" in model_clean:
             worker = icon_worker
             model_name = "DWD ICON-EU (6.5 km)"
         elif "gem" in model_clean or "cmc" in model_clean:
             worker = gem_worker
-            model_name = "MSC GEM-GDPS (0.15°)"
+            model_name = "MSC GEM-GDPS (15 km)"
+        elif "gfs" in model_clean:
+            worker = gfs_worker
+            model_name = "NOAA GFS (25 km)"
         else:
             worker = ecmwf_worker
-            model_name = "ECMWF IFS (0.25°)"
+            model_name = "ECMWF IFS (25 km)"
 
         meta = worker.get_metadata()
         steps_info = meta.get("steps", [])

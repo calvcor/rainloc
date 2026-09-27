@@ -222,8 +222,21 @@ export const CONFIG = {
         icon: '<span class="model-flag-icon">🇩🇪</span>'
       },
       {
+        id: 'gem_gdps',
+        name: 'Modelo GEM-GDPS (15 km)',
+        subtitle: 'Previsión global canadiense (10 días)',
+        description: 'Modelo global del Centro Meteorológico Canadiense (MSC / ECCC GDPS, hasta +240h).',
+        type: 'model',
+        defaultActive: false,
+        defaultOpacity: 0.65,
+        badge: 'Canadá',
+        badgeType: 'info',
+        color: '#e11d48',
+        icon: '<span class="model-flag-icon">🇨🇦</span>'
+      },
+      {
         id: 'ecmwf_ifs',
-        name: 'Modelo ECMWF-IFS (0.25°)',
+        name: 'Modelo ECMWF-IFS (25 km)',
         subtitle: 'Previsión global determinista (10 días)',
         description: 'Referencia global del Centro Europeo para predicción a medio plazo (ECMWF Open Data, hasta 240h).',
         type: 'model',
@@ -236,7 +249,7 @@ export const CONFIG = {
       },
       {
         id: 'gfs_0p25',
-        name: 'Modelo GFS (0.25°)',
+        name: 'Modelo GFS (25 km)',
         subtitle: 'Previsión global NOAA (16 días)',
         description: 'Modelo global de la NOAA/NWS para predicción a medio y largo plazo (GFS Open Data, hasta +384h).',
         type: 'model',
@@ -246,19 +259,6 @@ export const CONFIG = {
         badgeType: 'info',
         color: '#2563eb',
         icon: '<span class="model-flag-icon">🇺🇸</span>'
-      },
-      {
-        id: 'gem_gdps',
-        name: 'Modelo GEM-GDPS (0.15°)',
-        subtitle: 'Previsión global canadiense (10 días)',
-        description: 'Modelo global del Centro Meteorológico Canadiense (MSC / ECCC GDPS, hasta +240h).',
-        type: 'model',
-        defaultActive: false,
-        defaultOpacity: 0.65,
-        badge: 'Canadá',
-        badgeType: 'info',
-        color: '#e11d48',
-        icon: '<span class="model-flag-icon">🇨🇦</span>'
       }
     ]
   },

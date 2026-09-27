@@ -1226,7 +1226,7 @@ export class MultiLayerInspector {
 
           sections.push({
             type: "model",
-            title: "ECMWF IFS (Open Data)",
+            title: "ECMWF IFS (25 km)",
             headerColor: "#059669",
             icon: "🇪🇺",
             name: `${typeLabel} (+${step}h)`,
@@ -1280,7 +1280,7 @@ export class MultiLayerInspector {
 
           sections.push({
             type: "model",
-            title: "NOAA GFS (0.25°)",
+            title: "NOAA GFS (25 km)",
             headerColor: "#2563eb",
             icon: "🇺🇸",
             name: `${typeLabel} (+${step}h)`,
@@ -1442,7 +1442,7 @@ export class MultiLayerInspector {
 
           sections.push({
             type: "model",
-            title: "MSC GEM-GDPS (0.15°)",
+            title: "MSC GEM-GDPS (15 km)",
             headerColor: "#e11d48",
             icon: "🇨🇦",
             name: `${typeLabel} (+${step}h)`,

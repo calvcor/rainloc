@@ -4794,11 +4794,11 @@ export class LayerManager {
     }
 
     const modelNames = {
-      ecmwf: '🇪🇺 ECMWF IFS (0.25°)',
-      gfs: '🇺🇸 NOAA GFS (0.25°)',
+      arome: '🇫🇷 Météo-France AROME (1.3 km)',
       icon: '🇩🇪 DWD ICON-EU (6.5 km)',
       gem: '🇨🇦 GEM GDPS (15 km)',
-      arome: '🇫🇷 Météo-France AROME (1.3 km)'
+      ecmwf: '🇪🇺 ECMWF IFS (25 km)',
+      gfs: '🇺🇸 NOAA GFS (25 km)'
     };
 
     if (badgeModel) {
