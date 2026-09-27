@@ -104,6 +104,44 @@ def parse_cap_xml(xml_bytes: bytes, cap_url: str) -> Optional[Dict[str, Any]]:
                     "coordinates": [coords]
                 }
 
+        # Extraer parámetros extendidos de AEMET Meteoalerta
+        params: Dict[str, str] = {}
+        for param in target_info.findall("cap:parameter", NS_CAP):
+            vname = param.findtext("cap:valueName", "", NS_CAP)
+            val = param.findtext("cap:value", "", NS_CAP)
+            if vname:
+                params[vname.strip()] = (val or "").strip()
+
+        nivel = params.get("AEMET-Meteoalerta nivel", "")
+        parametro_raw = params.get("AEMET-Meteoalerta parametro", "")
+        probabilidad = params.get("AEMET-Meteoalerta probabilidad", "")
+        comentario = params.get("AEMET-Meteoalerta comentario", "")
+
+        param_code = ""
+        param_name = ""
+        threshold = ""
+        if parametro_raw:
+            parts = [p.strip() for p in parametro_raw.split(";")]
+            if len(parts) >= 3:
+                param_code = parts[0]
+                param_name = parts[1]
+                threshold = parts[2]
+            elif len(parts) == 2:
+                param_name = parts[0]
+                threshold = parts[1]
+            elif len(parts) == 1:
+                param_name = parts[0]
+
+        # Si description viene vacía en el CAP (común en tormentas), construir detalle explicativo
+        effective_desc = (description or "").strip()
+        if not effective_desc:
+            if param_name and threshold:
+                effective_desc = f"{param_name}: {threshold}"
+            elif param_name:
+                effective_desc = param_name
+            elif headline:
+                effective_desc = headline
+
         feature = {
             "type": "Feature",
             "id": identifier or cap_url,
@@ -118,12 +156,20 @@ def parse_cap_xml(xml_bytes: bytes, cap_url: str) -> Optional[Dict[str, Any]]:
                 "severity": severity,
                 "color": level_color,
                 "headline": headline,
-                "description": description,
+                "description": effective_desc,
+                "raw_description": description,
                 "instruction": instruction,
                 "area_desc": area_desc,
                 "effective": effective,
                 "onset": onset,
-                "expires": expires
+                "expires": expires,
+                "probability": probabilidad,
+                "parameter_raw": parametro_raw,
+                "parameter_code": param_code,
+                "parameter_name": param_name,
+                "threshold": threshold,
+                "comment": comentario,
+                "parameters": params
             }
         }
         return feature

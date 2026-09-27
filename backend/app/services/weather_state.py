@@ -212,6 +212,13 @@ class WeatherStateManager:
                         "color": sub_p.get("color"),
                         "headline": sub_p.get("headline"),
                         "description": sub_p.get("description"),
+                        "instruction": sub_p.get("instruction"),
+                        "probability": sub_p.get("probability"),
+                        "threshold": sub_p.get("threshold"),
+                        "parameter_name": sub_p.get("parameter_name"),
+                        "parameter_code": sub_p.get("parameter_code"),
+                        "comment": sub_p.get("comment"),
+                        "parameters": sub_p.get("parameters", {}),
                         "area_desc": sub_p.get("area_desc") or area,
                         "onset": sub_p.get("onset"),
                         "expires": sub_p.get("expires")

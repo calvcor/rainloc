@@ -624,11 +624,11 @@ export class MultiLayerInspector {
               }
             });
 
-            // Deduplicar avisos idénticos
+            // Deduplicar avisos idénticos conservando distintos acumulados (ej: 1h vs 12h)
             const seenKeys = new Set();
             const uniqueWarnings = [];
             for (const w of allIndividualWarnings) {
-              const key = `${w.identifier || ''}|${w.event || ''}|${w.severity || ''}|${w.area_desc || ''}|${w.onset || ''}|${w.expires || ''}`;
+              const key = `${w.identifier || ''}|${w.event || ''}|${w.description || ''}|${w.area_desc || ''}|${w.onset || ''}|${w.expires || ''}`;
               if (!seenKeys.has(key)) {
                 seenKeys.add(key);
                 uniqueWarnings.push(w);
@@ -661,14 +661,39 @@ export class MultiLayerInspector {
               const sev = w.severity || "Aviso";
               const color = w.color || "#f59e0b";
               const area = w.area_desc || "";
+              const desc = (w.description || "").trim();
+              const prob = (w.probability || "").trim();
 
+              // Formateo horario inteligente (Inicio - Fin)
               let timeDetail = "";
-              if (w.expires) {
-                const expDate = new Date(w.expires);
-                if (currentPeriod === 'now') {
-                  timeDetail = ` · Hasta ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-                } else {
-                  timeDetail = ` · Hasta ${expDate.toLocaleDateString([], { day: "2-digit", month: "2-digit" })} ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+              if (w.onset || w.expires) {
+                const onsetDate = w.onset ? new Date(w.onset) : null;
+                const expDate = w.expires ? new Date(w.expires) : null;
+                
+                const fmtTime = (d) => {
+                  try {
+                    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                  } catch (e) {
+                    return "";
+                  }
+                };
+                const fmtDate = (d) => {
+                  try {
+                    return d.toLocaleDateString([], { day: "2-digit", month: "2-digit" });
+                  } catch (e) {
+                    return "";
+                  }
+                };
+
+                if (onsetDate && expDate && !isNaN(onsetDate.getTime()) && !isNaN(expDate.getTime())) {
+                  const sameDay = onsetDate.toDateString() === expDate.toDateString();
+                  if (sameDay) {
+                    timeDetail = `${fmtTime(onsetDate)} - ${fmtTime(expDate)}`;
+                  } else {
+                    timeDetail = `${fmtDate(onsetDate)} ${fmtTime(onsetDate)} → ${fmtDate(expDate)} ${fmtTime(expDate)}`;
+                  }
+                } else if (expDate && !isNaN(expDate.getTime())) {
+                  timeDetail = `Hasta ${fmtTime(expDate)}`;
                 }
               }
 
@@ -688,6 +713,34 @@ export class MultiLayerInspector {
               const isBrightBadge = ['#facc15', '#f59e0b', '#fb923c', '#ffffff', '#22c55e'].includes((color || '').toLowerCase());
               const badgeTextColor = isBrightBadge ? '#0f172a' : '#ffffff';
 
+              // Construir bloque de detalles enriquecido
+              let detailsHtml = `
+                <div style="display:flex; flex-direction:column; gap:3px; margin-top:2px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:0.72rem; color:#cbd5e1;">
+                    <span>📍 <strong>${area}</strong></span>
+                    ${timeDetail ? `<span style="color:#94a3b8; font-size:0.68rem; font-weight:600; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">🕒 ${timeDetail}</span>` : ""}
+                  </div>
+              `;
+
+              if (desc) {
+                detailsHtml += `
+                  <div style="background: rgba(0,0,0,0.38); border-left: 3px solid ${color}; padding: 4px 7px; border-radius: 4px; font-size: 0.74rem; color: #f8fafc; line-height: 1.35; margin-top: 2px;">
+                    ${desc}
+                  </div>
+                `;
+              }
+
+              if (prob) {
+                detailsHtml += `
+                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.69rem; color:#94a3b8; margin-top:1px; padding:0 1px;">
+                    <span>Probabilidad del fenómeno:</span>
+                    <span style="font-weight:700; color:#38bdf8;">${prob}</span>
+                  </div>
+                `;
+              }
+
+              detailsHtml += `</div>`;
+
               sections.push({
                 type: "warning",
                 title: `AEMET Meteoalerta (${periodLabel})`,
@@ -697,7 +750,7 @@ export class MultiLayerInspector {
                 badge: sevLabel,
                 badgeBg: color,
                 badgeColor: badgeTextColor,
-                details: `📍 ${area}${timeDetail}`
+                details: detailsHtml
               });
             });
           }
