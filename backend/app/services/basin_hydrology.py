@@ -17,6 +17,7 @@ from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
 from app.services.icon_worker import icon_worker
+from app.services.gem_worker import gem_worker
 
 logger = logging.getLogger("rainloc-backend.basin-hydrology")
 
@@ -207,6 +208,9 @@ class BasinHydrologyService:
         elif "icon" in model_clean:
             worker = icon_worker
             model_name = "DWD ICON-EU (6.5 km)"
+        elif "gem" in model_clean or "cmc" in model_clean:
+            worker = gem_worker
+            model_name = "MSC GEM-GDPS (0.15°)"
         else:
             worker = ecmwf_worker
             model_name = "ECMWF IFS (0.25°)"

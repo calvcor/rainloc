@@ -502,7 +502,7 @@ export class UIManager {
       if (tabId === 'realtime') {
         this.predictionBanner.style.display = 'none';
       } else if (tabId === 'prediction') {
-        const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+        const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
         this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
       }
     }
@@ -535,7 +535,7 @@ export class UIManager {
     }
 
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1174,11 +1174,12 @@ export class UIManager {
 
   /**
    * Helper para obtener el tipo de capa con línea temporal actualmente activa en el mapa
-   * @returns {'radar' | 'ecmwf_ifs' | 'gfs_0p25' | 'arome_precip' | 'icon_eu' | null}
+   * @returns {'radar' | 'ecmwf_ifs' | 'gfs_0p25' | 'arome_precip' | 'icon_eu' | 'gem_gdps' | null}
    */
   _getActiveTimelineType() {
     if (!this.layerManager) return null;
     if (this.layerManager.isLayerOnMap('radar')) return 'radar';
+    if (this.layerManager.isLayerOnMap('gem_gdps')) return 'gem_gdps';
     if (this.layerManager.isLayerOnMap('icon_eu')) return 'icon_eu';
     if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
     if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
@@ -1205,6 +1206,8 @@ export class UIManager {
           this.layerManager.toggleAromePlayback();
         } else if (activeType === 'icon_eu') {
           this.layerManager.toggleIconPlayback();
+        } else if (activeType === 'gem_gdps') {
+          this.layerManager.toggleGemPlayback();
         }
       });
     }
@@ -1264,6 +1267,7 @@ export class UIManager {
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('total');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('total');
+        else if (activeType === 'gem_gdps') this.layerManager.setGemType('total');
       });
       modeInterval.addEventListener('click', () => {
         if (!this.layerManager) return;
@@ -1272,6 +1276,7 @@ export class UIManager {
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('interval');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('interval');
+        else if (activeType === 'gem_gdps') this.layerManager.setGemType('interval');
       });
     }
 
@@ -1284,6 +1289,7 @@ export class UIManager {
         else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
         else if (activeType === 'arome_precip') this.layerManager.flyToModelMax('arome');
         else if (activeType === 'icon_eu') this.layerManager.flyToModelMax('icon');
+        else if (activeType === 'gem_gdps') this.layerManager.flyToModelMax('gem');
       });
     }
 
@@ -1366,6 +1372,10 @@ export class UIManager {
       meta = this.layerManager.iconMetadata;
       curStep = this.layerManager.currentIconStep;
       setStepFn = (s) => this.layerManager.setIconStep(s);
+    } else if (modelId === 'gem_gdps' || modelId === 'gem') {
+      meta = this.layerManager.gemMetadata;
+      curStep = this.layerManager.currentGemStep;
+      setStepFn = (s) => this.layerManager.setGemStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1391,6 +1401,9 @@ export class UIManager {
     } else if (modelId === 'icon_eu' || modelId === 'icon') {
       meta = this.layerManager.iconMetadata;
       setStepFn = (s) => this.layerManager.setIconStep(s);
+    } else if (modelId === 'gem_gdps' || modelId === 'gem') {
+      meta = this.layerManager.gemMetadata;
+      setStepFn = (s) => this.layerManager.setGemStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1513,7 +1526,7 @@ export class UIManager {
 
       this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
 
-    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip' || activeType === 'icon_eu') {
+    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps') {
       let meta = null;
       let curStep = null;
       let curType = null;
@@ -1554,6 +1567,14 @@ export class UIManager {
         modelLabel = 'ICON-EU (6.5km)';
         modelFlag = '🇩🇪';
         labelsHtml = '<span>+1h</span><span>+24h (1d)</span><span>+48h (2d)</span><span>+72h (3d)</span><span>+120h (5d)</span>';
+      } else if (activeType === 'gem_gdps') {
+        meta = this.layerManager.gemMetadata || {};
+        curStep = this.layerManager.currentGemStep || 3;
+        curType = this.layerManager.currentGemType || 'total';
+        isPlaying = this.layerManager.isGemPlaying;
+        modelLabel = 'GEM-GDPS (15km)';
+        modelFlag = '🇨🇦';
+        labelsHtml = '<span>+3h</span><span>+48h (2d)</span><span>+96h (4d)</span><span>+168h (7d)</span><span>+240h (10d)</span>';
       }
 
       if (liveDot) liveDot.style.display = 'none';
@@ -1607,6 +1628,10 @@ export class UIManager {
           minStep = 1;
           maxStep = 120;
           stepInc = 1;
+        } else if (activeType === 'gem_gdps') {
+          minStep = 3;
+          maxStep = 240;
+          stepInc = 3;
         }
 
         slider.min = minStep;
@@ -1618,7 +1643,7 @@ export class UIManager {
         // Estilizar track del slider cuando la salida es parcial o se está actualizando (hay corte con la salida anterior)
         if (hasFallback && nativeMax && nativeMax < maxStep) {
           const splitPct = Math.max(0, Math.min(100, ((nativeMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
-          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : '#8b5cf6'));
+          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : ((activeType === 'gem_gdps') ? '#e11d48' : '#8b5cf6')));
           slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
           slider.title = `Salida ${mainRun} disponible hasta +${nativeMax}h (${splitPct.toFixed(0)}%). Pasos posteriores (+${nativeMax + 1}h a +${maxStep}h): Salida anterior`;
         } else {
@@ -1739,7 +1764,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1809,7 +1834,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1879,7 +1904,7 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
@@ -1949,11 +1974,81 @@ export class UIManager {
 
     // Visibilidad del banner: visible si alguna capa de predicción está activa
     if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu')));
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
       this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateIconPlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de MSC GEM-GDPS en la UI
+   */
+  updateGemPlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('gem-step-slider');
+    const maxPill = document.getElementById('gem-max-pill');
+    const btnTotal = document.getElementById('gem-btn-total');
+    const btnInterval = document.getElementById('gem-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
+    }
+
+    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
+    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
+      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
+      this.predictionBannerExactTime.textContent = formattedInstant;
+    }
+    if (this.predictionBannerModel) {
+      this.predictionBannerModel.textContent = `🇨🇦 GEM-GDPS (+${currentStep}h)`;
+    }
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
+    }
+    if (this.predictionBannerMode) {
+      const modeText = currentType === 'total' ? 'Acumulado Total' : 'Intervalo 3h';
+      this.predictionBannerMode.textContent = modeText;
+    }
+
+    // Visibilidad del banner: visible si alguna capa de predicción está activa
+    if (this.predictionBanner) {
+      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
+      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
+    }
+
+    this.updateGemPlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
   }
 
@@ -2027,6 +2122,27 @@ export class UIManager {
     const playBtn = document.getElementById('icon-play-btn');
     const playText = document.getElementById('icon-play-text');
     const playIcon = document.getElementById('icon-play-icon');
+
+    if (playBtn && playText && playIcon) {
+      if (isPlaying) {
+        playBtn.classList.add('playing');
+        playText.textContent = 'Pausa';
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        playBtn.classList.remove('playing');
+        playText.textContent = 'Animar';
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
+  }
+
+  /**
+   * Actualiza el estado visual del botón Play/Pausa de MSC GEM-GDPS
+   */
+  updateGemPlayState(isPlaying) {
+    const playBtn = document.getElementById('gem-play-btn');
+    const playText = document.getElementById('gem-play-text');
+    const playIcon = document.getElementById('gem-play-icon');
 
     if (playBtn && playText && playIcon) {
       if (isPlaying) {

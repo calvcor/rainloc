@@ -14,6 +14,7 @@ from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
 from app.services.icon_worker import icon_worker
+from app.services.gem_worker import gem_worker
 from app.services.basin_hydrology import basin_hydrology_service
 
 logger = logging.getLogger("rainloc-backend.models-api")
@@ -504,7 +505,7 @@ async def get_icon_max_at(
 async def sync_icon_forecast(
     background_tasks: BackgroundTasks,
     max_steps: int = Query(120, description="Número máximo de horas a sincronizar (hasta +120h / 5 días)")
-) -> Dict[str, Any]:
+):
     """
     Dispara la sincronización asíncrona de los pasos del modelo DWD ICON-EU.
     """
@@ -514,6 +515,131 @@ async def sync_icon_forecast(
         "status": "synchronization_started",
         "max_steps": max_steps,
         "message": "La descarga y procesado de DWD ICON-EU ha comenzado en segundo plano."
+    }
+
+
+# =========================================================================
+# MSC / ECCC GEM-GDPS (0.15° / ~15 km - Canadian Global Model)
+# =========================================================================
+
+@router.get("/gem/stream", summary="Stream de actualizaciones del modelo GEM-GDPS en tiempo real (SSE)")
+async def stream_gem():
+    """
+    Canal Server-Sent Events (SSE) para notificar inmediatamente a los clientes
+    en cuanto el servidor descarga y procesa nuevos pasos o un ciclo completo de GEM-GDPS.
+    """
+    async def event_generator():
+        async for event in gem_worker.subscribe_stream():
+            if event.get("event") == "ping":
+                yield ": ping\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/gem/metadata", summary="Metadatos y pasos disponibles del ciclo GEM-GDPS")
+async def get_gem_metadata() -> Dict[str, Any]:
+    """
+    Devuelve los metadatos del ciclo operativo actual de GEM-GDPS,
+    los pasos disponibles (ej: +3h, +6h, ..., +240h), fechas ISO y URLs de los rásteres.
+    """
+    meta = gem_worker.get_metadata()
+    return meta
+
+
+@router.get("/gem/image", summary="Ráster PNG transparente del modelo GEM-GDPS")
+async def get_gem_image(
+    step: int = Query(..., description="Paso de pronóstico en horas (3, 6, 9, ..., 240)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (3 horas)")
+):
+    """
+    Sirve la imagen PNG georreferenciada en proyección Web Mercator
+    lista para ser consumida directamente por Leaflet (L.imageOverlay).
+    """
+    img_path = gem_worker.get_image_path(step=step, layer_type=type)
+    if not img_path or not img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Imagen para el paso +{step}h ({type}) no encontrada o aún no generada."
+        )
+
+    cur_cycle = gem_worker.current_manifest.get("cycle_str") if gem_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
+    return FileResponse(
+        img_path,
+        media_type="image/png",
+        headers={
+            "Cache-Control": cache_control,
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
+
+@router.get("/gem/value-at", summary="Consulta instantánea de precipitación GEM-GDPS en coordenadas lat/lon")
+async def get_gem_value_at(
+    lat: float = Query(..., description="Latitud WGS84"),
+    lon: float = Query(..., description="Longitud WGS84"),
+    step: int = Query(..., description="Paso de pronóstico en horas (3, 6, 9, ..., 240)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (3 horas)")
+) -> Dict[str, Any]:
+    """
+    Consulta en O(1) (<1ms) el valor en milímetros (mm) de la predicción GEM-GDPS
+    para las coordenadas indicadas.
+    """
+    val = gem_worker.get_value_at(lat=lat, lon=lon, step=step, layer_type=type)
+    return {
+        "model": "MSC GEM-GDPS",
+        "lat": lat,
+        "lon": lon,
+        "step": step,
+        "type": type,
+        "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/gem/max-at", summary="Obtener punto y valor de máxima precipitación de GEM-GDPS")
+async def get_gem_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = gem_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "MSC GEM-GDPS", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "MSC GEM-GDPS",
+        "step": step,
+        "type": type,
+        **res,
+        "unit": "mm"
+    }
+
+
+@router.post("/gem/sync", summary="Forzar sincronización de GEM-GDPS en background")
+async def sync_gem_forecast(
+    background_tasks: BackgroundTasks,
+    max_steps: int = Query(240, description="Número máximo de horas a sincronizar (hasta +240h / 10 días)")
+) -> Dict[str, Any]:
+    """
+    Dispara la sincronización asíncrona de los pasos del modelo MSC GEM-GDPS.
+    """
+    logger.info(f"API: Petición manual para comprobar/sincronizar GEM-GDPS (hasta +{max_steps}h)")
+    background_tasks.add_task(gem_worker.sync_gem_forecast, max_steps)
+    return {
+        "status": "synchronization_started",
+        "max_steps": max_steps,
+        "message": "La descarga y procesado de MSC GEM-GDPS ha comenzado en segundo plano."
     }
 
 

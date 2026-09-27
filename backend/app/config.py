@@ -14,6 +14,7 @@ ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
 GFS_CACHE_DIR = DATA_DIR / "gfs_cache"
 AROME_CACHE_DIR = DATA_DIR / "arome_cache"
 ICON_CACHE_DIR = DATA_DIR / "icon_cache"
+GEM_CACHE_DIR = DATA_DIR / "gem_cache"
 
 # Cargar variables de entorno desde .env (en backend/ o en la raíz del proyecto)
 if (BACKEND_DIR / ".env").exists():
@@ -28,6 +29,7 @@ ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GFS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 AROME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+GEM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
@@ -122,6 +124,12 @@ try:
         ICON_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
         ICON_MAX_STEPS: int = 120  # Pasos hasta +120h (5 días)
 
+        # MSC / ECCC GEM-GDPS (Canadian Global Deterministic Prediction System, ~15km / 0.15°)
+        GEM_CACHE_DIR: Path = GEM_CACHE_DIR
+        GEM_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        GEM_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
+        GEM_MAX_STEPS: int = 240  # Pasos hasta +240h (10 días)
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -145,6 +153,7 @@ except ImportError:
         GFS_CACHE_DIR: Path = GFS_CACHE_DIR
         AROME_CACHE_DIR: Path = AROME_CACHE_DIR
         ICON_CACHE_DIR: Path = ICON_CACHE_DIR
+        GEM_CACHE_DIR: Path = GEM_CACHE_DIR
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
         AEMET_USER_AGENT: str = "RainLoc-WeatherService/1.0 (+https://github.com/carlosalventosa/RainLoc)"
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
@@ -169,5 +178,8 @@ except ImportError:
         ICON_POLL_INTERVAL_SECONDS: int = 1800
         ICON_UPDATING_INTERVAL_SECONDS: int = 300
         ICON_MAX_STEPS: int = 120
+        GEM_POLL_INTERVAL_SECONDS: int = 1800
+        GEM_UPDATING_INTERVAL_SECONDS: int = 300
+        GEM_MAX_STEPS: int = 240
 
 settings = Settings()

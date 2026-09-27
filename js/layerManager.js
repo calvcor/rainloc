@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp, formatGemTimestamp } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -23,6 +23,7 @@ export class LayerManager {
     this.gfsEventSource = null;
     this.aromeEventSource = null;
     this.iconEventSource = null;
+    this.gemEventSource = null;
     this.lightningGroup = L.layerGroup();
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
@@ -83,6 +84,17 @@ export class LayerManager {
     this._iconStepRequestId = 0;
     this._iconImageCache = new Map();
 
+    // MSC / ECCC GEM-GDPS NWP Model State
+    this.currentGemStep = 3;
+    this.currentGemType = 'total'; // 'total' | 'interval'
+    this.gemMetadata = null;
+    this.gemPlaybackInterval = null;
+    this.isGemPlaying = false;
+    this.gemCanvasData = null;
+    this.currentGemOverlay = null;
+    this._gemStepRequestId = 0;
+    this._gemImageCache = new Map();
+
     // Marcador de punto de máxima precipitación de modelos de predicción
     this.modelMaxMarkerGroup = L.layerGroup();
     if (this.map) {
@@ -123,6 +135,9 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el modelo DWD ICON-EU (aviso reactivo de nuevos pasos)
     this._startIconSSE();
+
+    // Iniciar conexión SSE en tiempo real para el modelo MSC GEM-GDPS (aviso reactivo de nuevos pasos)
+    this._startGemSSE();
 
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
@@ -203,6 +218,9 @@ export class LayerManager {
     else if (def.id === 'icon_eu' || def.id.startsWith('icon')) {
       this._loadIconLayer(layerGroup, opacity);
     }
+    else if (def.id === 'gem_gdps' || def.id.startsWith('gem')) {
+      this._loadGemLayer(layerGroup, opacity);
+    }
 
     return layerGroup;
   }
@@ -227,7 +245,7 @@ export class LayerManager {
     if (layer && this.map && this.map.hasLayer(layer)) {
       this.map.removeLayer(layer);
     }
-    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'icon_eu') {
+    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'icon_eu' || layerId === 'gem_gdps') {
       this._refreshMaxMarkers();
     }
   }
@@ -359,6 +377,9 @@ export class LayerManager {
             if (p.id === 'icon_eu' && this.isIconPlaying) {
               this.pauseIconPlayback();
             }
+            if (p.id === 'gem_gdps' && this.isGemPlaying) {
+              this.pauseGemPlayback();
+            }
           }
         });
 
@@ -383,6 +404,9 @@ export class LayerManager {
         }
         if (layerId === 'icon_eu' && this.isIconPlaying) {
           this.pauseIconPlayback();
+        }
+        if (layerId === 'gem_gdps' && this.isGemPlaying) {
+          this.pauseGemPlayback();
         }
       }
       if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
@@ -410,6 +434,9 @@ export class LayerManager {
           }
           if (p.id === 'icon_eu' && this.isIconPlaying) {
             this.pauseIconPlayback();
+          }
+          if (p.id === 'gem_gdps' && this.isGemPlaying) {
+            this.pauseGemPlayback();
           }
         });
 
@@ -1825,6 +1852,232 @@ export class LayerManager {
     }
   }
 
+  // =========================================================================
+  // MSC / ECCC GEM-GDPS (0.15° / ~15 km - Canadian Global Model)
+  // =========================================================================
+
+  /**
+   * Genera una URL estable para la imagen de un paso de GEM-GDPS, aprovechando el caché del navegador
+   */
+  _getGemImageUrl(step, type) {
+    const meta = this.gemMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/gem/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de GEM-GDPS en la memoria del navegador para transiciones fluidas
+   */
+  _preloadGemSteps(currentStep, type) {
+    if (!this.gemMetadata || !this.gemMetadata.available_steps) return;
+    const steps = this.gemMetadata.available_steps;
+    const idx = steps.indexOf(currentStep);
+    if (idx === -1) return;
+
+    if (!this._gemPreloadSet) this._gemPreloadSet = new Set();
+
+    const stepsToPreload = [];
+    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
+    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
+    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
+    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
+
+    stepsToPreload.forEach(step => {
+      for (const t of [type, (type === 'total' ? 'interval' : 'total')]) {
+        const key = `${t}_${step}`;
+        if (!this._gemPreloadSet.has(key)) {
+          this._gemPreloadSet.add(key);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = this._getGemImageUrl(step, t);
+
+          if (this._gemPreloadSet.size > 30) {
+            const first = this._gemPreloadSet.values().next().value;
+            this._gemPreloadSet.delete(first);
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo GEM-GDPS con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadGemLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.gemMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gem/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.gemMetadata = metadata;
+        if (this._gemPreloadSet) this._gemPreloadSet.clear();
+      }
+
+      const metadata = this.gemMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('gem_gdps', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      if (!availSteps.includes(this.currentGemStep)) {
+        this.currentGemStep = availSteps[0];
+      }
+
+      const step = this.currentGemStep;
+      const type = this.currentGemType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI de inmediato
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('gem_gdps', formatGemTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateGemPlayerUI) {
+        this.uiManager.updateGemPlayerUI(metadata, step, type, this.isGemPlaying);
+      }
+
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('gem', step, type);
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentGemBounds = bounds;
+
+      const imgUrl = this._getGemImageUrl(step, type);
+      const requestId = ++this._gemStepRequestId;
+
+      const swapOverlay = () => {
+        if (requestId !== this._gemStepRequestId) return;
+
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'gem-raster-overlay'
+        });
+
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentGemOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentGemOverlay = newOverlay;
+
+        this._preloadGemSteps(step, type);
+      };
+
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = () => {
+        if (requestId !== this._gemStepRequestId) return;
+
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'gem', type: type });
+        if (probeData) {
+          this.gemCanvasData = probeData;
+        }
+
+        swapOverlay();
+      };
+
+      offscreenImg.onerror = () => {
+        if (requestId !== this._gemStepRequestId) return;
+        console.warn(`La imagen GEM-GDPS para paso +${step}h no pudo ser cargada.`);
+      };
+
+      offscreenImg.src = imgUrl;
+
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        offscreenImg.onload();
+      }
+
+    } catch (err) {
+      console.warn('Error al cargar GEM-GDPS desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo GEM-GDPS
+   */
+  setGemStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentGemType || 'total';
+    if (this.currentGemStep === parsedStep && this.currentGemType === targetType && this.currentGemOverlay) {
+      return;
+    }
+    this.currentGemStep = parsedStep;
+    this.currentGemType = targetType;
+    this.reloadGemLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de GEM-GDPS
+   */
+  setGemType(type) {
+    if (this.currentGemType === type && this.currentGemOverlay) return;
+    this.currentGemType = type;
+    this.reloadGemLayer();
+  }
+
+  /**
+   * Recarga la capa GEM-GDPS con los parámetros activos
+   */
+  reloadGemLayer(forceMetaFetch = false) {
+    const gemGroup = this.layers['gem_gdps'];
+    if (!gemGroup) return;
+    const opacity = (this.layerStates['gem_gdps'] && this.layerStates['gem_gdps'].opacity) || 0.65;
+    this._loadGemLayer(gemGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de GEM-GDPS
+   */
+  toggleGemPlayback() {
+    if (this.isGemPlaying) {
+      this.pauseGemPlayback();
+    } else {
+      this.startGemPlayback();
+    }
+  }
+
+  startGemPlayback() {
+    if (this.isGemPlaying) return;
+    this.isGemPlaying = true;
+    if (this.uiManager && this.uiManager.updateGemPlayState) {
+      this.uiManager.updateGemPlayState(true);
+    }
+
+    this.gemPlaybackInterval = setInterval(() => {
+      if (!this.gemMetadata || !this.gemMetadata.available_steps || this.gemMetadata.available_steps.length === 0) {
+        this.pauseGemPlayback();
+        return;
+      }
+
+      const steps = this.gemMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentGemStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setGemStep(steps[nextIdx]);
+    }, 1000);
+  }
+
+  pauseGemPlayback() {
+    this.isGemPlaying = false;
+    if (this.gemPlaybackInterval) {
+      clearInterval(this.gemPlaybackInterval);
+      this.gemPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateGemPlayState) {
+      this.uiManager.updateGemPlayState(false);
+    }
+  }
+
   /**
    * Dispara una sincronización manual inmediata con el backend para buscar nuevas salidas o pasos
    */
@@ -1837,7 +2090,9 @@ export class LayerManager {
       'arome_precip': 'arome',
       'arome': 'arome',
       'icon_eu': 'icon',
-      'icon': 'icon'
+      'icon': 'icon',
+      'gem_gdps': 'gem',
+      'gem': 'gem'
     };
     const apiName = keyMap[modelKey] || 'ecmwf';
 
@@ -1848,6 +2103,7 @@ export class LayerManager {
       else if (apiName === 'gfs') this.reloadGfsLayer(true);
       else if (apiName === 'arome') this.reloadAromeLayer(true);
       else if (apiName === 'icon') this.reloadIconLayer(true);
+      else if (apiName === 'gem') this.reloadGemLayer(true);
     } catch (e) {
       console.warn(`Error al forzar sincronización de ${apiName}:`, e);
     }
@@ -1862,7 +2118,7 @@ export class LayerManager {
       this.modelMaxMarkerGroup = L.layerGroup().addTo(this.map);
     }
 
-    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : 'arome_precip'));
+    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : 'arome_precip')));
     if (!this.isLayerOnMap(layerId)) {
       if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
         delete this.currentMaxPoints[modelKey];
@@ -1908,7 +2164,7 @@ export class LayerManager {
     if (!this.currentMaxPoints) return;
 
     for (const [modelKey, pt] of Object.entries(this.currentMaxPoints)) {
-      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : 'arome_precip'));
+      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : 'arome_precip')));
       if (!this.isLayerOnMap(layerId)) continue;
       if (!pt.lat || !pt.lon) continue;
 
@@ -1965,6 +2221,7 @@ export class LayerManager {
       else if (this.isLayerOnMap('gfs_0p25')) modelKey = 'gfs';
       else if (this.isLayerOnMap('arome_precip')) modelKey = 'arome';
       else if (this.isLayerOnMap('icon_eu')) modelKey = 'icon';
+      else if (this.isLayerOnMap('gem_gdps')) modelKey = 'gem';
       else return;
     }
 
@@ -1982,8 +2239,8 @@ export class LayerManager {
     if (this.currentMaxPoints && this.currentMaxPoints[modelKey] && this.currentMaxPoints[modelKey].lat !== null) {
       doFly(this.currentMaxPoints[modelKey]);
     } else {
-      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : this.currentAromeStep));
-      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : this.currentAromeType));
+      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : ((modelKey === 'gem') ? this.currentGemStep : this.currentAromeStep)));
+      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : ((modelKey === 'gem') ? this.currentGemType : this.currentAromeType)));
       this._updateModelMaxMarker(modelKey, step, type).then(() => {
         if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
           doFly(this.currentMaxPoints[modelKey]);
@@ -2796,6 +3053,80 @@ export class LayerManager {
     if (this.iconEventSource) {
       this.iconEventSource.close();
       this.iconEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia la suscripción SSE para el modelo MSC GEM-GDPS
+   */
+  _startGemSSE() {
+    if (this.gemEventSource) return;
+
+    try {
+      this.gemEventSource = new EventSource(`${CONFIG.apiBaseUrl}/models/gem/stream`);
+
+      this.gemEventSource.onmessage = async (event) => {
+        try {
+          if (!event.data) return;
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'gem_update' || data.event === 'gem_init')) {
+            console.log('🌐 Notificación SSE GEM-GDPS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gem/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.gemMetadata = metadata;
+              if (this._gemPreloadSet) this._gemPreloadSet.clear();
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentGemStep)) {
+                this.currentGemStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('gem_gdps', formatGemTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateGemPlayerUI) {
+                this.uiManager.updateGemPlayerUI(
+                  metadata,
+                  this.currentGemStep,
+                  this.currentGemType || 'total',
+                  this.isGemPlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('gem_gdps')) {
+                this.reloadGemLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de GEM-GDPS:', e);
+        }
+      };
+
+      this.gemEventSource.onerror = (err) => {
+        console.warn('Stream SSE de GEM-GDPS desconectado. Intentando reconexión en 5s...', err);
+        this._stopGemSSE();
+        setTimeout(() => this._startGemSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para GEM-GDPS:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de GEM-GDPS
+   */
+  _stopGemSSE() {
+    if (this.gemEventSource) {
+      this.gemEventSource.close();
+      this.gemEventSource = null;
     }
   }
 
@@ -4339,6 +4670,7 @@ export class LayerManager {
    * Determina el modelo de predicción activo en el mapa
    */
   getActivePredictionModel() {
+    if (this.isLayerOnMap('gem_gdps')) return 'gem';
     if (this.isLayerOnMap('icon_eu')) return 'icon';
     if (this.isLayerOnMap('arome_precip')) return 'arome';
     if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
@@ -4465,6 +4797,7 @@ export class LayerManager {
       ecmwf: '🇪🇺 ECMWF IFS (0.25°)',
       gfs: '🇺🇸 NOAA GFS (0.25°)',
       icon: '🇩🇪 DWD ICON-EU (6.5 km)',
+      gem: '🇨🇦 GEM GDPS (15 km)',
       arome: '🇫🇷 Météo-France AROME (1.3 km)'
     };
 
@@ -4482,6 +4815,10 @@ export class LayerManager {
         badgeModel.style.background = 'rgba(2, 132, 199, 0.2)';
         badgeModel.style.color = '#0284c7';
         badgeModel.style.borderColor = 'rgba(2, 132, 199, 0.4)';
+      } else if (modelKey === 'gem') {
+        badgeModel.style.background = 'rgba(225, 29, 72, 0.2)';
+        badgeModel.style.color = '#fb7185';
+        badgeModel.style.borderColor = 'rgba(225, 29, 72, 0.4)';
       } else {
         badgeModel.style.background = 'rgba(139, 92, 246, 0.2)';
         badgeModel.style.color = '#c084fc';
