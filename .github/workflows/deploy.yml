@@ -17,7 +17,7 @@ permissions:
 jobs:
   deploy:
     name: Build & Deploy (Docker Compose)
-    runs-on: [self-hosted, home-server]
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
