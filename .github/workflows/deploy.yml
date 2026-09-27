@@ -1,0 +1,44 @@
+name: Deploy to Home Server
+
+on:
+  push:
+    branches:
+      - main
+
+# Evita despliegues concurrentes si se suben varios commits seguidos
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+# Principio de mínimo privilegio para repositorios públicos
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy (Docker Compose)
+    runs-on: [self-hosted, home-server]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Environment Variables
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: |
+          # Si se ha configurado el secreto en GitHub, generar el .env localmente en el runner
+          if [ -n "$AEMET_API_KEY" ]; then
+            echo "AEMET_API_KEY=${AEMET_API_KEY}" > .env
+            chmod 600 .env
+          fi
+
+      - name: Deploy Services
+        run: |
+          echo "🚀 Desplegando RainLoc con Docker Compose..."
+          docker compose up -d --build --remove-orphans
+
+      - name: Cleanup Old Docker Images
+        run: |
+          echo "🧹 Limpiando imágenes obsoletas..."
+          docker image prune -f
+          echo "✅ Despliegue completado con éxito."

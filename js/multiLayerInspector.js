@@ -609,41 +609,96 @@ export class MultiLayerInspector {
           });
 
           if (matchingWarnings.length > 0) {
-            // Consolidar aviso de mayor nivel
-            const topWarning = matchingWarnings[0];
-            const event = topWarning.event || topWarning.headline || "Aviso Meteorológico";
-            const sev = topWarning.severity || "Aviso";
-            const color = topWarning.color || "#f59e0b";
-            const area = topWarning.area_desc || "";
-            
-            const currentPeriod = this.layerManager.currentAemetPeriod || 'now';
-            let title = "AEMET Meteoalerta (Activo)";
-            if (currentPeriod === 'tomorrow') {
-              title = "AEMET Meteoalerta (Mañana)";
-            } else if (currentPeriod === 'after_tomorrow') {
-              title = "AEMET Meteoalerta (Pasado)";
-            }
-
-            let timeDetail = "";
-            if (topWarning.expires) {
-              const expDate = new Date(topWarning.expires);
-              if (currentPeriod === 'now') {
-                timeDetail = ` · Hasta ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+            // Desempaquetar avisos individuales si venían consolidados
+            const allIndividualWarnings = [];
+            matchingWarnings.forEach((prop) => {
+              if (Array.isArray(prop.combined_warnings) && prop.combined_warnings.length > 0) {
+                prop.combined_warnings.forEach((subW) => {
+                  allIndividualWarnings.push({
+                    ...subW,
+                    area_desc: subW.area_desc || prop.area_desc || ""
+                  });
+                });
               } else {
-                timeDetail = ` · Hasta ${expDate.toLocaleDateString([], { day: "2-digit", month: "2-digit" })} ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                allIndividualWarnings.push(prop);
+              }
+            });
+
+            // Deduplicar avisos idénticos
+            const seenKeys = new Set();
+            const uniqueWarnings = [];
+            for (const w of allIndividualWarnings) {
+              const key = `${w.identifier || ''}|${w.event || ''}|${w.severity || ''}|${w.area_desc || ''}|${w.onset || ''}|${w.expires || ''}`;
+              if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                uniqueWarnings.push(w);
               }
             }
 
-            sections.push({
-              type: "warning",
-              title: title,
-              headerColor: color,
-              icon: "⚠️",
-              name: event,
-              badge: sev,
-              badgeBg: color,
-              badgeColor: "#000",
-              details: `📍 ${area}${timeDetail}`
+            // Ordenar por severidad (Rojo > Naranja > Amarillo > Verde)
+            const severityOrder = {
+              'extreme': 4, 'red': 4, 'rojo': 4,
+              'severe': 3, 'orange': 3, 'naranja': 3,
+              'moderate': 2, 'yellow': 2, 'amarillo': 2,
+              'minor': 1, 'green': 1, 'verde': 1
+            };
+            uniqueWarnings.sort((a, b) => {
+              const rankA = severityOrder[(a.severity || '').toLowerCase()] || 0;
+              const rankB = severityOrder[(b.severity || '').toLowerCase()] || 0;
+              return rankB - rankA;
+            });
+
+            const currentPeriod = this.layerManager.currentAemetPeriod || 'now';
+            let periodLabel = "Activo";
+            if (currentPeriod === 'tomorrow') {
+              periodLabel = "Mañana";
+            } else if (currentPeriod === 'after_tomorrow') {
+              periodLabel = "Pasado";
+            }
+
+            uniqueWarnings.forEach((w) => {
+              const event = w.event || w.headline || "Aviso Meteorológico";
+              const sev = w.severity || "Aviso";
+              const color = w.color || "#f59e0b";
+              const area = w.area_desc || "";
+
+              let timeDetail = "";
+              if (w.expires) {
+                const expDate = new Date(w.expires);
+                if (currentPeriod === 'now') {
+                  timeDetail = ` · Hasta ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                } else {
+                  timeDetail = ` · Hasta ${expDate.toLocaleDateString([], { day: "2-digit", month: "2-digit" })} ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                }
+              }
+
+              // Normalizar etiqueta de severidad
+              let sevLabel = sev;
+              const sevLower = (sev || '').toLowerCase();
+              if (sevLower === 'extreme' || sevLower === 'red' || sevLower === 'rojo') {
+                sevLabel = 'Nivel Rojo';
+              } else if (sevLower === 'severe' || sevLower === 'orange' || sevLower === 'naranja') {
+                sevLabel = 'Nivel Naranja';
+              } else if (sevLower === 'moderate' || sevLower === 'yellow' || sevLower === 'amarillo') {
+                sevLabel = 'Nivel Amarillo';
+              } else if (sevLower === 'minor' || sevLower === 'green' || sevLower === 'verde') {
+                sevLabel = 'Nivel Verde';
+              }
+
+              const isBrightBadge = ['#facc15', '#f59e0b', '#fb923c', '#ffffff', '#22c55e'].includes((color || '').toLowerCase());
+              const badgeTextColor = isBrightBadge ? '#0f172a' : '#ffffff';
+
+              sections.push({
+                type: "warning",
+                title: `AEMET Meteoalerta (${periodLabel})`,
+                headerColor: color,
+                icon: "⚠️",
+                name: event,
+                badge: sevLabel,
+                badgeBg: color,
+                badgeColor: badgeTextColor,
+                details: `📍 ${area}${timeDetail}`
+              });
             });
           }
         }
