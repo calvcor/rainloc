@@ -481,53 +481,114 @@ class GEMWorker:
             logger.error(f"Error calculando max_point GEM: {e}")
             return None
 
-    def _determine_latest_gem_run(self) -> Tuple[datetime, str, str]:
+    def _check_step_availability(self, date_str: str, hh: str, step: int) -> Optional[str]:
         """
-        Determina cuál es la corrida operativa más reciente de GEM-GDPS disponible en MSC Datamart.
-        GEM corre a 00z y 12z.
-        00z se publica ~03:15 - 03:30 UTC.
-        12z se publica ~15:15 - 15:30 UTC.
-        Retorna (cycle_datetime_utc, date_str YYYYMMDD, hh 00|12).
-        """
-        now = datetime.now(timezone.utc)
-        # Retroceder 3.5 horas para coincidir con la disponibilidad del primer paso
-        ref_time = now - timedelta(hours=3, minutes=30)
-        run_hour = (ref_time.hour // 12) * 12
-        cycle_dt = ref_time.replace(hour=run_hour, minute=0, second=0, microsecond=0)
-        date_str = cycle_dt.strftime("%Y%m%d")
-        hh = f"{cycle_dt.hour:02d}"
-        return cycle_dt, date_str, hh
-
-    def _download_gem_step_grib(self, date_str: str, hh: str, step: int, dest_path: Path) -> bool:
-        """
-        Descarga el archivo individual de precipitación APCP_Sfc para un paso temporal desde MSC Datamart.
-        Nomenclatura: {date_str}T{hh}Z_MSC_GDPS_APCP_Sfc_RLatLon0.15_PT{step:03d}H.grib2
+        Comprueba rápidamente si un paso está disponible en MSC Datamart probando
+        las distintas estructuras de URL (today, WXO-DD, raíz y fecha).
+        Retorna la URL funcional o None.
         """
         step_str = f"{step:03d}"
-        filename = f"{date_str}T{hh}Z_MSC_GDPS_APCP_Sfc_RLatLon0.15_PT{step_str}H.grib2"
-        url = f"{MSC_DATAMART_BASE}/{hh}/{step_str}/{filename}"
+        filenames = [
+            f"{date_str}T{hh}Z_MSC_GDPS_Precip-Accum_Sfc_LatLon0.15_PT{step_str}H.grib2",
+            f"{date_str}T{hh}Z_MSC_GDPS_APCP_Sfc_RLatLon0.15_PT{step_str}H.grib2",
+            f"{date_str}T{hh}Z_MSC_GDPS_Precip-Accum3h_Sfc_LatLon0.15_PT{step_str}H.grib2",
+        ]
+        base_urls = [
+            f"https://dd.weather.gc.ca/today/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/{date_str}/WXO-DD/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/{date_str}/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/model_gdps/15km/{hh}/{step_str}",
+        ]
 
         headers = {
             "User-Agent": MSC_USER_AGENT,
             "Accept": "*/*"
         }
 
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                if resp.status == 200:
-                    data = resp.read()
-                    if len(data) > 1000:  # Archivo GRIB válido
-                        with open(dest_path, "wb") as f:
-                            f.write(data)
-                        return True
-        except urllib.error.HTTPError as he:
-            if he.code == 404:
-                logger.debug(f"GEM: Paso +{step}h aún no disponible en MSC Datamart ({url}).")
-            else:
-                logger.warning(f"GEM: HTTP Error {he.code} descargando {url}: {he.reason}")
-        except Exception as e:
-            logger.warning(f"GEM: Error descargando {url}: {e}")
+        for b in base_urls:
+            for fn in filenames:
+                url = f"{b}/{fn}"
+                try:
+                    req = urllib.request.Request(url, headers=headers, method="HEAD")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status == 200:
+                            return url
+                except Exception:
+                    continue
+        return None
+
+    def _determine_latest_gem_run(self) -> Tuple[datetime, str, str]:
+        """
+        Determina cuál es la corrida operativa más reciente de GEM-GDPS con al menos el primer paso disponible.
+        Comprueba la corrida teórica actual y, si no está disponible, retrocede a la corrida anterior.
+        GEM corre a 00z y 12z.
+        00z se publica ~03:15 - 04:30 UTC.
+        12z se publica ~15:15 - 16:30 UTC.
+        Retorna (cycle_datetime_utc, date_str YYYYMMDD, hh 00|12).
+        """
+        now = datetime.now(timezone.utc)
+        for offset_hours in [3.0, 8.0, 15.0, 27.0]:
+            ref_time = now - timedelta(hours=offset_hours)
+            run_hour = (ref_time.hour // 12) * 12
+            cycle_dt = ref_time.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+            date_str = cycle_dt.strftime("%Y%m%d")
+            hh = f"{cycle_dt.hour:02d}"
+
+            # Comprobar si el paso +3h está disponible para esta corrida
+            working_url = self._check_step_availability(date_str, hh, 3)
+            if working_url:
+                logger.debug(f"GEM: Detectada corrida operativa {date_str}_{hh}z disponible en Datamart.")
+                return cycle_dt, date_str, hh
+
+        # Fallback por defecto si no responde la red
+        ref_time = now - timedelta(hours=3, minutes=30)
+        run_hour = (ref_time.hour // 12) * 12
+        cycle_dt = ref_time.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+        return cycle_dt, cycle_dt.strftime("%Y%m%d"), f"{cycle_dt.hour:02d}"
+
+    def _download_gem_step_grib(self, date_str: str, hh: str, step: int, dest_path: Path) -> bool:
+        """
+        Descarga el archivo individual de precipitación para un paso temporal desde MSC Datamart.
+        Prueba los formatos de nombre de fichero estándar oficiales y las variantes de ruta.
+        """
+        step_str = f"{step:03d}"
+        filenames = [
+            f"{date_str}T{hh}Z_MSC_GDPS_Precip-Accum_Sfc_LatLon0.15_PT{step_str}H.grib2",
+            f"{date_str}T{hh}Z_MSC_GDPS_APCP_Sfc_RLatLon0.15_PT{step_str}H.grib2",
+            f"{date_str}T{hh}Z_MSC_GDPS_Precip-Accum3h_Sfc_LatLon0.15_PT{step_str}H.grib2",
+        ]
+
+        base_urls = [
+            f"https://dd.weather.gc.ca/today/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/{date_str}/WXO-DD/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/{date_str}/model_gdps/15km/{hh}/{step_str}",
+            f"https://dd.weather.gc.ca/model_gdps/15km/{hh}/{step_str}",
+        ]
+
+        headers = {
+            "User-Agent": MSC_USER_AGENT,
+            "Accept": "*/*"
+        }
+
+        for b in base_urls:
+            for fn in filenames:
+                url = f"{b}/{fn}"
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=25) as resp:
+                        if resp.status == 200:
+                            data = resp.read()
+                            if len(data) > 1000:  # Archivo GRIB válido
+                                with open(dest_path, "wb") as f:
+                                    f.write(data)
+                                return True
+                except urllib.error.HTTPError as he:
+                    if he.code == 404:
+                        continue
+                    else:
+                        logger.warning(f"GEM: HTTP Error {he.code} descargando {url}: {he.reason}")
+                except Exception as e:
+                    logger.debug(f"GEM: Error intentando {url}: {e}")
 
         return False
 
