@@ -142,46 +142,60 @@ class AemetOpenDataService:
             deg_lat_km = 111.139
             deg_lon_km = 111.139 * math.cos(math.radians(st_lat))
 
-            pixels_mapped = 0
+            # Proyección Web Mercator precisa
+            r_earth = 6378137.0
+            y_merc_min = r_earth * math.log(math.tan(math.pi / 4 + math.radians(lat_min) / 2))
+            y_merc_max = r_earth * math.log(math.tan(math.pi / 4 + math.radians(lat_max) / 2))
+            y_merc_grid = np.linspace(y_merc_max, y_merc_min, out_h)
+            grid_lats = np.degrees(2 * np.arctan(np.exp(y_merc_grid / r_earth)) - math.pi / 2)
+            grid_lons = np.linspace(lon_min, lon_max, out_w)
 
-            # Iterar solo por los píxeles con índices de reflectividad válidos
+            # Subrejilla delimitada al radio de cobertura de la estación para máxima eficiencia
+            delta_lat = (max_km / deg_lat_km) * 1.05
+            delta_lon = (max_km / deg_lon_km) * 1.05
+
+            sub_y = np.where((grid_lats >= st_lat - delta_lat) & (grid_lats <= st_lat + delta_lat))[0]
+            sub_x = np.where((grid_lons >= st_lon - delta_lon) & (grid_lons <= st_lon + delta_lon))[0]
+
+            if len(sub_y) == 0 or len(sub_x) == 0:
+                return False
+
+            lats_sub = grid_lats[sub_y]
+            lons_sub = grid_lons[sub_x]
+            lons_2d, lats_2d = np.meshgrid(lons_sub, lats_sub)
+
+            dy_km = (lats_2d - st_lat) * deg_lat_km
+            dx_km = (lons_2d - st_lon) * deg_lon_km
+            dist_km = np.sqrt(dx_km * dx_km + dy_km * dy_km)
+
+            in_range = dist_km <= max_km
+            src_x = np.round(c_x + dx_km / km_per_px).astype(np.int32)
+            src_y = np.round(c_y - dy_km / km_per_px).astype(np.int32)
+            valid_src = in_range & (src_x >= 0) & (src_x < radar_w) & (src_y >= 0) & (src_y < radar_h)
+
+            # Tabla de conversión de índice de paleta AEMET a dBZ (256 valores)
+            lut = np.full(256, -9999.0, dtype=np.float32)
             for idx, dbz_val in AEMET_INDEX_TO_DBZ.items():
-                ys, xs = np.where(radar_arr == idx)
-                for y, x in zip(ys, xs):
-                    dy_km = (c_y - y) * km_per_px
-                    dx_km = (x - c_x) * km_per_px
-                    dist_km = math.sqrt(dx_km * dx_km + dy_km * dy_km)
-                    if dist_km > max_km:
-                        continue
+                lut[idx] = dbz_val
 
-                    # Coordenadas geográficas
-                    p_lat = st_lat + (dy_km / deg_lat_km)
-                    p_lon = st_lon + (dx_km / deg_lon_km)
+            # Mapeo inverso continuo directo (sin huecos / sin bandas verticales)
+            dbz_sub = np.full(lats_2d.shape, -9999.0, dtype=np.float32)
+            dbz_sub[valid_src] = lut[radar_arr[src_y[valid_src], src_x[valid_src]]]
 
-                    if not (lat_min <= p_lat <= lat_max and lon_min <= p_lon <= lon_max):
-                        continue
+            # Actualizar rejilla de salida y máscara de cobertura
+            for r_i, gy in enumerate(sub_y):
+                row_in_range = in_range[r_i]
+                if np.any(row_in_range):
+                    coverage_mask[gy, sub_x[row_in_range]] = True
+                
+                row_dbz = dbz_sub[r_i]
+                rain_mask = row_dbz >= 8.0
+                if np.any(rain_mask):
+                    target_cols = sub_x[rain_mask]
+                    short_grid[gy, target_cols] = np.maximum(short_grid[gy, target_cols], row_dbz[rain_mask])
 
-                    # Proyección Web Mercator
-                    iy = int((lat_max - p_lat) / (lat_max - lat_min) * (out_h - 1))
-                    ix = int((p_lon - lon_min) / (lon_max - lon_min) * (out_w - 1))
-
-                    if 0 <= iy < out_h and 0 <= ix < out_w:
-                        short_grid[iy, ix] = max(short_grid[iy, ix], dbz_val)
-                        coverage_mask[iy, ix] = True
-                        pixels_mapped += 1
-
-            # También marcar la máscara de cobertura general del radar
-            # para que la zona de Cullera tenga cobertura activa de corto alcance
-            y_indices, x_indices = np.ogrid[:out_h, :out_w]
-            grid_lats = lat_max - (y_indices / (out_h - 1)) * (lat_max - lat_min)
-            grid_lons = lon_min + (x_indices / (out_w - 1)) * (lon_max - lon_min)
-            d_lat = (grid_lats - st_lat) * deg_lat_km
-            d_lon = (grid_lons - st_lon) * deg_lon_km
-            dist_matrix_km = np.sqrt(d_lat * d_lat + d_lon * d_lon)
-            in_range = dist_matrix_km <= max_km
-            coverage_mask[in_range] = True
-
-            logger.info(f"AEMET OpenData: Radar {st['name']} decodificado limpiamente ({pixels_mapped} celdas de lluvia real).")
+            pixels_mapped = int(np.sum(dbz_sub >= 8.0))
+            logger.info(f"AEMET OpenData: Radar {st['name']} decodificado limpiamente ({pixels_mapped} celdas de lluvia real en rejilla Web Mercator).")
             return True
 
         except Exception as e:
