@@ -542,10 +542,11 @@ export class MultiLayerInspector {
 
 
 
-  _isTouchMode() {
+  _isTouchDevice() {
     return (
-      ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
-      window.innerWidth <= 768
+      window.matchMedia('(pointer: coarse)').matches ||
+      ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0)
     );
   }
 
@@ -554,12 +555,12 @@ export class MultiLayerInspector {
 
     // Escuchar movimiento del cursor global sobre el mapa (Escritorio / Ratón)
     this.map.on("mousemove", (e) => this._onMouseMove(e));
-    this.map.on("mouseout", () => this._onMouseOut());
+    this.map.on("mouseout", (e) => this._onMouseOut(e));
 
-    // Escuchar toque / click sobre el mapa para modo móvil táctil persistente (Tap-to-Inspect)
+    // Escuchar toque / click sobre el mapa para modo interactivo persistente (Móvil, iPad, Tablets, PC)
     this.map.on("click", (e) => this._onMapClick(e));
 
-    // Inicializar eventos de la tarjeta móvil inferior
+    // Inicializar eventos de la tarjeta móvil / tablet inferior
     this._initMobileSheetEvents();
   }
 
@@ -572,7 +573,13 @@ export class MultiLayerInspector {
   }
 
   _onMouseMove(e) {
-    if (this._isTouchMode()) return;
+    // Si el evento proviene de un toque en pantalla táctil (iPad/tablet/móvil), ignorar hover sintético
+    if (e.originalEvent && (e.originalEvent.pointerType === 'touch' || e.originalEvent.touches)) {
+      return;
+    }
+    if (this._isTouchDevice() && (!e.originalEvent || e.originalEvent.pointerType !== 'mouse')) {
+      return;
+    }
 
     this._lastLatLng = e.latlng;
 
@@ -584,14 +591,22 @@ export class MultiLayerInspector {
     });
   }
 
-  _onMouseOut() {
-    if (this._isTouchMode()) return;
+  _onMouseOut(e) {
+    // Si el evento proviene de touch o es un dispositivo táctil, no cerrar abruptamente
+    if (e && e.originalEvent && (e.originalEvent.pointerType === 'touch' || e.originalEvent.touches)) {
+      return;
+    }
+    if (this._isTouchDevice() && (!e || !e.originalEvent || e.originalEvent.pointerType !== 'mouse')) {
+      return;
+    }
 
     this._closeTooltip();
-    if (this.uiManager) {
-      this.uiManager.resetHoverInfo();
+    if (!this.inspectionMarker) {
+      if (this.uiManager) {
+        this.uiManager.resetHoverInfo();
+      }
+      this._clearCuencaHover();
     }
-    this._clearCuencaHover();
   }
 
   _onMapClick(e) {
@@ -611,9 +626,8 @@ export class MultiLayerInspector {
       }
     }
 
-    if (this._isTouchMode()) {
-      this.inspectAtLatLng(e.latlng, true);
-    }
+    // Inspección puntual persistente con marcador y tarjeta
+    this.inspectAtLatLng(e.latlng, true);
   }
 
   inspectAtLatLng(latlng, isExplicit = false) {
@@ -957,7 +971,7 @@ export class MultiLayerInspector {
         const caudalesGroup = this.layerManager.layers["saih_caudales"];
         if (caudalesGroup) {
           let closestStation = null;
-          let minPixDist = this._isTouchMode() ? 32 : 20; // Tolerancia ampliada en móvil táctil
+          let minPixDist = this._isTouchDevice() ? 32 : 20; // Tolerancia ampliada en táctil (móviles, iPad, tablets)
 
           caudalesGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -1042,7 +1056,7 @@ export class MultiLayerInspector {
         const embalsesGroup = this.layerManager.layers["saih_embalses"];
         if (embalsesGroup) {
           let closestEmbalse = null;
-          let minPixDist = this._isTouchMode() ? 36 : 24; // Tolerancia más amplia para embalses (iconos más grandes)
+          let minPixDist = this._isTouchDevice() ? 36 : 24; // Tolerancia más amplia para embalses (iconos más grandes)
 
           embalsesGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -1140,7 +1154,7 @@ export class MultiLayerInspector {
         const lluviasGroup = this.layerManager.layers["saih_lluvias"];
         if (lluviasGroup) {
           let closestPluvio = null;
-          let minPixDist = this._isTouchMode() ? 28 : 18; // Tolerancia fina para pluviómetros
+          let minPixDist = this._isTouchDevice() ? 28 : 18; // Tolerancia fina para pluviómetros
 
           lluviasGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -1516,9 +1530,9 @@ export class MultiLayerInspector {
       }
     }
 
-    // Si hay secciones coincidentes, renderizar tooltip unificado o tarjeta móvil persistente
+    // Si hay secciones coincidentes, renderizar tooltip unificado o tarjeta persistente
     if (sections.length > 0) {
-      if (this._isTouchMode() || isExplicit) {
+      if (this._isTouchDevice() || isExplicit) {
         this._renderMobileInspectorSheet(latlng, sections);
         this._setInspectionMarker(latlng);
         this._closeTooltip();
@@ -1527,7 +1541,7 @@ export class MultiLayerInspector {
       }
     } else {
       this._closeTooltip();
-      if (this._isTouchMode() && isExplicit) {
+      if ((this._isTouchDevice() || isExplicit) && isExplicit) {
         this.closeMobileInspector();
       }
     }

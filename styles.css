@@ -4585,17 +4585,36 @@ body {
   color: #7dd3fc;
 }
 
-@media (min-width: 768px) {
-  .mobile-inspector-sheet {
-    display: none !important;
-  }
-}
-
-@media (max-width: 767px) {
+/* En dispositivos táctiles (móviles, iPad, tablets), ocultar el tooltip flotante efímero para evitar parpadeos */
+@media (pointer: coarse), (hover: none) {
   .rainloc-unified-tooltip {
     display: none !important;
   }
 }
+
+/* Teléfonos y pantallas compactas (< 768px): ancho completo inferior sobre barra de navegación */
+@media (max-width: 767px) {
+  .mobile-inspector-sheet {
+    left: 10px;
+    right: 10px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    max-height: min(54vh, 440px);
+  }
+}
+
+/* Tablets, iPad y pantallas medianas/grandes (>= 768px): tarjeta flotante elegante */
+@media (min-width: 768px) {
+  .mobile-inspector-sheet {
+    left: auto;
+    right: 20px;
+    bottom: 24px;
+    width: 390px;
+    max-width: calc(100vw - 40px);
+    max-height: min(65vh, 520px);
+    border-radius: 16px;
+  }
+}
+
 
 
 

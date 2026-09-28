@@ -259,10 +259,11 @@ export class CuencasLayer {
     this._hoveredFeatureId = null;
   }
 
-  _isTouchMode() {
+  _isTouchDevice() {
     return (
-      ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
-      window.innerWidth <= 768
+      window.matchMedia('(pointer: coarse)').matches ||
+      ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0)
     );
   }
 
@@ -270,7 +271,7 @@ export class CuencasLayer {
    * Manejador de evento mouseover (resalte dinámico de cuenca y actualización de UI)
    */
   _onMouseOver(e, feature, layer) {
-    if (this._isTouchMode()) return;
+    if (this._isTouchDevice()) return;
 
     const props = feature.properties || {};
     const sistema = props.NomSistExp || 'Default';
@@ -288,7 +289,7 @@ export class CuencasLayer {
    * Manejador de evento mouseout (restauración inmediata del estilo original)
    */
   _onMouseOut(e, feature, layer) {
-    if (this._isTouchMode()) return;
+    if (this._isTouchDevice()) return;
 
     this.clearHoverHighlight(feature.id);
 
@@ -315,8 +316,8 @@ export class CuencasLayer {
       }
     }
 
-    // En móvil táctil, delegar en la inspección unificada por bottom sheet persistente
-    if (this._isTouchMode() && window.RainLoc && window.RainLoc.multiInspector) {
+    // En pantallas táctiles (móviles, iPad, tablets), delegar en la inspección unificada persistente
+    if (this._isTouchDevice() && window.RainLoc && window.RainLoc.multiInspector) {
       window.RainLoc.multiInspector.inspectAtLatLng(e.latlng, true);
       return;
     }
