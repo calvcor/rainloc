@@ -11,10 +11,13 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
 
 logger = logging.getLogger("rainloc-backend.saih_service")
+
+MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 STATIC_STATIONS_FILE = DATA_DIR / "saih_aforos_estaciones.json"
@@ -125,6 +128,7 @@ class SAIHService:
                         "ultimo_caudal": caudal_val,
                         "caudal": caudal_val,
                         "ultima_hora": item.get("lastValueFecha", ""),
+                        "fecha_comunicacion": item.get("fldDFechaComunicacion", ""),
                         "umbrales": {
                             "amarillo": item.get("fldFUmbralBajo"),
                             "naranja": item.get("fldFUmbralMedio"),
@@ -323,6 +327,7 @@ class SAIHService:
                             "rojo": item.get("umbralAltoCaudalSalidaRio"),
                         },
                         "ultima_hora": item.get("fechaComunicacionVolumenEmbalse") or item.get("fechaComunicacionVol") or "",
+                        "fecha_comunicacion": item.get("fldDFechaComunicacionVolumenEmbalse") or item.get("fldDFechaComunicacionVol") or item.get("fldDFechaComunicacion") or "",
                         "unidad_volumen": "hm³",
                         "unidad_cota": "m.s.n.m.",
                         "unidad_caudal": "m³/s",
@@ -614,9 +619,9 @@ class SAIHService:
     ) -> Dict[str, Any]:
         """
         Consulta la API temporal del SAIH para una variable dada.
-        Formato fechas API: YYYY-MM-DD HH:mm:ss
+        Formato fechas API: YYYY-MM-DD HH:mm:ss (en hora oficial de España / Europe/Madrid)
         """
-        now = datetime.now()
+        now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):
             end_dt = now
             end_date_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -652,11 +657,21 @@ class SAIHService:
         series = []
         if raw_series and isinstance(raw_series, list):
             for entry in raw_series:
+                v = entry.get("valor")
+                val_float = None
+                if v is not None:
+                    try:
+                        val_float = round(float(v), 3)
+                    except (ValueError, TypeError):
+                        val_float = None
                 series.append({
                     "fecha": entry.get("fecha"),
-                    "valor": entry.get("valor"),
+                    "valor": val_float,
                     "estado": entry.get("estado", 0),
                 })
+
+            # Ordenar de forma estrictamente cronológica por timestamp ISO
+            series.sort(key=lambda x: str(x.get("fecha") or ""))
 
         return {
             "id_variable": str(id_variable),

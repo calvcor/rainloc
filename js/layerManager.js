@@ -3561,7 +3561,13 @@ export class LayerManager {
       statCurrent.style.color = alertColor;
     }
     if (statTime) {
-      statTime.textContent = props.ultima_hora ? `Última lectura: ${props.ultima_hora}` : 'Lectura en tiempo real';
+      if (props.fecha_comunicacion) {
+        statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(props.fecha_comunicacion))}`;
+      } else if (props.ultima_hora) {
+        statTime.textContent = `Última lectura: ${props.ultima_hora}`;
+      } else {
+        statTime.textContent = 'Lectura en tiempo real';
+      }
     }
 
     // Chips de umbrales
@@ -3646,9 +3652,29 @@ export class LayerManager {
         return;
       }
 
-      // Estadísticas
-      const validPoints = series.filter(s => s.valor !== null && s.valor !== undefined);
+      // Filtrar y ordenar cronológicamente de forma estricta
+      const validPoints = series
+        .filter(s => s.valor !== null && s.valor !== undefined && !isNaN(Number(s.valor)))
+        .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+      if (validPoints.length === 0) {
+        container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron lecturas numéricas válidas en las últimas ${hours} horas.</div>`;
+        return;
+      }
+
       const values = validPoints.map(s => Number(s.valor));
+
+      // Sincronizar lectura del instante actual y estadísticas
+      const latestPoint = validPoints[validPoints.length - 1];
+      const statCurrent = document.getElementById('caudal-stat-current');
+      const statTime = document.getElementById('caudal-stat-time');
+      if (latestPoint && statCurrent) {
+        const latestVal = Number(latestPoint.valor);
+        statCurrent.textContent = `${latestVal.toFixed(2)} m³/s`;
+      }
+      if (latestPoint && latestPoint.fecha && statTime) {
+        statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(latestPoint.fecha))}`;
+      }
 
       if (values.length > 0) {
         const maxVal = Math.max(...values);
@@ -3684,7 +3710,10 @@ export class LayerManager {
   _renderCaudalSvgChart(points, umbrales, containerEl) {
     if (!points || points.length === 0) return;
 
-    const values = points.map(p => Number(p.valor));
+    // Asegurar orden cronológico de los puntos
+    const sortedPoints = [...points].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+    const values = sortedPoints.map(p => Number(p.valor));
     const uA = umbrales.amarillo ? Number(umbrales.amarillo) : null;
     const uN = umbrales.naranja ? Number(umbrales.naranja) : null;
     const uR = umbrales.rojo ? Number(umbrales.rojo) : null;
@@ -3710,16 +3739,22 @@ export class LayerManager {
     const innerW = width - pad.left - pad.right;
     const innerH = height - pad.top - pad.bottom;
 
+    // Rango temporal continuo (eje X proporcional al tiempo real)
+    const tMin = new Date(sortedPoints[0].fecha).getTime();
+    const tMax = new Date(sortedPoints[sortedPoints.length - 1].fecha).getTime();
+    const tSpan = Math.max(1, tMax - tMin);
+
     // Puntos de la polilínea y área
-    const chartCoords = points.map((pt, i) => {
-      const x = pad.left + (i / Math.max(1, points.length - 1)) * innerW;
+    const chartCoords = sortedPoints.map((pt) => {
+      const t = new Date(pt.fecha).getTime();
+      const x = pad.left + ((t - tMin) / tSpan) * innerW;
       const y = pad.top + innerH - ((Number(pt.valor) - minY) / rangeY) * innerH;
-      return { x, y, pt };
+      return { x, y, pt, t };
     });
 
     const polyPointsStr = chartCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
     const baseY = (pad.top + innerH).toFixed(1);
-    const areaPointsStr = `${pad.left},${baseY} ${polyPointsStr} ${pad.left + innerW},${baseY}`;
+    const areaPointsStr = `${chartCoords[0].x.toFixed(1)},${baseY} ${polyPointsStr} ${chartCoords[chartCoords.length - 1].x.toFixed(1)},${baseY}`;
 
     // Líneas Horizontales de Umbrales / Avisos de Caudal
     const thresholdLines = [];
@@ -3756,16 +3791,17 @@ export class LayerManager {
       yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
     }
 
-    // Ejes X y Fechas (4 etiquetas limpias)
+    // Ejes X y Fechas (4 divisiones regulares en el tiempo en hora oficial de España)
     const xLabels = [];
-    const numXMarks = Math.min(4, points.length);
+    const numXMarks = 4;
     for (let k = 0; k < numXMarks; k++) {
-      const idx = Math.round((k / Math.max(1, numXMarks - 1)) * (points.length - 1));
-      const pt = points[idx];
-      const x = pad.left + (idx / Math.max(1, points.length - 1)) * innerW;
-      const d = pt.fecha ? new Date(pt.fecha) : new Date();
-      const timeLabel = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const dateLabel = `${d.getDate()}/${d.getMonth() + 1}`;
+      const frac = k / (numXMarks - 1);
+      const x = pad.left + frac * innerW;
+      const t = tMin + frac * tSpan;
+      const d = new Date(t);
+      const timeLabel = formatMadridTime(d);
+      const formattedDT = formatMadridDateTime(d);
+      const dateLabel = formattedDT.includes(' · ') ? formattedDT.split(' · ')[0].substring(0, 5) : `${d.getDate()}/${d.getMonth() + 1}`;
       xLabels.push(`
         <g transform="translate(${x.toFixed(1)}, ${height - pad.bottom + 14})">
           <text x="0" y="0" fill="#cbd5e1" font-size="10.5" font-weight="600" text-anchor="middle">${timeLabel}</text>
@@ -3858,9 +3894,18 @@ export class LayerManager {
 
       // Restringir a la zona de datos
       const clampedSvgX = Math.max(pad.left, Math.min(pad.left + innerW, svgX));
-      const fraction = (clampedSvgX - pad.left) / innerW;
-      const idx = Math.round(fraction * (chartCoords.length - 1));
-      const target = chartCoords[Math.max(0, Math.min(chartCoords.length - 1, idx))];
+
+      // Búsqueda del punto más próximo en el espacio de coordenadas
+      let closest = chartCoords[0];
+      let minDiff = Math.abs(chartCoords[0].x - clampedSvgX);
+      for (let i = 1; i < chartCoords.length; i++) {
+        const diff = Math.abs(chartCoords[i].x - clampedSvgX);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = chartCoords[i];
+        }
+      }
+      const target = closest;
 
       if (!target) return;
 
@@ -4560,7 +4605,27 @@ export class LayerManager {
         return;
       }
 
-      const validPoints = series.filter(s => s.valor !== null && s.valor !== undefined);
+      const validPoints = series
+        .filter(s => s.valor !== null && s.valor !== undefined && !isNaN(Number(s.valor)))
+        .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+      if (validPoints.length === 0) {
+        container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron registros de volumen numéricos válidos en las últimas ${hours} horas.</div>`;
+        return;
+      }
+
+      // Sincronizar lectura del instante actual en la cabecera del modal
+      const latestPoint = validPoints[validPoints.length - 1];
+      const statVol = document.getElementById('embalse-stat-vol');
+      const statTime = document.getElementById('embalse-stat-time');
+      if (latestPoint && statVol) {
+        const latestVal = Number(latestPoint.valor);
+        statVol.textContent = `${latestVal.toFixed(2)} hm³`;
+      }
+      if (latestPoint && latestPoint.fecha && statTime) {
+        statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(latestPoint.fecha))}`;
+      }
+
       this._renderEmbalseSvgChart(validPoints, capNMN, container);
     } catch (err) {
       console.warn('Error al obtener histórico de embalse:', err);
@@ -4579,7 +4644,10 @@ export class LayerManager {
   _renderEmbalseSvgChart(points, capNMN, containerEl) {
     if (!points || points.length === 0) return;
 
-    const values = points.map(p => Number(p.valor));
+    // Asegurar orden cronológico de los puntos
+    const sortedPoints = [...points].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+    const values = sortedPoints.map(p => Number(p.valor));
     const rawMax = Math.max(...values, 0.1);
     const rawMin = Math.min(...values);
 
@@ -4602,15 +4670,21 @@ export class LayerManager {
     const innerW = width - pad.left - pad.right;
     const innerH = height - pad.top - pad.bottom;
 
-    const chartCoords = points.map((pt, i) => {
-      const x = pad.left + (i / Math.max(1, points.length - 1)) * innerW;
+    // Rango temporal continuo (eje X proporcional al tiempo real)
+    const tMin = new Date(sortedPoints[0].fecha).getTime();
+    const tMax = new Date(sortedPoints[sortedPoints.length - 1].fecha).getTime();
+    const tSpan = Math.max(1, tMax - tMin);
+
+    const chartCoords = sortedPoints.map((pt) => {
+      const t = new Date(pt.fecha).getTime();
+      const x = pad.left + ((t - tMin) / tSpan) * innerW;
       const y = pad.top + innerH - ((Number(pt.valor) - minY) / rangeY) * innerH;
-      return { x, y, pt };
+      return { x, y, pt, t };
     });
 
     const polyPointsStr = chartCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
     const baseY = (pad.top + innerH).toFixed(1);
-    const areaPointsStr = `${pad.left},${baseY} ${polyPointsStr} ${pad.left + innerW},${baseY}`;
+    const areaPointsStr = `${chartCoords[0].x.toFixed(1)},${baseY} ${polyPointsStr} ${chartCoords[chartCoords.length - 1].x.toFixed(1)},${baseY}`;
 
     // Línea de Capacidad NMN
     let capLine = '';
@@ -4640,16 +4714,17 @@ export class LayerManager {
       yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
     }
 
-    // Ejes X y Fechas (4 etiquetas limpias)
+    // Ejes X y Fechas (4 divisiones regulares en el tiempo en hora oficial de España)
     const xLabels = [];
-    const numXMarks = Math.min(4, points.length);
+    const numXMarks = 4;
     for (let k = 0; k < numXMarks; k++) {
-      const idx = Math.round((k / Math.max(1, numXMarks - 1)) * (points.length - 1));
-      const pt = points[idx];
-      const x = pad.left + (idx / Math.max(1, points.length - 1)) * innerW;
-      const d = pt.fecha ? new Date(pt.fecha) : new Date();
-      const timeLabel = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const dateLabel = `${d.getDate()}/${d.getMonth() + 1}`;
+      const frac = k / (numXMarks - 1);
+      const x = pad.left + frac * innerW;
+      const t = tMin + frac * tSpan;
+      const d = new Date(t);
+      const timeLabel = formatMadridTime(d);
+      const formattedDT = formatMadridDateTime(d);
+      const dateLabel = formattedDT.includes(' · ') ? formattedDT.split(' · ')[0].substring(0, 5) : `${d.getDate()}/${d.getMonth() + 1}`;
       xLabels.push(`
         <g transform="translate(${x.toFixed(1)}, ${height - pad.bottom + 14})">
           <text x="0" y="0" fill="#cbd5e1" font-size="10.5" font-weight="600" text-anchor="middle">${timeLabel}</text>
@@ -4739,9 +4814,17 @@ export class LayerManager {
       const svgX = (clientX / rect.width) * width;
 
       const clampedSvgX = Math.max(pad.left, Math.min(pad.left + innerW, svgX));
-      const fraction = (clampedSvgX - pad.left) / innerW;
-      const idx = Math.round(fraction * (chartCoords.length - 1));
-      const target = chartCoords[Math.max(0, Math.min(chartCoords.length - 1, idx))];
+
+      let closest = chartCoords[0];
+      let minDiff = Math.abs(chartCoords[0].x - clampedSvgX);
+      for (let i = 1; i < chartCoords.length; i++) {
+        const diff = Math.abs(chartCoords[i].x - clampedSvgX);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = chartCoords[i];
+        }
+      }
+      const target = closest;
 
       if (!target) return;
 
