@@ -70,13 +70,9 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      // Si el píxel es transparente o sin reflectividad (<30 opacidad), indicar sin precipitación
+      // Si el píxel es transparente o sin reflectividad (<30 opacidad), descartar (sin eco de radar)
       if (a < 30) {
-        return {
-          dbz: 0.0,
-          badgeColor: '#64748b',
-          rain_intensity: 'Sin precipitación (< 8 dBZ)'
-        };
+        return null;
       }
 
       // Paleta meteorológica oficial de RainLoc (valores dBZ, etiquetas y colores exactos)
@@ -102,6 +98,9 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      // Si el color no coincide razonablemente con la paleta de radar, descartar
+      if (minDistance > 18000) return null;
 
       return {
         dbz: bestMatch.dbz,
@@ -944,56 +943,59 @@ export class MultiLayerInspector {
 
         if (inRadarArea) {
           // 1. Detección instantánea en el cliente desde el raster canvas (0ms de latencia)
-          // Esto garantiza que el valor y color mostrados coinciden exactamente con el píxel visual bajo el cursor
+          // Solo detecta puntos donde exista eco de precipitación real (dBZ > 0)
           const instantPixel = this._getInstantRadarPixel(lat, lng);
 
           // 2. Comprobar si hay valor float de alta precisión en caché para la misma celda de cuadrícula
-          // (tolerancia fina < 0.005° ~ 500m para evitar usar valores de celdas adyacentes)
           const cached = this._lastRadarLookup &&
             Math.abs(this._lastRadarLookup.lat - lat) < 0.005 &&
             Math.abs(this._lastRadarLookup.lng - lng) < 0.005;
 
-          if (instantPixel || cached) {
-            const dbzVal = (cached && this._lastRadarLookup.dbz !== null && this._lastRadarLookup.dbz !== undefined)
+          const hasValidEcho = (instantPixel && instantPixel.dbz > 0) || (cached && this._lastRadarLookup && this._lastRadarLookup.dbz > 0);
+
+          if (hasValidEcho) {
+            const dbzVal = (cached && this._lastRadarLookup && this._lastRadarLookup.dbz !== null && this._lastRadarLookup.dbz !== undefined && this._lastRadarLookup.dbz > 0)
               ? this._lastRadarLookup.dbz
               : (instantPixel ? instantPixel.dbz : 0);
 
-            const label = (cached && this._lastRadarLookup.rain_intensity)
-              ? this._lastRadarLookup.rain_intensity
-              : (instantPixel ? instantPixel.rain_intensity : 'Sin lluvia');
+            if (dbzVal > 0) {
+              const label = (cached && this._lastRadarLookup && this._lastRadarLookup.rain_intensity)
+                ? this._lastRadarLookup.rain_intensity
+                : (instantPixel ? instantPixel.rain_intensity : 'Precipitación');
 
-            const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
+              const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
 
-            let stMode = 'Compuesto Mixto (Corto 0.5º + Largo)';
-            if (this.layerManager.currentRadarMode === 'short_range') {
-              stMode = 'Corto Alcance 0.5º (Doppler ≤145km)';
-            } else if (this.layerManager.currentRadarMode === 'long_range') {
-              stMode = 'Largo Alcance (OPERA / 250km)';
-            } else if (this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId) {
-              stMode = `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId} (0.5º)`;
-            }
+              let stMode = 'Compuesto Mixto (Corto 0.5º + Largo)';
+              if (this.layerManager.currentRadarMode === 'short_range') {
+                stMode = 'Corto Alcance 0.5º (Doppler ≤145km)';
+              } else if (this.layerManager.currentRadarMode === 'long_range') {
+                stMode = 'Largo Alcance (OPERA / 250km)';
+              } else if (this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId) {
+                stMode = `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId} (0.5º)`;
+              }
 
-            sections.push({
-              type: "radar",
-              title: "Radar Meteorológico (AEMET/OPERA)",
-              headerColor: "#0284c7",
-              icon: "📡",
-              name: `Intensidad: ${dbzVal.toFixed(1)} dBZ`,
-              badge: `${dbzVal.toFixed(0)} dBZ`,
-              badgeBg: badgeBg,
-              badgeColor: "#ffffff",
-              details: `
-                <div style="font-size: 0.76rem; color: #f8fafc; font-weight: 600;">
-                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
-                  ${label}
-                </div>
-                <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Producto: ${stMode}</div>
-              `
-            });
+              sections.push({
+                type: "radar",
+                title: "Radar Meteorológico (AEMET/OPERA)",
+                headerColor: "#0284c7",
+                icon: "📡",
+                name: `Intensidad: ${dbzVal.toFixed(1)} dBZ`,
+                badge: `${dbzVal.toFixed(0)} dBZ`,
+                badgeBg: badgeBg,
+                badgeColor: "#ffffff",
+                details: `
+                  <div style="font-size: 0.76rem; color: #f8fafc; font-weight: 600;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
+                    ${label}
+                  </div>
+                  <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Producto: ${stMode}</div>
+                `
+              });
 
-            // Disparar consulta de calibración fina con debounce si no está en cache y hay reflectividad
-            if (!cached && dbzVal > 0) {
-              this._debouncedFetchDbz(lat, lng, "composite", "");
+              // Disparar consulta de calibración fina con debounce si no está en cache
+              if (!cached) {
+                this._debouncedFetchDbz(lat, lng, "composite", "");
+              }
             }
           }
         }
