@@ -678,10 +678,6 @@ export class LayerManager {
    * Helper para reutilizar un único canvas de sondeo (probe) compartido para el cursor inspector en escritorio
    */
   _updateSharedProbeCanvas(offscreenImg, bounds, stepOrTimestep, validText, extraProps = {}) {
-    // En móviles / pantallas táctiles sin puntero hover, evitar crear canvas por completo
-    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: none)').matches) {
-      return null;
-    }
     try {
       if (!this._sharedProbeCanvas) {
         this._sharedProbeCanvas = document.createElement('canvas');

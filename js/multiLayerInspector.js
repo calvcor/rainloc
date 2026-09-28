@@ -70,8 +70,14 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      // Si el píxel es transparente o sin reflectividad (<30 opacidad), no hay precipitación
-      if (a < 30) return null;
+      // Si el píxel es transparente o sin reflectividad (<30 opacidad), indicar sin precipitación
+      if (a < 30) {
+        return {
+          dbz: 0.0,
+          badgeColor: '#64748b',
+          rain_intensity: 'Sin precipitación (< 8 dBZ)'
+        };
+      }
 
       // Paleta meteorológica oficial de RainLoc (valores dBZ, etiquetas y colores exactos)
       const palette = [
@@ -958,8 +964,8 @@ export class MultiLayerInspector {
               `
             });
 
-            // Disparar consulta de calibración fina con debounce si no está en cache
-            if (!cached) {
+            // Disparar consulta de calibración fina con debounce si no está en cache y hay reflectividad
+            if (!cached && dbzVal > 0) {
               this._debouncedFetchDbz(lat, lng, "composite", "");
             }
           }
