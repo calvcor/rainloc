@@ -260,8 +260,13 @@ export class CuencasLayer {
   }
 
   _isTouchDevice() {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        return false;
+      }
+    }
     return (
-      window.matchMedia('(pointer: coarse)').matches ||
+      (typeof window !== 'undefined' && window.matchMedia && (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches)) ||
       ('ontouchstart' in window) ||
       (navigator.maxTouchPoints > 0)
     );

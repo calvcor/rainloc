@@ -4615,6 +4615,16 @@ body {
   }
 }
 
+/* En PC con ratón y cursor fino, ocultar estrictamente la tarjeta táctil y el pin */
+@media (hover: hover) and (pointer: fine) {
+  .mobile-inspector-sheet {
+    display: none !important;
+  }
+  .rainloc-inspect-marker-wrapper {
+    display: none !important;
+  }
+}
+
 
 
 

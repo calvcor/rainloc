@@ -549,8 +549,13 @@ export class MultiLayerInspector {
 
 
   _isTouchDevice() {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        return false;
+      }
+    }
     return (
-      window.matchMedia('(pointer: coarse)').matches ||
+      (typeof window !== 'undefined' && window.matchMedia && (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches)) ||
       ('ontouchstart' in window) ||
       (navigator.maxTouchPoints > 0)
     );
@@ -563,7 +568,7 @@ export class MultiLayerInspector {
     this.map.on("mousemove", (e) => this._onMouseMove(e));
     this.map.on("mouseout", (e) => this._onMouseOut(e));
 
-    // Escuchar toque / click sobre el mapa para modo interactivo persistente (Móvil, iPad, Tablets, PC)
+    // Escuchar toque / click sobre el mapa para modo interactivo persistente (Móvil, iPad, Tablets)
     this.map.on("click", (e) => this._onMapClick(e));
 
     // Inicializar eventos de la tarjeta móvil / tablet inferior
@@ -618,6 +623,9 @@ export class MultiLayerInspector {
   _onMapClick(e) {
     if (!e || !e.latlng) return;
 
+    // En PC de escritorio con ratón/puntero fino, el click no debe abrir la tarjeta táctil ni crear pin
+    if (!this._isTouchDevice()) return;
+
     // Si se hizo click en un marcador interactivo o elemento con su propio modal, ignorar
     if (e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopInspector || e.originalEvent._stopBasinClick)) {
       return;
@@ -632,7 +640,7 @@ export class MultiLayerInspector {
       }
     }
 
-    // Inspección puntual persistente con marcador y tarjeta
+    // Inspección puntual persistente con marcador y tarjeta (solo táctil)
     this.inspectAtLatLng(e.latlng, true);
   }
 
@@ -1536,9 +1544,9 @@ export class MultiLayerInspector {
       }
     }
 
-    // Si hay secciones coincidentes, renderizar tooltip unificado o tarjeta persistente
+    // Si hay secciones coincidentes, renderizar tooltip unificado (PC) o tarjeta persistente (Táctil)
     if (sections.length > 0) {
-      if (this._isTouchDevice() || isExplicit) {
+      if (this._isTouchDevice()) {
         this._renderMobileInspectorSheet(latlng, sections);
         this._setInspectionMarker(latlng);
         this._closeTooltip();
@@ -1547,13 +1555,15 @@ export class MultiLayerInspector {
       }
     } else {
       this._closeTooltip();
-      if ((this._isTouchDevice() || isExplicit) && isExplicit) {
+      if (this._isTouchDevice() && isExplicit) {
         this.closeMobileInspector();
       }
     }
   }
 
   _renderMobileInspectorSheet(latlng, sections) {
+    if (!this._isTouchDevice()) return;
+
     const sheet = document.getElementById('mobile-inspector-sheet');
     const counterEl = document.getElementById('mobile-inspector-counter');
     const coordsEl = document.getElementById('mobile-inspector-coords');
@@ -1711,7 +1721,7 @@ export class MultiLayerInspector {
   }
 
   _setInspectionMarker(latlng) {
-    if (!latlng || !this.map) return;
+    if (!latlng || !this.map || !this._isTouchDevice()) return;
 
     if (!this.inspectionMarker) {
       const inspectIcon = L.divIcon({
