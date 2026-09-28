@@ -259,10 +259,19 @@ export class CuencasLayer {
     this._hoveredFeatureId = null;
   }
 
+  _isTouchMode() {
+    return (
+      ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+      window.innerWidth <= 768
+    );
+  }
+
   /**
    * Manejador de evento mouseover (resalte dinámico de cuenca y actualización de UI)
    */
   _onMouseOver(e, feature, layer) {
+    if (this._isTouchMode()) return;
+
     const props = feature.properties || {};
     const sistema = props.NomSistExp || 'Default';
     const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
@@ -279,6 +288,8 @@ export class CuencasLayer {
    * Manejador de evento mouseout (restauración inmediata del estilo original)
    */
   _onMouseOut(e, feature, layer) {
+    if (this._isTouchMode()) return;
+
     this.clearHoverHighlight(feature.id);
 
     // Resetear información en el panel HUD
@@ -302,6 +313,12 @@ export class CuencasLayer {
       ) {
         return;
       }
+    }
+
+    // En móvil táctil, delegar en la inspección unificada por bottom sheet persistente
+    if (this._isTouchMode() && window.RainLoc && window.RainLoc.multiInspector) {
+      window.RainLoc.multiInspector.inspectAtLatLng(e.latlng, true);
+      return;
     }
     const props = feature.properties || {};
     const sistema = props.NomSistExp || 'Demarcación CHJ';

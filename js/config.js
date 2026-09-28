@@ -280,7 +280,7 @@ export const CONFIG = {
     'escul': { id: 'escul', name: 'Valencia / Cullera', province: 'Valencia', lat: 39.1864, lon: -0.2520, range_km: 240, short_range_km: 145, alt_m: 236 },
     'espma': { id: 'espma', name: 'Murcia / Cabezo de la Plata', province: 'Murcia', lat: 37.9940, lon: -0.9940, range_km: 240, short_range_km: 145, alt_m: 460 },
     'espmb': { id: 'espmb', name: 'Mallorca / Puig de Randa', province: 'Illes Balears', lat: 39.5290, lon: 2.9230, range_km: 240, short_range_km: 145, alt_m: 543 },
-    'esast': { id: 'esast', name: 'Asturias / El Vidural', province: 'Asturias', lat: 43.3420, lon: -6.5210, range_km: 240, short_range_km: 145, alt_m: 850 },
+    'esast': { id: 'esast', name: 'Asturias / Salas', province: 'Asturias', lat: 43.3420, lon: -6.5210, range_km: 240, short_range_km: 145, alt_m: 850 },
     'escor': { id: 'escor', name: 'A Coruña / Lousame', province: 'A Coruña', lat: 42.8360, lon: -8.8470, range_km: 240, short_range_km: 145, alt_m: 680 }
   }
 };

@@ -214,6 +214,9 @@ export class UIManager {
    */
   openMobileDrawer(drawerName) {
     this.closeMobileDrawers();
+    if (window.RainLoc && window.RainLoc.multiInspector) {
+      window.RainLoc.multiInspector.closeMobileInspector();
+    }
 
     if (drawerName === 'layers') {
       if (this.layersDrawer) {

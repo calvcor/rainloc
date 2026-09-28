@@ -48,9 +48,9 @@ SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
     "esatn": {"name": "Gran Canaria / Artenara", "province": "Las Palmas", "lat": 28.0188, "lon": -15.6145, "range_km": 240, "alt_m": 1777, "aemet_code": "ca"},
     # Radares en proceso de modernización o volcado a ORD (disponibles en AEMET OpenData)
     "escul": {"name": "Valencia / Cullera", "province": "Valencia", "lat": 39.1864, "lon": -0.2520, "range_km": 240, "alt_m": 236, "aemet_code": "va"},
-    "espma": {"name": "Murcia / Cabezo de la Plata", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460, "aemet_code": "pm"},
+    "espma": {"name": "Murcia / Cabezo de la Plata", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460, "aemet_code": "mu"},
     "espmb": {"name": "Mallorca / Puig de Randa", "province": "Illes Balears", "lat": 39.5290, "lon": 2.9230, "range_km": 240, "alt_m": 543, "aemet_code": "pm"},
-    "esast": {"name": "Asturias / El Vidural", "province": "Asturias", "lat": 43.3420, "lon": -6.5210, "range_km": 240, "alt_m": 850, "aemet_code": "as"},
+    "esast": {"name": "Asturias / Salas", "province": "Asturias", "lat": 43.3420, "lon": -6.5210, "range_km": 240, "alt_m": 850, "aemet_code": "as"},
     "escor": {"name": "A Coruña / Lousame", "province": "A Coruña", "lat": 42.8360, "lon": -8.8470, "range_km": 240, "alt_m": 680, "aemet_code": "co"}
 }
 

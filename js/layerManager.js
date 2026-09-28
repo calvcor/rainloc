@@ -3317,6 +3317,9 @@ export class LayerManager {
    * Abre el modal de evolución histórica del caudal y consulta la API
    */
   async openCaudalHistoryModal(props, initialHours = 24, cachedNearbyEntities = null) {
+    if (window.RainLoc && window.RainLoc.multiInspector) {
+      window.RainLoc.multiInspector.closeMobileInspector();
+    }
     const backdrop = document.getElementById('caudal-modal-backdrop');
     if (!backdrop) return;
 
@@ -4229,6 +4232,9 @@ export class LayerManager {
    * Abre el modal de evolución histórica del embalse y consulta la API
    */
   async openEmbalseHistoryModal(props, initialHours = 24, cachedNearbyEntities = null) {
+    if (window.RainLoc && window.RainLoc.multiInspector) {
+      window.RainLoc.multiInspector.closeMobileInspector();
+    }
     const backdrop = document.getElementById('embalse-modal-backdrop');
     if (!backdrop) return;
 
@@ -4706,6 +4712,9 @@ export class LayerManager {
    * Abre el Modal de Hidrograma y Volumen de Cuenca
    */
   async openBasinHydroModal(basinId, basinProps = {}, selectedModel = null) {
+    if (window.RainLoc && window.RainLoc.multiInspector) {
+      window.RainLoc.multiInspector.closeMobileInspector();
+    }
     const backdrop = document.getElementById('basin-hydro-modal-backdrop');
     if (!backdrop) return;
 

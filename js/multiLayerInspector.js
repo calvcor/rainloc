@@ -35,6 +35,10 @@ export class MultiLayerInspector {
     // Cache espacial e in-flight tracker para consultas de precisión milimétrica en modelos (ECMWF, GFS, AROME)
     this._modelValuesCache = new Map();
     this._modelRequestsInFlight = new Set();
+
+    // Estado para modo móvil táctil persistente (Tap-to-Inspect)
+    this.inspectionMarker = null;
+    this._activeMobileLatLng = null;
   }
 
   /**
@@ -538,12 +542,25 @@ export class MultiLayerInspector {
 
 
 
+  _isTouchMode() {
+    return (
+      ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+      window.innerWidth <= 768
+    );
+  }
+
   init() {
     if (!this.map) return;
 
-    // Escuchar movimiento del cursor global sobre el mapa
+    // Escuchar movimiento del cursor global sobre el mapa (Escritorio / Ratón)
     this.map.on("mousemove", (e) => this._onMouseMove(e));
     this.map.on("mouseout", () => this._onMouseOut());
+
+    // Escuchar toque / click sobre el mapa para modo móvil táctil persistente (Tap-to-Inspect)
+    this.map.on("click", (e) => this._onMapClick(e));
+
+    // Inicializar eventos de la tarjeta móvil inferior
+    this._initMobileSheetEvents();
   }
 
   setCuencasLayer(cuencasLayer) {
@@ -555,17 +572,21 @@ export class MultiLayerInspector {
   }
 
   _onMouseMove(e) {
+    if (this._isTouchMode()) return;
+
     this._lastLatLng = e.latlng;
 
     // Throttle ligero (16ms ~ 60fps) para máxima suavidad sin sobrecargar la CPU
     if (this._hoverThrottle) return;
     this._hoverThrottle = requestAnimationFrame(() => {
-      this._inspectPoint(this._lastLatLng);
+      this._inspectPoint(this._lastLatLng, false);
       this._hoverThrottle = null;
     });
   }
 
   _onMouseOut() {
+    if (this._isTouchMode()) return;
+
     this._closeTooltip();
     if (this.uiManager) {
       this.uiManager.resetHoverInfo();
@@ -573,10 +594,37 @@ export class MultiLayerInspector {
     this._clearCuencaHover();
   }
 
+  _onMapClick(e) {
+    if (!e || !e.latlng) return;
+
+    // Si se hizo click en un marcador interactivo o elemento con su propio modal, ignorar
+    if (e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopInspector || e.originalEvent._stopBasinClick)) {
+      return;
+    }
+    if (e.originalEvent && e.originalEvent.target) {
+      const el = e.originalEvent.target;
+      if (
+        (el.classList && (el.classList.contains('caudal-marker') || el.classList.contains('embalse-marker') || el.classList.contains('saih-lluvia-marker'))) ||
+        (el.closest && (el.closest('.caudal-marker') || el.closest('.embalse-marker') || el.closest('.saih-lluvia-marker') || el.closest('.mobile-inspector-sheet') || el.closest('.leaflet-popup')))
+      ) {
+        return;
+      }
+    }
+
+    if (this._isTouchMode()) {
+      this.inspectAtLatLng(e.latlng, true);
+    }
+  }
+
+  inspectAtLatLng(latlng, isExplicit = false) {
+    if (!latlng) return;
+    this._inspectPoint(latlng, isExplicit);
+  }
+
   /**
    * Realiza la intersección geométrica del punto con todas las capas activas
    */
-  _inspectPoint(latlng) {
+  _inspectPoint(latlng, isExplicit = false) {
     if (!latlng || !this.map) return;
 
     const lat = latlng.lat;
@@ -644,7 +692,10 @@ export class MultiLayerInspector {
         name: subsistema,
         badge: sistema,
         badgeBg: color,
-        details: detailsContent
+        details: detailsContent,
+        basinId: cuencaFound.feature.id,
+        basinProps: props,
+        featureLayer: cuencaFound.layer
       });
 
       // Actualizar estilo hover de la cuenca
@@ -906,7 +957,7 @@ export class MultiLayerInspector {
         const caudalesGroup = this.layerManager.layers["saih_caudales"];
         if (caudalesGroup) {
           let closestStation = null;
-          let minPixDist = 20; // Tolerancia de 20px en pantalla para detección precisa en hover
+          let minPixDist = this._isTouchMode() ? 32 : 20; // Tolerancia ampliada en móvil táctil
 
           caudalesGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -972,6 +1023,7 @@ export class MultiLayerInspector {
               badge: `${alertLevel}`,
               badgeBg: badgeBg,
               badgeColor: "#ffffff",
+              station: closestStation,
               details: `
                 <div class="unified-caudal-block">
                   <div style="color:#cbd5e1; font-size:0.75rem;">${closestStation.variable || 'Caudal'}</div>
@@ -990,7 +1042,7 @@ export class MultiLayerInspector {
         const embalsesGroup = this.layerManager.layers["saih_embalses"];
         if (embalsesGroup) {
           let closestEmbalse = null;
-          let minPixDist = 24; // Tolerancia más amplia para embalses (iconos más grandes)
+          let minPixDist = this._isTouchMode() ? 36 : 24; // Tolerancia más amplia para embalses (iconos más grandes)
 
           embalsesGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -1062,6 +1114,7 @@ export class MultiLayerInspector {
               badge: `${pctText}`,
               badgeBg: pctColor,
               badgeColor: "#ffffff",
+              station: closestEmbalse,
               details: `
                 <div class="unified-embalse-block">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
@@ -1087,7 +1140,7 @@ export class MultiLayerInspector {
         const lluviasGroup = this.layerManager.layers["saih_lluvias"];
         if (lluviasGroup) {
           let closestPluvio = null;
-          let minPixDist = 18; // Tolerancia fina para pluviómetros
+          let minPixDist = this._isTouchMode() ? 28 : 18; // Tolerancia fina para pluviómetros
 
           lluviasGroup.eachLayer((child) => {
             const checkLayer = (l) => {
@@ -1161,6 +1214,7 @@ export class MultiLayerInspector {
               badge: badgeText,
               badgeBg: badgeBg,
               badgeColor: "#ffffff",
+              station: closestPluvio,
               details: `
                 <div class="unified-lluvia-block">
                   <div style="font-size:0.72rem; color:#cbd5e1; margin-bottom:2px;">Lluvia acumulada:</div>
@@ -1462,12 +1516,238 @@ export class MultiLayerInspector {
       }
     }
 
-    // Si hay secciones coincidentes, renderizar tooltip unificado
+    // Si hay secciones coincidentes, renderizar tooltip unificado o tarjeta móvil persistente
     if (sections.length > 0) {
-      this._renderUnifiedTooltip(latlng, sections);
+      if (this._isTouchMode() || isExplicit) {
+        this._renderMobileInspectorSheet(latlng, sections);
+        this._setInspectionMarker(latlng);
+        this._closeTooltip();
+      } else {
+        this._renderUnifiedTooltip(latlng, sections);
+      }
     } else {
       this._closeTooltip();
+      if (this._isTouchMode() && isExplicit) {
+        this.closeMobileInspector();
+      }
     }
+  }
+
+  _renderMobileInspectorSheet(latlng, sections) {
+    const sheet = document.getElementById('mobile-inspector-sheet');
+    const counterEl = document.getElementById('mobile-inspector-counter');
+    const coordsEl = document.getElementById('mobile-inspector-coords');
+    const bodyEl = document.getElementById('mobile-inspector-body');
+
+    if (!sheet || !bodyEl) return;
+
+    this._activeMobileLatLng = latlng;
+
+    if (counterEl) {
+      counterEl.textContent = `${sections.length} ${sections.length === 1 ? 'capa detectada' : 'capas superpuestas'}`;
+    }
+
+    if (coordsEl) {
+      coordsEl.textContent = `${latlng.lat.toFixed(4)}°, ${latlng.lng.toFixed(4)}°`;
+    }
+
+    let html = '';
+    sections.forEach((sec) => {
+      const headerColor = sec.headerColor || sec.badgeBg || '#38bdf8';
+      const badgeBg = sec.badgeBg || 'rgba(56, 189, 248, 0.18)';
+      const badgeColor = sec.badgeColor || '#fff';
+
+      let actionsHtml = '';
+      if (sec.type === 'cuenca' && sec.basinId) {
+        actionsHtml = `
+          <div class="mobile-inspector-actions-row">
+            <button type="button" class="mobile-inspector-btn-action btn-action-primary" data-action="hydro" data-basin-id="${sec.basinId}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+              Ver Hidrograma (hm³)
+            </button>
+            <button type="button" class="mobile-inspector-btn-action" data-action="zoom-basin" data-basin-id="${sec.basinId}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              Centrar Cuenca
+            </button>
+          </div>
+        `;
+      } else if (sec.type === 'caudal' && sec.station) {
+        actionsHtml = `
+          <div class="mobile-inspector-actions-row">
+            <button type="button" class="mobile-inspector-btn-action btn-action-primary" data-action="caudal-modal" data-station-code="${sec.station.codigo || ''}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              Ver Gráfica de Caudal
+            </button>
+          </div>
+        `;
+      } else if (sec.type === 'embalse' && sec.station) {
+        actionsHtml = `
+          <div class="mobile-inspector-actions-row">
+            <button type="button" class="mobile-inspector-btn-action btn-action-primary" data-action="embalse-modal" data-station-code="${sec.station.codigo || ''}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
+              Ver Evolución Embalse
+            </button>
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="mobile-inspector-section section-${sec.type}" style="border-left-color: ${headerColor};">
+          <div class="mobile-inspector-sec-header">
+            <div class="mobile-inspector-sec-title-group">
+              <span class="mobile-inspector-sec-icon">${sec.icon}</span>
+              <span class="mobile-inspector-sec-title" style="color: ${headerColor};">${sec.title}</span>
+            </div>
+            ${sec.badge ? `<span class="mobile-inspector-sec-badge" style="background:${badgeBg}; color:${badgeColor};">${sec.badge}</span>` : ''}
+          </div>
+          <div class="mobile-inspector-sec-name">${sec.name}</div>
+          ${sec.details ? `<div class="mobile-inspector-sec-details">${sec.details}</div>` : ''}
+          ${actionsHtml}
+        </div>
+      `;
+    });
+
+    bodyEl.innerHTML = html;
+
+    // Vincular interactividad a los botones de acción contextuales
+    bodyEl.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const action = btn.getAttribute('data-action');
+        if (action === 'hydro') {
+          const basinId = btn.getAttribute('data-basin-id');
+          const cuencaSec = sections.find((s) => s.type === 'cuenca' && s.basinId == basinId);
+          const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
+          if (this.layerManager && basinId) {
+            this.layerManager.openBasinHydroModal(basinId, cuencaSec ? cuencaSec.basinProps : {}, activeModel);
+          }
+        } else if (action === 'zoom-basin') {
+          const basinId = btn.getAttribute('data-basin-id');
+          const cuencaSec = sections.find((s) => s.type === 'cuenca' && s.basinId == basinId);
+          if (cuencaSec && cuencaSec.featureLayer && this.mapManager) {
+            this.mapManager.fitBounds(cuencaSec.featureLayer.getBounds());
+          }
+        } else if (action === 'caudal-modal') {
+          const caudalSec = sections.find((s) => s.type === 'caudal' && s.station);
+          if (caudalSec && caudalSec.station && this.layerManager) {
+            this.layerManager.openCaudalHistoryModal(caudalSec.station, 24);
+          }
+        } else if (action === 'embalse-modal') {
+          const embalseSec = sections.find((s) => s.type === 'embalse' && s.station);
+          if (embalseSec && embalseSec.station && this.layerManager) {
+            this.layerManager.openEmbalseHistoryModal(embalseSec.station, 24);
+          }
+        }
+      });
+    });
+
+    sheet.style.display = 'flex';
+    requestAnimationFrame(() => {
+      sheet.classList.add('is-open');
+    });
+  }
+
+  _initMobileSheetEvents() {
+    const closeBtn = document.getElementById('btn-close-mobile-inspector');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeMobileInspector();
+      });
+    }
+
+    const sheet = document.getElementById('mobile-inspector-sheet');
+    const handleBar = sheet ? sheet.querySelector('.mobile-inspector-handle-bar') : null;
+    if (sheet && handleBar) {
+      let touchStartY = 0;
+      let touchDiffY = 0;
+
+      handleBar.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches[0]) {
+          touchStartY = e.touches[0].clientY;
+          touchDiffY = 0;
+        }
+      }, { passive: true });
+
+      handleBar.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches[0]) {
+          touchDiffY = e.touches[0].clientY - touchStartY;
+          if (touchDiffY > 0) {
+            sheet.style.transform = `translateY(${touchDiffY}px)`;
+          }
+        }
+      }, { passive: true });
+
+      handleBar.addEventListener('touchend', () => {
+        if (touchDiffY > 45) {
+          this.closeMobileInspector();
+        } else {
+          sheet.style.transform = '';
+        }
+        touchStartY = 0;
+        touchDiffY = 0;
+      });
+    }
+  }
+
+  _setInspectionMarker(latlng) {
+    if (!latlng || !this.map) return;
+
+    if (!this.inspectionMarker) {
+      const inspectIcon = L.divIcon({
+        className: 'rainloc-inspect-marker-wrapper',
+        html: `
+          <div class="rainloc-inspect-pin">
+            <div class="inspect-pin-pulse"></div>
+            <div class="inspect-pin-dot"></div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+
+      this.inspectionMarker = L.marker(latlng, {
+        icon: inspectIcon,
+        interactive: true,
+        zIndexOffset: 1200
+      }).addTo(this.map);
+
+      this.inspectionMarker.on('click', (e) => {
+        if (e.originalEvent) {
+          e.originalEvent._stopInspector = true;
+          L.DomEvent.stopPropagation(e);
+        }
+        this.closeMobileInspector();
+      });
+    } else {
+      this.inspectionMarker.setLatLng(latlng);
+      if (!this.map.hasLayer(this.inspectionMarker)) {
+        this.inspectionMarker.addTo(this.map);
+      }
+    }
+  }
+
+  _removeInspectionMarker() {
+    if (this.inspectionMarker && this.map.hasLayer(this.inspectionMarker)) {
+      this.map.removeLayer(this.inspectionMarker);
+    }
+  }
+
+  closeMobileInspector() {
+    const sheet = document.getElementById('mobile-inspector-sheet');
+    if (sheet) {
+      sheet.classList.remove('is-open');
+      sheet.style.transform = '';
+      setTimeout(() => {
+        sheet.style.display = 'none';
+      }, 220);
+    }
+    this._removeInspectionMarker();
+    this._clearCuencaHover();
+    if (this.uiManager) {
+      this.uiManager.resetHoverInfo();
+    }
+    this._activeMobileLatLng = null;
   }
 
   _renderUnifiedTooltip(latlng, sections) {

@@ -3,7 +3,7 @@
  * Estrategia Network-First con Auto-Update para evitar atascos de caché
  */
 
-const CACHE_NAME = 'rainloc-pwa-v3.14';
+const CACHE_NAME = 'rainloc-pwa-v3.15';
 
 // Recursos críticos para el funcionamiento offline básico
 const PRECACHE_ASSETS = [
@@ -28,6 +28,7 @@ const PRECACHE_ASSETS = [
   './js/ui.js',
   './js/layerManager.js',
   './js/cuencas.js',
+  './js/multiLayerInspector.js',
   './js/storage.js',
   './js/pwa.js'
 ];

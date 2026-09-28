@@ -36,7 +36,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.14">
+  <link rel="stylesheet" href="styles.css?v=3.15">
 </head>
 <body>
 
@@ -367,6 +367,28 @@
       </div>
     </aside>
 
+    <!-- Inspector Móvil Flotante Persistente (Tap-to-Inspect) -->
+    <section id="mobile-inspector-sheet" class="mobile-inspector-sheet" style="display: none;" aria-live="polite" aria-label="Inspector de capas">
+      <div class="mobile-inspector-handle-bar">
+        <div class="mobile-inspector-handle"></div>
+      </div>
+      <header class="mobile-inspector-header">
+        <div class="mobile-inspector-title-group">
+          <span class="mobile-inspector-badge" id="mobile-inspector-counter">1 capa</span>
+          <span class="mobile-inspector-coords" id="mobile-inspector-coords">--°, --°</span>
+        </div>
+        <button type="button" class="mobile-inspector-close-btn" id="btn-close-mobile-inspector" aria-label="Cerrar inspector" title="Cerrar inspector">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+      <div class="mobile-inspector-body" id="mobile-inspector-body">
+        <!-- Tarjetas de capas generadas dinámicamente -->
+      </div>
+    </section>
+
     <!-- Backdrop de Oscurecimiento para Drawers Móviles -->
     <div id="mobile-drawer-backdrop" class="mobile-drawer-backdrop" style="display: none;" aria-hidden="true"></div>
 
@@ -670,6 +692,6 @@
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=3.14"></script>
+  <script type="module" src="./js/app.js?v=3.15"></script>
 </body>
 </html>
