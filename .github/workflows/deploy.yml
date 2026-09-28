@@ -52,4 +52,39 @@ jobs:
         run: |
           echo "🧹 Limpiando imágenes obsoletas..."
           docker image prune -f
+
+      - name: Purge Cloudflare Cache
+        if: success()
+        env:
+          CF_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          # 1. Obtener credenciales desde GitHub Secrets o desde $HOME/.rainloc.env / .env
+          ZONE_ID="$CF_ZONE_ID"
+          API_TOKEN="$CF_API_TOKEN"
+
+          if [ -z "$ZONE_ID" ] && [ -f .env ]; then
+            ZONE_ID=$(grep -E '^CLOUDFLARE_ZONE_ID=' .env | cut -d '=' -f2- | tr -d '"' || true)
+          fi
+          if [ -z "$API_TOKEN" ] && [ -f .env ]; then
+            API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d '=' -f2- | tr -d '"' || true)
+          fi
+
+          # 2. Si están configuradas, ejecutar la purga de caché
+          if [ -n "$ZONE_ID" ] && [ -n "$API_TOKEN" ]; then
+            echo "⚡ Purgando caché de Cloudflare (Zone ID: ${ZONE_ID:0:6}...)..."
+            RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/purge_cache" \
+              -H "Authorization: Bearer ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"purge_everything":true}')
+
+            if echo "$RESPONSE" | grep -q '"success":true'; then
+              echo "✅ Caché de Cloudflare purgada con éxito (purge_everything: true)."
+            else
+              echo "⚠️ Respuesta de Cloudflare: $RESPONSE"
+            fi
+          else
+            echo "ℹ️ CLOUDFLARE_ZONE_ID o CLOUDFLARE_API_TOKEN no configurados. Saltando purga."
+          fi
+
           echo "✅ Despliegue completado con éxito."
