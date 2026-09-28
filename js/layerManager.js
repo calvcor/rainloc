@@ -4530,7 +4530,8 @@ export class LayerManager {
 
     if (statVol) statVol.textContent = vol !== null ? `${vol.toFixed(2)} hm³` : '-- hm³';
     if (statTime) {
-      const timeStr = props.ultima_hora ? formatMadridDateTime(new Date(props.ultima_hora)) : '';
+      const timeRaw = props.fecha_comunicacion || props.ultima_hora;
+      const timeStr = timeRaw ? (timeRaw.includes('T') || timeRaw.includes('-') ? formatMadridDateTime(new Date(timeRaw)) : timeRaw) : '';
       statTime.textContent = timeStr ? `Última lectura: ${timeStr}` : 'Tiempo real';
     }
     if (statCap) statCap.textContent = cap !== null ? `${cap.toFixed(2)} hm³` : '-- hm³';
