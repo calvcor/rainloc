@@ -754,6 +754,153 @@ export function formatGemTimestamp(metadata) {
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
 }
 
+/**
+ * Retorna la configuración de intervalos de antigüedad y estilos para una ventana de rayos dada en minutos.
+ * @param {number} windowMinutes (1, 5, 15)
+ */
+export function getLightningAgeTiers(windowMinutes = 15) {
+  const win = Math.min(15, Math.max(1, parseInt(windowMinutes, 10) || 15));
+  if (win <= 1) {
+    return {
+      windowMinutes: 1,
+      maxAgeSec: 60,
+      tiers: [
+        {
+          id: 'tier1',
+          maxSec: 20,
+          label: '0-20s',
+          fillColor: '#ffff00',
+          color: '#000000',
+          radius: 3.5,
+          weight: 1.2,
+          fillOpacity: 1.0,
+          pulse: true
+        },
+        {
+          id: 'tier2',
+          maxSec: 40,
+          label: '20-40s',
+          fillColor: '#ff9900',
+          color: '#000000',
+          radius: 2.8,
+          weight: 1.0,
+          fillOpacity: 0.95,
+          pulse: false
+        },
+        {
+          id: 'tier3',
+          maxSec: 60,
+          label: '40-60s',
+          fillColor: '#ef4444',
+          color: '#000000',
+          radius: 2.2,
+          weight: 0.8,
+          fillOpacity: 0.90,
+          pulse: false
+        }
+      ]
+    };
+  } else if (win <= 5) {
+    return {
+      windowMinutes: 5,
+      maxAgeSec: 300,
+      tiers: [
+        {
+          id: 'tier1',
+          maxSec: 60,
+          label: '0-1m',
+          fillColor: '#ffff00',
+          color: '#000000',
+          radius: 3.5,
+          weight: 1.2,
+          fillOpacity: 1.0,
+          pulse: true
+        },
+        {
+          id: 'tier2',
+          maxSec: 180,
+          label: '1-3m',
+          fillColor: '#ff9900',
+          color: '#000000',
+          radius: 2.8,
+          weight: 1.0,
+          fillOpacity: 0.95,
+          pulse: false
+        },
+        {
+          id: 'tier3',
+          maxSec: 300,
+          label: '3-5m',
+          fillColor: '#ef4444',
+          color: '#000000',
+          radius: 2.2,
+          weight: 0.8,
+          fillOpacity: 0.90,
+          pulse: false
+        }
+      ]
+    };
+  } else {
+    // 15 min por defecto
+    return {
+      windowMinutes: 15,
+      maxAgeSec: 900,
+      tiers: [
+        {
+          id: 'tier1',
+          maxSec: 120,
+          label: '0-2m',
+          fillColor: '#ffff00',
+          color: '#000000',
+          radius: 3.5,
+          weight: 1.2,
+          fillOpacity: 1.0,
+          pulse: true
+        },
+        {
+          id: 'tier2',
+          maxSec: 420,
+          label: '2-7m',
+          fillColor: '#ff9900',
+          color: '#000000',
+          radius: 2.8,
+          weight: 1.0,
+          fillOpacity: 0.95,
+          pulse: false
+        },
+        {
+          id: 'tier3',
+          maxSec: 900,
+          label: '7-15m',
+          fillColor: '#ef4444',
+          color: '#000000',
+          radius: 2.2,
+          weight: 0.8,
+          fillOpacity: 0.90,
+          pulse: false
+        }
+      ]
+    };
+  }
+}
+
+/**
+ * Obtiene el tier de estilo correspondiente a la antigüedad en segundos según la configuración de la ventana.
+ * @param {number} ageSec
+ * @param {Object} windowConfig
+ * @returns {Object|null}
+ */
+export function getLightningTierForAge(ageSec, windowConfig) {
+  if (!windowConfig || !Array.isArray(windowConfig.tiers)) return null;
+  for (const tier of windowConfig.tiers) {
+    if (ageSec <= tier.maxSec) {
+      return tier;
+    }
+  }
+  return null;
+}
+
+
 
 
 

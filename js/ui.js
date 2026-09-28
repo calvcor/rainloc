@@ -1,4 +1,4 @@
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatPredictionInstant } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatPredictionInstant, getLightningAgeTiers } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class UIManager {
@@ -661,9 +661,7 @@ export class UIManager {
               <div class="lightning-age-legend">
                 <span class="age-legend-title">Antigüedad del impacto:</span>
                 <div class="age-pills-row">
-                  <span class="age-pill"><span class="dot" style="background:#ffff00; box-shadow: 0 0 6px #ffff00;"></span> 0-1m</span>
-                  <span class="age-pill"><span class="dot" style="background:#ff9900;"></span> 1-5m</span>
-                  <span class="age-pill"><span class="dot" style="background:#ef4444;"></span> 5-15m</span>
+                  ${getLightningAgeTiers(prefs.lightningWindow || 15).tiers.map(t => `<span class="age-pill"><span class="dot" style="background:${t.fillColor}; ${t.pulse ? `box-shadow: 0 0 6px ${t.fillColor};` : ''}"></span> ${t.label}</span>`).join('')}
                 </div>
               </div>
             </div>
@@ -967,6 +965,20 @@ export class UIManager {
   }
 
   /**
+   * Actualiza dinámicamente la leyenda de colores de rayos según la ventana seleccionada
+   * @param {number} windowMinutes 
+   */
+  updateLightningLegend(windowMinutes) {
+    const pillsRow = document.querySelector('.lightning-age-legend .age-pills-row');
+    if (!pillsRow) return;
+    const tierConfig = getLightningAgeTiers(windowMinutes);
+    pillsRow.innerHTML = tierConfig.tiers.map(t => {
+      const shadow = t.pulse ? `box-shadow: 0 0 6px ${t.fillColor};` : '';
+      return `<span class="age-pill"><span class="dot" style="background:${t.fillColor}; ${shadow}"></span> ${t.label}</span>`;
+    }).join('');
+  }
+
+  /**
    * Vincula listeners interactivos a los switches y sliders de capas
    */
   _bindLayerCardEvents() {
@@ -1078,6 +1090,7 @@ export class UIManager {
       radarLightningWindow.addEventListener('change', (e) => {
         const minutes = parseInt(e.target.value, 10);
         StorageManager.save({ lightningWindow: minutes });
+        this.updateLightningLegend(minutes);
         if (this.layerManager) {
           this.layerManager.setLightningWindow(minutes);
         }

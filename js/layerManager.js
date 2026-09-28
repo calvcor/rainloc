@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp, formatGemTimestamp } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -18,6 +18,8 @@ export class LayerManager {
     this.showRadarLightning = Boolean(prefs.showRadarLightning);
     this.showRadarCoverage = Boolean(prefs.showRadarCoverage);
     this.lightningEventSource = null;
+    this._activeLightningStrikes = new Map(); // key -> { strike, marker, tierId }
+    this._lightningAgingInterval = null;
     this.radarEventSource = null;
     this.ecmwfEventSource = null;
     this.gfsEventSource = null;
@@ -264,6 +266,8 @@ export class LayerManager {
       if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
         this.map.removeLayer(this.lightningGroup);
       }
+      this._stopLightningSSE();
+      this._stopLightningAgingTimer();
       if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
         this.map.removeLayer(this.radarCoverageGroup);
       }
@@ -305,8 +309,13 @@ export class LayerManager {
         if (state && state.active) {
           this._showLayerOnMap(def.id);
           if (def.id === 'radar') {
-            if (this.showRadarLightning && this.lightningGroup && !this.map.hasLayer(this.lightningGroup)) {
-              this.map.addLayer(this.lightningGroup);
+            if (this.showRadarLightning) {
+              if (this.lightningGroup && !this.map.hasLayer(this.lightningGroup)) {
+                this.map.addLayer(this.lightningGroup);
+              }
+              this.reloadLightningLayer();
+              this._startLightningSSE();
+              this._startLightningAgingTimer();
             }
             if (this.showRadarCoverage && this.radarCoverageGroup) {
               if (!this.map.hasLayer(this.radarCoverageGroup)) {
@@ -348,6 +357,8 @@ export class LayerManager {
         if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
           this.map.removeLayer(this.lightningGroup);
         }
+        this._stopLightningSSE();
+        this._stopLightningAgingTimer();
         if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
           this.map.removeLayer(this.radarCoverageGroup);
         }
@@ -523,6 +534,7 @@ export class LayerManager {
             }
             this.reloadLightningLayer();
             this._startLightningSSE();
+            this._startLightningAgingTimer();
           }
           if (this.showRadarCoverage) {
             if (!this.map.hasLayer(this.radarCoverageGroup)) {
@@ -544,6 +556,7 @@ export class LayerManager {
             this.map.removeLayer(this.radarCoverageGroup);
           }
           this._stopLightningSSE();
+          this._stopLightningAgingTimer();
         }
       }
     }
@@ -576,6 +589,16 @@ export class LayerManager {
           subLayer.setStyle({
             opacity: op,
             fillOpacity: op * 0.5
+          });
+        }
+      });
+    }
+
+    if (layerId === 'radar' && this.lightningGroup) {
+      this.lightningGroup.eachLayer((marker) => {
+        if (marker.setStyle) {
+          marker.setStyle({
+            fillOpacity: Math.min(1.0, op * 0.95)
           });
         }
       });
@@ -2452,12 +2475,17 @@ export class LayerManager {
       }
       this.reloadLightningLayer();
       this._startLightningSSE();
+      this._startLightningAgingTimer();
     } else {
       this.lightningGroup.clearLayers();
+      if (this._activeLightningStrikes) {
+        this._activeLightningStrikes.clear();
+      }
       if (this.map.hasLayer(this.lightningGroup)) {
         this.map.removeLayer(this.lightningGroup);
       }
       this._stopLightningSSE();
+      this._stopLightningAgingTimer();
     }
   }
 
@@ -2467,6 +2495,11 @@ export class LayerManager {
    */
   setLightningWindow(minutes) {
     this.lightningWindowMinutes = Math.min(15, Math.max(1, parseInt(minutes, 10) || 15));
+    if (this.uiManager && this.uiManager.updateLightningLegend) {
+      this.uiManager.updateLightningLegend(this.lightningWindowMinutes);
+    }
+    // Purgar inmediatamente impactos que superen la nueva ventana
+    this._tickLightningAging();
     this.reloadLightningLayer();
   }
 
@@ -2518,6 +2551,112 @@ export class LayerManager {
   }
 
   /**
+   * Inicia el temporizador de envejecimiento de rayos en tiempo real (cada 1s)
+   */
+  _startLightningAgingTimer() {
+    if (this._lightningAgingInterval) return;
+    this._lightningAgingInterval = setInterval(() => {
+      this._tickLightningAging();
+    }, 1000);
+  }
+
+  /**
+   * Detiene el temporizador de envejecimiento de rayos
+   */
+  _stopLightningAgingTimer() {
+    if (this._lightningAgingInterval) {
+      clearInterval(this._lightningAgingInterval);
+      this._lightningAgingInterval = null;
+    }
+  }
+
+  /**
+   * Envejece, actualiza estilos cromáticos y elimina automáticamente los rayos expirados
+   */
+  _tickLightningAging() {
+    if (!this.showRadarLightning || !this._activeLightningStrikes) return;
+
+    const nowSec = Date.now() / 1000;
+    const tierConfig = getLightningAgeTiers(this.lightningWindowMinutes);
+    const radarOpacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 1.0;
+
+    let changed = false;
+
+    for (const [key, item] of this._activeLightningStrikes.entries()) {
+      const ageSec = Math.max(0, nowSec - item.strike.time);
+
+      // Si ha superado la ventana seleccionada, eliminar del mapa y del almacenamiento
+      if (ageSec > tierConfig.maxAgeSec) {
+        if (item.marker) {
+          this.lightningGroup.removeLayer(item.marker);
+        }
+        this._activeLightningStrikes.delete(key);
+        changed = true;
+        continue;
+      }
+
+      const currentTier = getLightningTierForAge(ageSec, tierConfig);
+      if (!currentTier) {
+        if (item.marker) {
+          this.lightningGroup.removeLayer(item.marker);
+        }
+        this._activeLightningStrikes.delete(key);
+        changed = true;
+        continue;
+      }
+
+      // Si el rayo cambió de tramo de antigüedad (p.ej. Tier 1 -> Tier 2 -> Tier 3), actualizar estilo visual
+      if (item.tierId !== currentTier.id) {
+        item.tierId = currentTier.id;
+        if (item.marker) {
+          item.marker.setStyle({
+            color: currentTier.color,
+            weight: currentTier.weight,
+            fillColor: currentTier.fillColor,
+            fillOpacity: Math.min(1.0, radarOpacity * currentTier.fillOpacity)
+          });
+          item.marker.setRadius(currentTier.radius);
+
+          const el = item.marker.getElement ? item.marker.getElement() : null;
+          if (el) {
+            if (currentTier.pulse) {
+              el.classList.add('lightning-pulse-active');
+            } else {
+              el.classList.remove('lightning-pulse-active');
+            }
+          }
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this._updateLightningStats();
+    }
+  }
+
+  /**
+   * Actualiza las estadísticas del indicador de rayos (r/min y total en cobertura)
+   */
+  _updateLightningStats() {
+    const statsBadgeEl = document.getElementById('radar-lightning-stats');
+    if (!statsBadgeEl) return;
+
+    const count = this._activeLightningStrikes ? this._activeLightningStrikes.size : 0;
+    const nowSec = Date.now() / 1000;
+    let strikesLastMin = 0;
+    if (this._activeLightningStrikes) {
+      for (const item of this._activeLightningStrikes.values()) {
+        if (nowSec - item.strike.time <= 60) {
+          strikesLastMin++;
+        }
+      }
+    }
+
+    statsBadgeEl.innerHTML = `⚡ <strong>${strikesLastMin}</strong> r/min · Cobertura: <strong>${count}</strong>`;
+  }
+
+  /**
    * Carga los rayos recientes desde la API de FastAPI dentro de la cobertura del radar
    * @param {L.LayerGroup} layerGroup 
    * @param {number} opacity 
@@ -2525,7 +2664,7 @@ export class LayerManager {
   async _loadLightningLayer(layerGroup, opacity = 1.0) {
     if (!this.showRadarLightning) return;
 
-    const url = `${CONFIG.apiBaseUrl}/lightning/recent?minutes=${this.lightningWindowMinutes}`;
+    const url = `${CONFIG.apiBaseUrl}/lightning/recent?minutes=${this.lightningWindowMinutes}&_t=${Date.now()}`;
 
     try {
       const response = await fetch(url);
@@ -2539,15 +2678,11 @@ export class LayerManager {
       const validStrikes = allStrikes.filter(s => this._isStrikeInCoverage(s));
 
       this._renderLightningStrikes(layerGroup, validStrikes, opacity);
+      this._updateLightningStats();
 
-      // Actualizar badge de estadísticas en la tarjeta de radar
-      const statsBadgeEl = document.getElementById('radar-lightning-stats');
-      if (statsBadgeEl) {
-        statsBadgeEl.innerHTML = `⚡ <strong>${data.rate_per_min || 0}</strong> r/min · Cobertura: <strong>${validStrikes.length}</strong>`;
-      }
-
-      // Conectar stream SSE si no está activo
+      // Conectar stream SSE si no está activo y arrancar temporizador de envejecimiento
       this._startLightningSSE();
+      this._startLightningAgingTimer();
     } catch (err) {
       console.warn('No se pudieron cargar los datos de rayos para la cobertura del radar:', err);
     }
@@ -2558,76 +2693,77 @@ export class LayerManager {
    */
   _renderLightningStrikes(layerGroup, strikes, opacity = 1.0) {
     layerGroup.clearLayers();
+    if (!this._activeLightningStrikes) {
+      this._activeLightningStrikes = new Map();
+    } else {
+      this._activeLightningStrikes.clear();
+    }
+
+    const tierConfig = getLightningAgeTiers(this.lightningWindowMinutes);
+    const nowSec = Date.now() / 1000;
 
     strikes.forEach(strike => {
-      const marker = this._createStrikeMarker(strike, opacity);
+      const ageSec = strike.age_sec !== undefined ? strike.age_sec : Math.max(0, nowSec - strike.time);
+      if (ageSec > tierConfig.maxAgeSec) return;
+
+      const tier = getLightningTierForAge(ageSec, tierConfig);
+      if (!tier) return;
+
+      const marker = this._createStrikeMarker(strike, tier, opacity);
       if (marker) {
         layerGroup.addLayer(marker);
+        const key = `${strike.time}_${strike.lat}_${strike.lon}`;
+        this._activeLightningStrikes.set(key, {
+          strike: strike,
+          marker: marker,
+          tierId: tier.id
+        });
       }
     });
   }
 
   /**
-   * Genera un CircleMarker para un impacto de rayo (ventana máx 15 min, tamaño compacto y alto contraste)
+   * Genera un CircleMarker para un impacto de rayo con escala cromática adaptada a la ventana
    */
-  _createStrikeMarker(strike, opacity = 1.0) {
-    const ageSec = strike.age_sec !== undefined ? strike.age_sec : (Date.now() / 1000 - strike.time);
-    let color = '#000000'; // Borde negro nítido para máximo contraste sobre cualquier fondo
-    let fillColor = '#ef4444'; // 5-15 min: Rojo vivo
-    let radius = 2.2;
-    let weight = 0.8;
-    let fillOpacity = Math.min(1.0, opacity * 0.90);
-    let className = 'lightning-marker';
-
-    if (ageSec < 60) {
-      // 0-1 min: Amarillo eléctrico puro (#ffff00) con resplandor
-      fillColor = '#ffff00';
-      color = '#000000';
-      radius = 3.5;
-      weight = 1.2;
-      fillOpacity = 1.0;
-      className = 'lightning-marker lightning-pulse-active';
-    } else if (ageSec < 300) {
-      // 1-5 min: Naranja brillante
-      fillColor = '#ff9900';
-      color = '#000000';
-      radius = 2.8;
-      weight = 1.0;
-      fillOpacity = Math.min(1.0, opacity * 0.95);
-    }
-
+  _createStrikeMarker(strike, tier, opacity = 1.0) {
     const marker = L.circleMarker([strike.lat, strike.lon], {
       pane: 'lluviasPane',
-      radius: radius,
-      color: color,
-      weight: weight,
-      fillColor: fillColor,
-      fillOpacity: fillOpacity,
-      className: className
+      radius: tier.radius,
+      color: tier.color,
+      weight: tier.weight,
+      fillColor: tier.fillColor,
+      fillOpacity: Math.min(1.0, opacity * tier.fillOpacity),
+      className: tier.pulse ? 'lightning-marker lightning-pulse-active' : 'lightning-marker'
     });
 
     const strikeDate = new Date(strike.time * 1000);
     const dateFormatted = formatMadridDateTime(strikeDate);
     const sec = String(strikeDate.getSeconds()).padStart(2, '0');
     const exactTime = `${dateFormatted}:${sec}`;
-    const ageMin = Math.round(ageSec / 60);
     const polarityStr = strike.pol === 1 ? 'Positiva (+)' : 'Negativa (-)';
 
-    marker.bindPopup(`
-      <div class="lightning-popup">
-        <div class="lightning-popup-header">
-          <span class="lightning-icon">⚡</span>
-          <strong>Descarga Eléctrica</strong>
+    marker.bindPopup(() => {
+      const currentAgeSec = Math.max(0, Math.floor(Date.now() / 1000 - strike.time));
+      const ageText = currentAgeSec < 60
+        ? `Hace ${currentAgeSec}s`
+        : `Hace ~${Math.round(currentAgeSec / 60)} min (${currentAgeSec}s)`;
+
+      return `
+        <div class="lightning-popup">
+          <div class="lightning-popup-header">
+            <span class="lightning-icon">⚡</span>
+            <strong>Descarga Eléctrica</strong>
+          </div>
+          <div class="lightning-popup-body">
+            <div><strong>Hora local:</strong> ${exactTime}</div>
+            <div><strong>Antigüedad:</strong> ${ageText}</div>
+            <div><strong>Polaridad:</strong> ${polarityStr}</div>
+            <div><strong>Estaciones:</strong> ${strike.stations || 0} receptoras</div>
+            <div><strong>Coordenadas:</strong> [${strike.lat.toFixed(4)}, ${strike.lon.toFixed(4)}]</div>
+          </div>
         </div>
-        <div class="lightning-popup-body">
-          <div><strong>Hora local:</strong> ${exactTime}</div>
-          <div><strong>Antigüedad:</strong> ${ageSec < 60 ? 'Hace menos de 1 min' : `Hace ~${ageMin} min`}</div>
-          <div><strong>Polaridad:</strong> ${polarityStr}</div>
-          <div><strong>Estaciones:</strong> ${strike.stations || 0} receptoras</div>
-          <div><strong>Coordenadas:</strong> [${strike.lat.toFixed(4)}, ${strike.lon.toFixed(4)}]</div>
-        </div>
-      </div>
-    `, { className: 'lightning-leaflet-popup' });
+      `;
+    }, { className: 'lightning-leaflet-popup' });
 
     return marker;
   }
@@ -2649,10 +2785,29 @@ export class LayerManager {
           const strike = JSON.parse(event.data);
           if (this.showRadarLightning && this._isStrikeInCoverage(strike)) {
             const radarOpacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 1.0;
-            strike.age_sec = 0;
-            const marker = this._createStrikeMarker(strike, radarOpacity);
-            if (marker) {
-              this.lightningGroup.addLayer(marker);
+            const tierConfig = getLightningAgeTiers(this.lightningWindowMinutes);
+            const nowSec = Date.now() / 1000;
+            const ageSec = Math.max(0, nowSec - strike.time);
+
+            if (ageSec <= tierConfig.maxAgeSec) {
+              const tier = getLightningTierForAge(ageSec, tierConfig);
+              if (tier) {
+                const key = `${strike.time}_${strike.lat}_${strike.lon}`;
+                if (!this._activeLightningStrikes) this._activeLightningStrikes = new Map();
+
+                if (!this._activeLightningStrikes.has(key)) {
+                  const marker = this._createStrikeMarker(strike, tier, radarOpacity);
+                  if (marker) {
+                    this.lightningGroup.addLayer(marker);
+                    this._activeLightningStrikes.set(key, {
+                      strike: strike,
+                      marker: marker,
+                      tierId: tier.id
+                    });
+                    this._updateLightningStats();
+                  }
+                }
+              }
             }
           }
         } catch (e) {
@@ -2666,6 +2821,18 @@ export class LayerManager {
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para rayos:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de rayos
+   */
+  _stopLightningSSE() {
+    if (this.lightningEventSource) {
+      try {
+        this.lightningEventSource.close();
+      } catch (e) {}
+      this.lightningEventSource = null;
     }
   }
 
