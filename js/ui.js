@@ -695,6 +695,12 @@ export class UIManager {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         </button>
       `;
+    } else if (layer.id === 'gem_gdps') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="gem-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
     }
 
     // Sub-controles específicos para el Modelo ECMWF IFS (Reproductor temporal y selector total/intervalo)
@@ -1087,6 +1093,7 @@ export class UIManager {
     this._setupModelSyncButton('gfs-sync-btn', 'gfs');
     this._setupModelSyncButton('arome-sync-btn', 'arome');
     this._setupModelSyncButton('icon-sync-btn', 'icon');
+    this._setupModelSyncButton('gem-sync-btn', 'gem');
     this._setupPredictionBannerSync();
   }
 
@@ -1149,6 +1156,9 @@ export class UIManager {
           if (this.layerManager.isLayerActive('icon_eu')) {
             syncTasks.push(this.layerManager.triggerModelSync('icon'));
           }
+          if (this.layerManager.isLayerActive('gem_gdps')) {
+            syncTasks.push(this.layerManager.triggerModelSync('gem'));
+          }
 
           if (syncTasks.length === 0) {
             // Si ninguno está activo visible, sincroniza todos
@@ -1156,7 +1166,8 @@ export class UIManager {
               this.layerManager.triggerModelSync('ecmwf'),
               this.layerManager.triggerModelSync('gfs'),
               this.layerManager.triggerModelSync('arome'),
-              this.layerManager.triggerModelSync('icon')
+              this.layerManager.triggerModelSync('icon'),
+              this.layerManager.triggerModelSync('gem')
             ]);
           } else {
             await Promise.all(syncTasks);
