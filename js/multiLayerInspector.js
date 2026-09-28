@@ -141,9 +141,7 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      if (a < 30) {
-        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
-      }
+      if (a < 30) return null;
 
       const palette = [
         { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
@@ -171,6 +169,8 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
 
       return {
         mm: bestMatch.mm,
@@ -213,9 +213,7 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      if (a < 30) {
-        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
-      }
+      if (a < 30) return null;
 
       const palette = [
         { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
@@ -243,6 +241,8 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
 
       return {
         mm: bestMatch.mm,
@@ -285,9 +285,7 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      if (a < 30) {
-        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
-      }
+      if (a < 30) return null;
 
       const palette = [
         { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
@@ -315,6 +313,8 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
 
       return {
         mm: bestMatch.mm,
@@ -357,9 +357,7 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      if (a < 30) {
-        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
-      }
+      if (a < 30) return null;
 
       const palette = [
         { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
@@ -387,6 +385,8 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
 
       return {
         mm: bestMatch.mm,
@@ -429,9 +429,7 @@ export class MultiLayerInspector {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
 
-      if (a < 30) {
-        return { mm: 0.0, label: 'Sin precipitación (<0.1 mm)', color: '#94a3b8', step, type, validText };
-      }
+      if (a < 30) return null;
 
       const palette = [
         { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
@@ -459,6 +457,8 @@ export class MultiLayerInspector {
           bestMatch = p;
         }
       }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
 
       return {
         mm: bestMatch.mm,
@@ -1301,36 +1301,28 @@ export class MultiLayerInspector {
         const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (3h)';
         const cacheKey = this._getModelCacheKey('ecmwf', latlng.lat, latlng.lng, step, type);
         const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
 
-        if (ecmwfPixel || hasCachedVal) {
-          const isZeroRain = !hasCachedVal && ecmwfPixel && ecmwfPixel.mm === 0;
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && ecmwfPixel && ecmwfPixel.mm >= 0.1);
+
+        if (hasRain) {
           const validText = (ecmwfPixel && ecmwfPixel.validText) || `+${step}h`;
           let displayValHtml = '';
           let labelHtml = '';
           let badgeBg = '#059669';
 
-          if (hasCachedVal) {
-            const exactMm = this._modelValuesCache.get(cacheKey);
+          if (hasCachedVal && exactMm !== null) {
             const meta = this._getModelIntensityMeta(exactMm);
             badgeBg = meta.color;
-            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
-          } else if (isZeroRain) {
-            badgeBg = '#94a3b8';
-            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
-          } else if (ecmwfPixel && ecmwfPixel.mm > 0) {
+          } else if (ecmwfPixel && ecmwfPixel.mm >= 0.1) {
             badgeBg = ecmwfPixel.color;
             const displayMmStr = ecmwfPixel.mm >= 1 ? `~${ecmwfPixel.mm.toFixed(0)}` : `~${ecmwfPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${ecmwfPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ecmwfPixel.label}`;
             this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel.mm);
-          } else {
-            badgeBg = '#059669';
-            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
-            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1361,36 +1353,28 @@ export class MultiLayerInspector {
         const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (3h)';
         const cacheKey = this._getModelCacheKey('gfs', latlng.lat, latlng.lng, step, type);
         const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
 
-        if (gfsPixel || hasCachedVal) {
-          const isZeroRain = !hasCachedVal && gfsPixel && gfsPixel.mm === 0;
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && gfsPixel && gfsPixel.mm >= 0.1);
+
+        if (hasRain) {
           const validText = (gfsPixel && gfsPixel.validText) || `+${step}h`;
           let displayValHtml = '';
           let labelHtml = '';
           let badgeBg = '#2563eb';
 
-          if (hasCachedVal) {
-            const exactMm = this._modelValuesCache.get(cacheKey);
+          if (hasCachedVal && exactMm !== null) {
             const meta = this._getModelIntensityMeta(exactMm);
             badgeBg = meta.color;
-            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
-          } else if (isZeroRain) {
-            badgeBg = '#94a3b8';
-            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
-          } else if (gfsPixel && gfsPixel.mm > 0) {
+          } else if (gfsPixel && gfsPixel.mm >= 0.1) {
             badgeBg = gfsPixel.color;
             const displayMmStr = gfsPixel.mm >= 1 ? `~${gfsPixel.mm.toFixed(0)}` : `~${gfsPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gfsPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gfsPixel.label}`;
             this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel.mm);
-          } else {
-            badgeBg = '#2563eb';
-            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
-            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1421,36 +1405,28 @@ export class MultiLayerInspector {
         const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (1h)';
         const cacheKey = this._getModelCacheKey('arome', latlng.lat, latlng.lng, step, type);
         const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
 
-        if (aromePixel || hasCachedVal) {
-          const isZeroRain = !hasCachedVal && aromePixel && aromePixel.mm === 0;
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && aromePixel && aromePixel.mm >= 0.1);
+
+        if (hasRain) {
           const validText = (aromePixel && aromePixel.validText) || `+${step}h`;
           let displayValHtml = '';
           let labelHtml = '';
           let badgeBg = '#8b5cf6';
 
-          if (hasCachedVal) {
-            const exactMm = this._modelValuesCache.get(cacheKey);
+          if (hasCachedVal && exactMm !== null) {
             const meta = this._getModelIntensityMeta(exactMm);
             badgeBg = meta.color;
-            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
-          } else if (isZeroRain) {
-            badgeBg = '#94a3b8';
-            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
-          } else if (aromePixel && aromePixel.mm > 0) {
+          } else if (aromePixel && aromePixel.mm >= 0.1) {
             badgeBg = aromePixel.color;
             const displayMmStr = aromePixel.mm >= 1 ? `~${aromePixel.mm.toFixed(0)}` : `~${aromePixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${aromePixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${aromePixel.label}`;
             this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel.mm);
-          } else {
-            badgeBg = '#8b5cf6';
-            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
-            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1481,36 +1457,28 @@ export class MultiLayerInspector {
         const typeLabel = type === 'total' ? 'Acumulado Total' : (step > 78 ? 'Intervalo (3h)' : 'Intervalo (1h)');
         const cacheKey = this._getModelCacheKey('icon', latlng.lat, latlng.lng, step, type);
         const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
 
-        if (iconPixel || hasCachedVal) {
-          const isZeroRain = !hasCachedVal && iconPixel && iconPixel.mm === 0;
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && iconPixel && iconPixel.mm >= 0.1);
+
+        if (hasRain) {
           const validText = (iconPixel && iconPixel.validText) || `+${step}h`;
           let displayValHtml = '';
           let labelHtml = '';
           let badgeBg = '#0284c7';
 
-          if (hasCachedVal) {
-            const exactMm = this._modelValuesCache.get(cacheKey);
+          if (hasCachedVal && exactMm !== null) {
             const meta = this._getModelIntensityMeta(exactMm);
             badgeBg = meta.color;
-            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
-          } else if (isZeroRain) {
-            badgeBg = '#94a3b8';
-            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
-          } else if (iconPixel && iconPixel.mm > 0) {
+          } else if (iconPixel && iconPixel.mm >= 0.1) {
             badgeBg = iconPixel.color;
             const displayMmStr = iconPixel.mm >= 1 ? `~${iconPixel.mm.toFixed(0)}` : `~${iconPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${iconPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${iconPixel.label}`;
             this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, iconPixel.mm);
-          } else {
-            badgeBg = '#0284c7';
-            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
-            this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1541,36 +1509,28 @@ export class MultiLayerInspector {
         const typeLabel = type === 'total' ? 'Acumulado Total' : 'Intervalo (3h)';
         const cacheKey = this._getModelCacheKey('gem', latlng.lat, latlng.lng, step, type);
         const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
 
-        if (gemPixel || hasCachedVal) {
-          const isZeroRain = !hasCachedVal && gemPixel && gemPixel.mm === 0;
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && gemPixel && gemPixel.mm >= 0.1);
+
+        if (hasRain) {
           const validText = (gemPixel && gemPixel.validText) || `+${step}h`;
           let displayValHtml = '';
           let labelHtml = '';
           let badgeBg = '#e11d48';
 
-          if (hasCachedVal) {
-            const exactMm = this._modelValuesCache.get(cacheKey);
+          if (hasCachedVal && exactMm !== null) {
             const meta = this._getModelIntensityMeta(exactMm);
             badgeBg = meta.color;
-            const displayMmStr = exactMm > 0 ? (exactMm < 1 ? exactMm.toFixed(2) : exactMm.toFixed(1)) : '0.0';
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
-          } else if (isZeroRain) {
-            badgeBg = '#94a3b8';
-            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
-          } else if (gemPixel && gemPixel.mm > 0) {
+          } else if (gemPixel && gemPixel.mm >= 0.1) {
             badgeBg = gemPixel.color;
             const displayMmStr = gemPixel.mm >= 1 ? `~${gemPixel.mm.toFixed(0)}` : `~${gemPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gemPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gemPixel.label}`;
             this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, gemPixel.mm);
-          } else {
-            badgeBg = '#e11d48';
-            displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
-            this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
