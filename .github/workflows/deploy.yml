@@ -26,10 +26,21 @@ jobs:
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
         run: |
-          # Si se ha configurado el secreto en GitHub, generar el .env localmente en el runner
+          # 1. Si se ha configurado el secreto en GitHub Secrets, generar el .env
           if [ -n "$AEMET_API_KEY" ]; then
             echo "AEMET_API_KEY=${AEMET_API_KEY}" > .env
             chmod 600 .env
+            echo "🔑 AEMET_API_KEY inyectada con éxito desde GitHub Secrets."
+          # 2. Si no está en Secrets, verificar si existe un .env persistente en el usuario del servidor (~/.rainloc.env)
+          elif [ -f "$HOME/.rainloc.env" ]; then
+            cp "$HOME/.rainloc.env" .env
+            chmod 600 .env
+            echo "🔑 AEMET_API_KEY cargada desde $HOME/.rainloc.env del servidor."
+          elif [ -f .env ]; then
+            echo "ℹ️ Usando .env preexistente en el workspace."
+          else
+            echo "⚠️ AVISO: No se detectó AEMET_API_KEY ni en GitHub Secrets ni en $HOME/.rainloc.env."
+            echo "⚠️ Los radares regionales de AEMET (Cullera, Murcia, Baleares, etc.) no estarán disponibles."
           fi
 
       - name: Deploy Services

@@ -15,7 +15,6 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - DEBUG=False
-      - AEMET_API_KEY=${AEMET_API_KEY:-}
     # El puerto 8000 NO se publica en el host. Solo es accesible internamente por Nginx.
     expose:
       - "8000"
