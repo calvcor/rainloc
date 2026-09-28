@@ -484,9 +484,10 @@ export class MultiLayerInspector {
           const data = await resp.json();
           if (data.dbz !== null && data.dbz !== undefined) {
             this._lastRadarLookup = { lat, lng, dbz: data.dbz, rain_intensity: data.rain_intensity };
-            // Forzar refresco inmediato si el cursor sigue en la misma celda (< 0.005° ~ 500m)
-            if (this._lastLatLng && Math.abs(this._lastLatLng.lat - lat) < 0.005 && Math.abs(this._lastLatLng.lng - lng) < 0.005) {
-              this._inspectPoint(this._lastLatLng);
+            // Forzar refresco inmediato si el cursor/tap sigue en la misma celda (< 0.08° ~ 8km)
+            const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
+            if (targetLatLng && Math.abs(targetLatLng.lat - lat) < 0.08 && Math.abs(targetLatLng.lng - lng) < 0.08) {
+              this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
             }
           }
         }
@@ -523,8 +524,14 @@ export class MultiLayerInspector {
       this._modelValuesCache.set(cacheKey, fallbackMm !== undefined ? fallbackMm : 0.0);
     } finally {
       this._modelRequestsInFlight.delete(cacheKey);
-      if (this._lastLatLng) {
-        this._inspectPoint(this._lastLatLng);
+      // Re-inspeccionar tanto en móvil/tablet (_activeMobileLatLng) como en PC (_lastLatLng)
+      const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
+      if (targetLatLng) {
+        const dLat = Math.abs(targetLatLng.lat - lat);
+        const dLng = Math.abs(targetLatLng.lng - lng);
+        if (dLat < 0.15 && dLng < 0.15) {
+          this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
+        }
       }
     }
   }
@@ -655,6 +662,11 @@ export class MultiLayerInspector {
   _inspectPoint(latlng, isExplicit = false) {
     if (!latlng || !this.map) return;
 
+    this._lastLatLng = latlng;
+    if (this._isTouchDevice() || isExplicit) {
+      this._activeMobileLatLng = latlng;
+    }
+
     const lat = latlng.lat;
     const lng = latlng.lng;
     const sections = [];
@@ -702,8 +714,13 @@ export class MultiLayerInspector {
             `;
           }
         } else {
-          // Precalentar caché en background
-          this.layerManager.fetchBasinHydrograph(activeModel, cuencaFound.feature.id);
+          // Precalentar caché en background y refrescar UI al finalizar
+          this.layerManager.fetchBasinHydrograph(activeModel, cuencaFound.feature.id).then(() => {
+            const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
+            if (targetLatLng) {
+              this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
+            }
+          });
         }
       }
 
@@ -1274,7 +1291,7 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.6 Modelos Numéricos (ECMWF IFS, GFS, AROME)
+      // 2.6 Modelos Numéricos (ECMWF IFS, GFS, AROME, ICON, GEM)
       if (this.layerManager.isLayerOnMap("ecmwf_ifs")) {
         const ecmwfPixel = this._getInstantEcmwfPixel(latlng.lat, latlng.lng);
         const step = (this.layerManager && this.layerManager.currentEcmwfStep) || 3;
@@ -1301,11 +1318,17 @@ export class MultiLayerInspector {
             badgeBg = '#94a3b8';
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else if (ecmwfPixel && ecmwfPixel.mm > 0) {
+            badgeBg = ecmwfPixel.color;
+            const displayMmStr = ecmwfPixel.mm >= 1 ? `~${ecmwfPixel.mm.toFixed(0)}` : `~${ecmwfPixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${ecmwfPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ecmwfPixel.label}`;
+            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel.mm);
           } else {
-            badgeBg = ecmwfPixel ? ecmwfPixel.color : '#059669';
+            badgeBg = '#059669';
             displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ecmwfPixel ? ecmwfPixel.label : 'Consultando modelo...'}`;
-            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel ? ecmwfPixel.mm : 0.0);
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
+            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1355,11 +1378,17 @@ export class MultiLayerInspector {
             badgeBg = '#94a3b8';
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else if (gfsPixel && gfsPixel.mm > 0) {
+            badgeBg = gfsPixel.color;
+            const displayMmStr = gfsPixel.mm >= 1 ? `~${gfsPixel.mm.toFixed(0)}` : `~${gfsPixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gfsPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gfsPixel.label}`;
+            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel.mm);
           } else {
-            badgeBg = gfsPixel ? gfsPixel.color : '#2563eb';
+            badgeBg = '#2563eb';
             displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gfsPixel ? gfsPixel.label : 'Consultando modelo...'}`;
-            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel ? gfsPixel.mm : 0.0);
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
+            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1409,11 +1438,17 @@ export class MultiLayerInspector {
             badgeBg = '#94a3b8';
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else if (aromePixel && aromePixel.mm > 0) {
+            badgeBg = aromePixel.color;
+            const displayMmStr = aromePixel.mm >= 1 ? `~${aromePixel.mm.toFixed(0)}` : `~${aromePixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${aromePixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${aromePixel.label}`;
+            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel.mm);
           } else {
-            badgeBg = aromePixel ? aromePixel.color : '#8b5cf6';
+            badgeBg = '#8b5cf6';
             displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${aromePixel ? aromePixel.label : 'Consultando modelo...'}`;
-            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel ? aromePixel.mm : 0.0);
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
+            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1463,11 +1498,17 @@ export class MultiLayerInspector {
             badgeBg = '#94a3b8';
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else if (iconPixel && iconPixel.mm > 0) {
+            badgeBg = iconPixel.color;
+            const displayMmStr = iconPixel.mm >= 1 ? `~${iconPixel.mm.toFixed(0)}` : `~${iconPixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${iconPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${iconPixel.label}`;
+            this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, iconPixel.mm);
           } else {
-            badgeBg = iconPixel ? iconPixel.color : '#0284c7';
+            badgeBg = '#0284c7';
             displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${iconPixel ? iconPixel.label : 'Consultando modelo...'}`;
-            this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, iconPixel ? iconPixel.mm : 0.0);
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
+            this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
@@ -1517,11 +1558,17 @@ export class MultiLayerInspector {
             badgeBg = '#94a3b8';
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: #94a3b8;">0.0 <span style="font-size: 0.70rem; font-weight: 400;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; margin-right: 4px;"></span>Sin precipitación (<0.1 mm)`;
+          } else if (gemPixel && gemPixel.mm > 0) {
+            badgeBg = gemPixel.color;
+            const displayMmStr = gemPixel.mm >= 1 ? `~${gemPixel.mm.toFixed(0)}` : `~${gemPixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gemPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gemPixel.label}`;
+            this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, gemPixel.mm);
           } else {
-            badgeBg = gemPixel ? gemPixel.color : '#e11d48';
+            badgeBg = '#e11d48';
             displayValHtml = `<span class="inspector-loading-val"><span class="inspector-spinner"></span> Obteniendo...</span>`;
-            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gemPixel ? gemPixel.label : 'Consultando modelo...'}`;
-            this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, gemPixel ? gemPixel.mm : 0.0);
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>Consultando modelo...`;
+            this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, 0.0);
           }
 
           sections.push({
