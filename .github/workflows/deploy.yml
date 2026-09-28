@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 # Evita despliegues concurrentes si se suben varios commits seguidos
 concurrency:
@@ -26,21 +27,27 @@ jobs:
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
         run: |
-          # 1. Si se ha configurado el secreto en GitHub Secrets, generar el .env
-          if [ -n "$AEMET_API_KEY" ]; then
-            echo "AEMET_API_KEY=${AEMET_API_KEY}" > .env
-            chmod 600 .env
-            echo "🔑 AEMET_API_KEY inyectada con éxito desde GitHub Secrets."
-          # 2. Si no está en Secrets, verificar si existe un .env persistente en el usuario del servidor (~/.rainloc.env)
-          elif [ -f "$HOME/.rainloc.env" ]; then
+          # 1. Si existe .rainloc.env en el usuario del servidor, usarlo como base
+          if [ -f "$HOME/.rainloc.env" ]; then
             cp "$HOME/.rainloc.env" .env
             chmod 600 .env
-            echo "🔑 AEMET_API_KEY cargada desde $HOME/.rainloc.env del servidor."
-          elif [ -f .env ]; then
-            echo "ℹ️ Usando .env preexistente en el workspace."
-          else
-            echo "⚠️ AVISO: No se detectó AEMET_API_KEY ni en GitHub Secrets ni en $HOME/.rainloc.env."
-            echo "⚠️ Los radares regionales de AEMET (Cullera, Murcia, Baleares, etc.) no estarán disponibles."
+            echo "📄 Archivo .env cargado desde $HOME/.rainloc.env del servidor."
+          fi
+
+          # 2. Si se ha configurado el secreto en GitHub Secrets, sobrescribir o añadir la variable
+          if [ -n "$AEMET_API_KEY" ]; then
+            if [ -f .env ]; then
+              sed -i.bak '/^AEMET_API_KEY=/d' .env && rm -f .env.bak
+              echo "AEMET_API_KEY=${AEMET_API_KEY}" >> .env
+            else
+              echo "AEMET_API_KEY=${AEMET_API_KEY}" > .env
+            fi
+            chmod 600 .env
+            echo "🔑 AEMET_API_KEY inyectada con éxito desde GitHub Secrets."
+          fi
+
+          if [ ! -f .env ]; then
+            echo "⚠️ AVISO: No se detectó archivo .env ni secretos configurados."
           fi
 
       - name: Deploy Services
@@ -59,15 +66,21 @@ jobs:
           CF_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          # 1. Obtener credenciales desde GitHub Secrets o desde $HOME/.rainloc.env / .env
+          # 1. Obtener credenciales desde GitHub Secrets, .env o $HOME/.rainloc.env
           ZONE_ID="$CF_ZONE_ID"
           API_TOKEN="$CF_API_TOKEN"
 
           if [ -z "$ZONE_ID" ] && [ -f .env ]; then
-            ZONE_ID=$(grep -E '^CLOUDFLARE_ZONE_ID=' .env | cut -d '=' -f2- | tr -d '"' || true)
+            ZONE_ID=$(grep -E '^CLOUDFLARE_ZONE_ID=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | xargs)
           fi
           if [ -z "$API_TOKEN" ] && [ -f .env ]; then
-            API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d '=' -f2- | tr -d '"' || true)
+            API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | xargs)
+          fi
+          if [ -z "$ZONE_ID" ] && [ -f "$HOME/.rainloc.env" ]; then
+            ZONE_ID=$(grep -E '^CLOUDFLARE_ZONE_ID=' "$HOME/.rainloc.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | xargs)
+          fi
+          if [ -z "$API_TOKEN" ] && [ -f "$HOME/.rainloc.env" ]; then
+            API_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' "$HOME/.rainloc.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | xargs)
           fi
 
           # 2. Si están configuradas, ejecutar la purga de caché
@@ -84,7 +97,7 @@ jobs:
               echo "⚠️ Respuesta de Cloudflare: $RESPONSE"
             fi
           else
-            echo "ℹ️ CLOUDFLARE_ZONE_ID o CLOUDFLARE_API_TOKEN no configurados. Saltando purga."
+            echo "ℹ️ CLOUDFLARE_ZONE_ID o CLOUDFLARE_API_TOKEN no encontrados. Saltando purga."
           fi
 
           echo "✅ Despliegue completado con éxito."
