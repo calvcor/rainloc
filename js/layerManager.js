@@ -631,7 +631,10 @@ export class LayerManager {
           
           if (this.uiManager && this.uiManager.updateLayerTimestamp) {
             let label = `Vigencia: <strong>${formatMadridDateTime(new Date())}</strong>`;
-            if (activePeriod === 'tomorrow') {
+            if (activePeriod === 'today') {
+              const countText = geojson.features.length === 1 ? '1 aviso' : `${geojson.features.length} avisos`;
+              label = `Vigencia: <strong>Hoy</strong> (${countText})`;
+            } else if (activePeriod === 'tomorrow') {
               const countText = geojson.features.length === 1 ? '1 aviso' : `${geojson.features.length} avisos`;
               label = `Vigencia: <strong>Mañana</strong> (${countText})`;
             } else if (activePeriod === 'after_tomorrow') {
@@ -644,7 +647,9 @@ export class LayerManager {
           // 0 avisos meteorológicos en vigor en este periodo
           if (this.uiManager && this.uiManager.updateLayerTimestamp) {
             let emptyLabel = 'Sin avisos activos ahora';
-            if (activePeriod === 'tomorrow') {
+            if (activePeriod === 'today') {
+              emptyLabel = 'Sin avisos para hoy';
+            } else if (activePeriod === 'tomorrow') {
               emptyLabel = 'Sin avisos para mañana';
             } else if (activePeriod === 'after_tomorrow') {
               emptyLabel = 'Sin avisos para pasado mañana';

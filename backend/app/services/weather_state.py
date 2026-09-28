@@ -116,8 +116,10 @@ class WeatherStateManager:
             period_mode = "all"
         else:
             raw_period = (period if isinstance(period, str) else "now").lower().strip()
-            if raw_period in ("now", "today", "active_now", "hoy"):
+            if raw_period in ("now", "active_now"):
                 period_mode = "now"
+            elif raw_period in ("today", "hoy"):
+                period_mode = "today"
             elif raw_period in ("tomorrow", "manana", "mañana"):
                 period_mode = "tomorrow"
             elif raw_period in ("after_tomorrow", "pasado", "day_after_tomorrow"):
@@ -162,6 +164,10 @@ class WeatherStateManager:
                 if period_mode == "now":
                     # Solo avisos en vigor exactamente AHORA
                     if onset <= now_utc <= expires:
+                        matched_features.append(f)
+                elif period_mode == "today":
+                    # Avisos activos ahora y restantes en el día de hoy
+                    if onset <= today_end and expires >= now_utc:
                         matched_features.append(f)
                 elif period_mode == "tomorrow":
                     # Avisos vigentes en cualquier intervalo de mañana
@@ -245,6 +251,7 @@ class WeatherStateManager:
 
         period_labels = {
             "now": "Activos ahora",
+            "today": f"Hoy ({today_start.strftime('%d/%m/%Y')})",
             "tomorrow": f"Mañana ({tomorrow_start.strftime('%d/%m/%Y')})",
             "after_tomorrow": f"Pasado mañana ({after_tomorrow_start.strftime('%d/%m/%Y')})",
             "all": "Todos los avisos del feed"
@@ -268,7 +275,7 @@ class WeatherStateManager:
 
     def compute_periods_summary(self) -> Dict[str, Any]:
         """
-        Calcula el resumen de avisos para cada periodo (ahora, mañana, pasado)
+        Calcula el resumen de avisos para cada periodo (ahora, hoy, mañana, pasado)
         incluyendo el conteo de avisos y el color/nivel de severidad máximo nacional.
         """
         all_features = self.aemet_warnings.get("features", [])
@@ -287,6 +294,7 @@ class WeatherStateManager:
 
         periods = {
             "now": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": "Activos ahora"},
+            "today": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": f"Hoy ({today_start.strftime('%d/%m')})"},
             "tomorrow": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": f"Mañana ({tomorrow_start.strftime('%d/%m')})"},
             "after_tomorrow": {"count": 0, "max_rank": 0, "max_severity": "none", "max_color": None, "label": f"Pasado ({after_tomorrow_start.strftime('%d/%m')})"},
         }
@@ -332,7 +340,7 @@ class WeatherStateManager:
                     elif color.lower() in ("#22c55e", "#16a34a"):
                         rank = 1
 
-                # 1. Comprobar "now"
+                # 1. Comprobar "now" (en vigor exactamente en este momento)
                 if onset <= now_utc <= expires:
                     p = periods["now"]
                     p["count"] += 1
@@ -341,7 +349,16 @@ class WeatherStateManager:
                         p["max_severity"] = rank_to_severity.get(rank, sev)
                         p["max_color"] = color or rank_to_color.get(rank)
 
-                # 2. Comprobar "tomorrow"
+                # 2. Comprobar "today" (activos ahora y restantes en el día de hoy)
+                if onset <= today_end and expires >= now_utc:
+                    p = periods["today"]
+                    p["count"] += 1
+                    if rank > p["max_rank"]:
+                        p["max_rank"] = rank
+                        p["max_severity"] = rank_to_severity.get(rank, sev)
+                        p["max_color"] = color or rank_to_color.get(rank)
+
+                # 3. Comprobar "tomorrow"
                 if onset <= tomorrow_end and expires >= tomorrow_start:
                     p = periods["tomorrow"]
                     p["count"] += 1
@@ -350,7 +367,7 @@ class WeatherStateManager:
                         p["max_severity"] = rank_to_severity.get(rank, sev)
                         p["max_color"] = color or rank_to_color.get(rank)
 
-                # 3. Comprobar "after_tomorrow"
+                # 4. Comprobar "after_tomorrow"
                 if onset <= after_tomorrow_end and expires >= after_tomorrow_start:
                     p = periods["after_tomorrow"]
                     p["count"] += 1

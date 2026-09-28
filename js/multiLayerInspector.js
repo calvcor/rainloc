@@ -801,7 +801,9 @@ export class MultiLayerInspector {
 
             const currentPeriod = this.layerManager.currentAemetPeriod || 'now';
             let periodLabel = "Activo";
-            if (currentPeriod === 'tomorrow') {
+            if (currentPeriod === 'today') {
+              periodLabel = "Hoy";
+            } else if (currentPeriod === 'tomorrow') {
               periodLabel = "Mañana";
             } else if (currentPeriod === 'after_tomorrow') {
               periodLabel = "Pasado";

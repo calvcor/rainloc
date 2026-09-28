@@ -52,7 +52,7 @@ export class StorageManager {
       radarStationId: 'esbnv', // Estación por defecto
       showRadarCoverage: false, // Mostrar áreas de cobertura de radar en mapa
       autoRefreshInterval: 180, // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
-      aemetPeriod: 'now' // 'now' | 'tomorrow' | 'after_tomorrow'
+      aemetPeriod: 'now' // 'now' | 'today' | 'tomorrow' | 'after_tomorrow'
     };
   }
 

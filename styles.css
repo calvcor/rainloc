@@ -1183,11 +1183,23 @@ body {
 
 .aemet-period-selector {
   display: flex;
+  flex-direction: column;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
-  padding: 2px;
-  gap: 2px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.aemet-period-row-top {
+  display: flex;
+  width: 100%;
+}
+
+.aemet-period-row-bottom {
+  display: flex;
+  width: 100%;
+  gap: 3px;
 }
 
 .aemet-period-btn {
@@ -1207,6 +1219,12 @@ body {
   align-items: center;
   justify-content: center;
   gap: 5px;
+}
+
+.aemet-period-btn-full {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.72rem;
 }
 
 .aemet-period-btn .aemet-btn-dot {

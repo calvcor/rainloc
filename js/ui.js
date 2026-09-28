@@ -803,16 +803,21 @@ export class UIManager {
       `;
     }
 
-    // Sub-controles específicos para Avisos AEMET (Selector de periodo: Activos ahora / Mañana / Pasado)
+    // Sub-controles específicos para Avisos AEMET (Selector de periodo: Activos ahora arriba, Hoy / Mañana / Pasado abajo)
     let aemetExtraControls = '';
     if (layer.id === 'aemet_warnings') {
       const selectedPeriod = (this.layerManager && this.layerManager.currentAemetPeriod) || prefs.aemetPeriod || 'now';
       aemetExtraControls = `
         <div class="aemet-subcontrols">
           <div class="aemet-period-selector" role="group" aria-label="Periodo de avisos AEMET">
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'now' ? 'active' : ''}" data-period="now" title="Avisos en vigor en este momento"><span class="aemet-btn-dot"></span>Activos ahora</button>
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'tomorrow' ? 'active' : ''}" data-period="tomorrow" title="Avisos previstos para mañana"><span class="aemet-btn-dot"></span>Mañana</button>
-            <button type="button" class="aemet-period-btn ${selectedPeriod === 'after_tomorrow' ? 'active' : ''}" data-period="after_tomorrow" title="Avisos previstos para pasado mañana"><span class="aemet-btn-dot"></span>Pasado</button>
+            <div class="aemet-period-row-top">
+              <button type="button" class="aemet-period-btn aemet-period-btn-full ${selectedPeriod === 'now' ? 'active' : ''}" data-period="now" title="Avisos en vigor en este momento"><span class="aemet-btn-dot"></span>Activos ahora</button>
+            </div>
+            <div class="aemet-period-row-bottom">
+              <button type="button" class="aemet-period-btn ${selectedPeriod === 'today' ? 'active' : ''}" data-period="today" title="Avisos activos y restantes en el día de hoy"><span class="aemet-btn-dot"></span>Hoy</button>
+              <button type="button" class="aemet-period-btn ${selectedPeriod === 'tomorrow' ? 'active' : ''}" data-period="tomorrow" title="Avisos previstos para mañana"><span class="aemet-btn-dot"></span>Mañana</button>
+              <button type="button" class="aemet-period-btn ${selectedPeriod === 'after_tomorrow' ? 'active' : ''}" data-period="after_tomorrow" title="Avisos previstos para pasado mañana"><span class="aemet-btn-dot"></span>Pasado</button>
+            </div>
           </div>
         </div>
       `;

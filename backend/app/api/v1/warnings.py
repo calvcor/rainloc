@@ -13,7 +13,7 @@ router = APIRouter(prefix="/warnings", tags=["Avisos Meteorológicos"])
 async def get_aemet_warnings(
     period: str = Query(
         "now",
-        description="Periodo temporal: 'now' (activos ahora), 'tomorrow' (mañana), 'after_tomorrow' (pasado mañana), o 'all'"
+        description="Periodo temporal: 'now' (activos ahora), 'today' (hoy activos y restantes), 'tomorrow' (mañana), 'after_tomorrow' (pasado mañana), o 'all'"
     ),
     only_active_now: Optional[bool] = Query(
         None,
@@ -22,7 +22,7 @@ async def get_aemet_warnings(
 ) -> Dict[str, Any]:
     """
     Devuelve la colección de avisos de AEMET en formato GeoJSON FeatureCollection según el periodo seleccionado
-    (Activos ahora, Mañana o Pasado) con consolidación automática de avisos solapados por comarca/zona.
+    (Activos ahora, Hoy, Mañana o Pasado) con consolidación automática de avisos solapados por comarca/zona.
     """
     effective_period = period if isinstance(period, str) else "now"
     effective_only_active = only_active_now if isinstance(only_active_now, bool) else None
