@@ -491,7 +491,7 @@ export class UIManager {
       if (content) {
         if (key === tabId) {
           content.classList.add('active');
-          content.style.display = 'block';
+          content.style.display = 'flex';
         } else {
           content.classList.remove('active');
           content.style.display = 'none';
@@ -505,7 +505,53 @@ export class UIManager {
       this.layerManager.onTabChange(tabId);
     }
 
+    if (tabId === 'prediction') {
+      this.updatePredictionFooterOpacity();
+    }
+
     this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Obtiene el ID del modelo de predicción actualmente activo
+   * @returns {string|null}
+   */
+  getActivePredictionModelId() {
+    if (!this.layerManager) return null;
+    const predLayers = CONFIG.overlayLayers.prediction;
+    for (const p of predLayers) {
+      const state = this.layerManager.getLayerState(p.id);
+      if (state && state.active) return p.id;
+    }
+    return null;
+  }
+
+  /**
+   * Sincroniza el control de opacidad unificado del pie del panel con el modelo activo
+   */
+  updatePredictionFooterOpacity() {
+    const predSlider = document.getElementById('prediction-opacity-slider');
+    const predValEl = document.getElementById('prediction-opacity-val');
+    if (!predSlider) return;
+
+    const activeModelId = this.getActivePredictionModelId();
+    let opacityPct = 70;
+    if (activeModelId && this.layerManager) {
+      const state = this.layerManager.getLayerState(activeModelId);
+      if (state && state.opacity !== undefined) {
+        opacityPct = Math.round(state.opacity * 100);
+      }
+    } else {
+      const prefs = StorageManager.load();
+      const activePred = CONFIG.overlayLayers.prediction.find(p => (prefs.activeLayers && prefs.activeLayers[p.id]));
+      if (activePred) {
+        const op = (prefs.layerOpacities && prefs.layerOpacities[activePred.id] !== undefined) ? prefs.layerOpacities[activePred.id] : activePred.defaultOpacity;
+        opacityPct = Math.round(op * 100);
+      }
+    }
+
+    predSlider.value = opacityPct;
+    if (predValEl) predValEl.textContent = `${opacityPct}%`;
   }
 
   /**
@@ -526,6 +572,10 @@ export class UIManager {
     }
     if (controls) {
       controls.style.display = isActive ? 'block' : 'none';
+    }
+
+    if (CONFIG.overlayLayers.prediction.some(p => p.id === layerId)) {
+      this.updatePredictionFooterOpacity();
     }
 
     this.updateUnifiedTimelinePlayer();
@@ -555,6 +605,9 @@ export class UIManager {
       const opacity = layerOpacities[layer.id] !== undefined ? layerOpacities[layer.id] : layer.defaultOpacity;
       return this._createLayerCardHtml(layer, isActive, opacity);
     }).join('');
+
+    // Sincronizar slider de opacidad del pie fijo de predicción
+    this.updatePredictionFooterOpacity();
 
     // Vincular listeners a los switches y sliders generados
     this._bindLayerCardEvents();
@@ -690,103 +743,6 @@ export class UIManager {
       `;
     }
 
-    // Sub-controles específicos para el Modelo ECMWF IFS (Reproductor temporal y selector total/intervalo)
-    // Sub-controles específicos para el Modelo ECMWF IFS (Leyenda de precipitación)
-    let ecmwfExtraControls = '';
-    if (layer.id === 'ecmwf_ifs') {
-      ecmwfExtraControls = `
-        <div class="ecmwf-subcontrols">
-          <div class="ecmwf-precip-legend">
-            <span class="precip-legend-title">Precipitación (mm):</span>
-            <div class="precip-bar">
-              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
-              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
-              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
-              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
-              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
-              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
-              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
-              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
-              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
-              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Sub-controles específicos para el Modelo NOAA GFS (Leyenda de precipitación)
-    let gfsExtraControls = '';
-    if (layer.id === 'gfs_0p25') {
-      gfsExtraControls = `
-        <div class="ecmwf-subcontrols">
-          <div class="ecmwf-precip-legend">
-            <span class="precip-legend-title">Precipitación (mm):</span>
-            <div class="precip-bar">
-              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
-              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
-              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
-              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
-              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
-              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
-              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
-              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
-              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
-              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Sub-controles específicos para el Modelo Météo-France / AEMET AROME (Leyenda de precipitación)
-    let aromeExtraControls = '';
-    if (layer.id === 'arome_precip') {
-      aromeExtraControls = `
-        <div class="ecmwf-subcontrols">
-          <div class="ecmwf-precip-legend">
-            <span class="precip-legend-title">Precipitación (mm):</span>
-            <div class="precip-bar">
-              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
-              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
-              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
-              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
-              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
-              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
-              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
-              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
-              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
-              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Sub-controles específicos para el Modelo DWD ICON-EU (Leyenda de precipitación)
-    let iconExtraControls = '';
-    if (layer.id === 'icon_eu') {
-      iconExtraControls = `
-        <div class="ecmwf-subcontrols">
-          <div class="ecmwf-precip-legend">
-            <span class="precip-legend-title">Precipitación (mm):</span>
-            <div class="precip-bar">
-              <span style="background: #bae6fd; color: #0284c7;" title="0.1 - 1 mm">0.1</span>
-              <span style="background: #38bdf8; color: #0369a1;" title="1 - 3 mm">1</span>
-              <span style="background: #0284c7; color: #ffffff;" title="3 - 10 mm">3</span>
-              <span style="background: #4ade80; color: #14532d;" title="10 - 20 mm">10</span>
-              <span style="background: #16a34a; color: #ffffff;" title="20 - 40 mm">20</span>
-              <span style="background: #facc15; color: #713f12;" title="40 - 70 mm">40</span>
-              <span style="background: #f97316; color: #ffffff;" title="70 - 100 mm">70</span>
-              <span style="background: #ef4444; color: #ffffff;" title="100 - 150 mm">100</span>
-              <span style="background: #d946ef; color: #ffffff;" title="150 - 250 mm">150</span>
-              <span style="background: #ffffff; color: #6b21a8;" title="> 250 mm">>250</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
     // Sub-controles específicos para Avisos AEMET (Selector de periodo: Activos ahora arriba, Hoy / Mañana / Pasado abajo)
     let aemetExtraControls = '';
     if (layer.id === 'aemet_warnings') {
@@ -806,6 +762,20 @@ export class UIManager {
         </div>
       `;
     }
+
+    const isPrediction = CONFIG.overlayLayers.prediction.some(p => p.id === layer.id);
+
+    const controlsHtml = isPrediction ? '' : `
+      <div class="layer-card-controls" id="controls-${layer.id}" style="${isActive ? '' : 'display: none;'}">
+        <div class="layer-opacity-row">
+          <span class="layer-opacity-label">Opacidad</span>
+          <span class="layer-opacity-value" id="val-${layer.id}">${opacityPct}%</span>
+        </div>
+        <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
+        ${aemetExtraControls}
+        ${radarExtraControls}
+      </div>
+    `;
 
     return `
       <div class="layer-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
@@ -827,19 +797,7 @@ export class UIManager {
             </div>
           </div>
         </div>
-        <div class="layer-card-controls" id="controls-${layer.id}" style="${isActive ? '' : 'display: none;'}">
-          <div class="layer-opacity-row">
-            <span class="layer-opacity-label">Opacidad</span>
-            <span class="layer-opacity-value" id="val-${layer.id}">${opacityPct}%</span>
-          </div>
-          <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
-          ${aemetExtraControls}
-          ${radarExtraControls}
-          ${ecmwfExtraControls}
-          ${gfsExtraControls}
-          ${aromeExtraControls}
-          ${iconExtraControls}
-        </div>
+        ${controlsHtml}
       </div>
     `;
   }
@@ -1092,6 +1050,21 @@ export class UIManager {
           this.layerManager.reloadLightningLayer();
         }
         setTimeout(() => radarLightningRefreshBtn.classList.remove('rotating'), 800);
+      });
+    }
+
+    // Slider de opacidad unificado para el pie de modelos de predicción
+    const predSlider = document.getElementById('prediction-opacity-slider');
+    const predValEl = document.getElementById('prediction-opacity-val');
+    if (predSlider && !predSlider._hasBoundEvents) {
+      predSlider._hasBoundEvents = true;
+      predSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (predValEl) predValEl.textContent = `${val}%`;
+        const activeModelId = this.getActivePredictionModelId();
+        if (activeModelId && this.layerManager) {
+          this.layerManager.setLayerOpacity(activeModelId, val / 100);
+        }
       });
     }
 

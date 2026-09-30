@@ -518,20 +518,12 @@ body {
 /* Contenido de pestañas */
 .panel-tab-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 12px 14px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 14px 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.panel-tab-content::-webkit-scrollbar {
-  width: 5px;
-}
-
-.panel-tab-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
 }
 
 .panel-section-header {
@@ -541,6 +533,7 @@ body {
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   margin-bottom: 2px;
+  flex-shrink: 0;
 }
 
 .section-title {
@@ -558,9 +551,83 @@ body {
 
 /* Lista de Tarjetas de Capas */
 .layer-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-right: 2px;
+}
+
+.layer-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.layer-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+/* Pie Fijo de Modelos de Predicción (Escala y Opacidad Unificadas) */
+.prediction-panel-footer {
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 10px 10px 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.prediction-footer-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.footer-legend-header,
+.footer-opacity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-legend-title,
+.footer-opacity-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.footer-legend-unit {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.prediction-footer-opacity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.footer-opacity-val {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-feature-settings: "tnum";
+}
+
+.prediction-slider {
+  width: 100%;
 }
 
 .layer-card {
