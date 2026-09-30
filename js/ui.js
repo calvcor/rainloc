@@ -501,15 +501,6 @@ export class UIManager {
 
     StorageManager.setActiveTab(tabId);
 
-    if (this.predictionBanner) {
-      if (tabId === 'realtime') {
-        this.predictionBanner.style.display = 'none';
-      } else if (tabId === 'prediction') {
-        const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-        this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
-      }
-    }
-
     if (this.layerManager && this.layerManager.onTabChange) {
       this.layerManager.onTabChange(tabId);
     }
@@ -535,11 +526,6 @@ export class UIManager {
     }
     if (controls) {
       controls.style.display = isActive ? 'block' : 'none';
-    }
-
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateUnifiedTimelinePlayer();
@@ -1211,11 +1197,11 @@ export class UIManager {
   _getActiveTimelineType() {
     if (!this.layerManager) return null;
     if (this.layerManager.isLayerOnMap('radar')) return 'radar';
-    if (this.layerManager.isLayerOnMap('gem_gdps')) return 'gem_gdps';
-    if (this.layerManager.isLayerOnMap('icon_eu')) return 'icon_eu';
-    if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
-    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
     if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
+    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
+    if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
+    if (this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('icon')) return 'icon_eu';
+    if (this.layerManager.isLayerOnMap('gem_gdps') || this.layerManager.isLayerOnMap('gem')) return 'gem_gdps';
     return null;
   }
 
@@ -1457,9 +1443,104 @@ export class UIManager {
   }
 
   /**
+   * Actualiza el Banner Superior de Predicción únicamente con el modelo actualmente activo en el mapa
+   */
+  updatePredictionBanner() {
+    if (!this.predictionBanner) return;
+    if (!this.layerManager) {
+      this.predictionBanner.style.display = 'none';
+      return;
+    }
+
+    const activeType = this._getActiveTimelineType();
+    let metadata = null;
+    let currentStep = null;
+    let currentType = 'total';
+    let modelName = '';
+    let modeIntervalText = 'Intervalo 1h';
+
+    if (activeType === 'ecmwf_ifs') {
+      metadata = this.layerManager.ecmwfMetadata;
+      currentStep = this.layerManager.currentEcmwfStep;
+      currentType = this.layerManager.currentEcmwfType || 'total';
+      modelName = `🇪🇺 ECMWF IFS (+${currentStep}h)`;
+      modeIntervalText = currentStep > 144 ? 'Intervalo 6h' : 'Intervalo 3h';
+    } else if (activeType === 'gfs_0p25') {
+      metadata = this.layerManager.gfsMetadata;
+      currentStep = this.layerManager.currentGfsStep;
+      currentType = this.layerManager.currentGfsType || 'total';
+      modelName = `🇺🇸 NOAA GFS (+${currentStep}h)`;
+      modeIntervalText = currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h';
+    } else if (activeType === 'arome_precip') {
+      metadata = this.layerManager.aromeMetadata;
+      currentStep = this.layerManager.currentAromeStep;
+      currentType = this.layerManager.currentAromeType || 'total';
+      modelName = `🇫🇷 AROME HD (+${currentStep}h)`;
+      modeIntervalText = 'Intervalo 1h';
+    } else if (activeType === 'icon_eu') {
+      metadata = this.layerManager.iconMetadata;
+      currentStep = this.layerManager.currentIconStep;
+      currentType = this.layerManager.currentIconType || 'total';
+      modelName = `🇩🇪 ICON-EU (+${currentStep}h)`;
+      modeIntervalText = currentStep > 78 ? 'Intervalo 3h' : 'Intervalo 1h';
+    } else if (activeType === 'gem_gdps') {
+      metadata = this.layerManager.gemMetadata;
+      currentStep = this.layerManager.currentGemStep;
+      currentType = this.layerManager.currentGemType || 'total';
+      modelName = `🇨🇦 GEM-GDPS (+${currentStep}h)`;
+      modeIntervalText = 'Intervalo 3h';
+    } else {
+      // Si el radar u otra capa no predictiva está activa o no hay modelo en el mapa
+      this.predictionBanner.style.display = 'none';
+      return;
+    }
+
+    if (!metadata) {
+      this.predictionBanner.style.display = 'none';
+      return;
+    }
+
+    this.predictionBanner.style.display = 'flex';
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (this.predictionBannerExactTime) {
+      if (stepInfo && stepInfo.valid_time_iso) {
+        this.predictionBannerExactTime.textContent = formatPredictionInstant(stepInfo.valid_time_iso);
+      } else {
+        this.predictionBannerExactTime.textContent = '--';
+      }
+    }
+
+    if (this.predictionBannerModel) {
+      this.predictionBannerModel.textContent = modelName;
+    }
+
+    if (this.predictionBannerRun) {
+      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
+      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
+      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
+      if (stepRun) {
+        this.predictionBannerRun.style.display = 'inline-flex';
+        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
+        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
+        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
+      } else {
+        this.predictionBannerRun.style.display = 'none';
+      }
+    }
+
+    if (this.predictionBannerMode) {
+      this.predictionBannerMode.textContent = currentType === 'total' ? 'Acumulado Total' : modeIntervalText;
+    }
+  }
+
+  /**
    * Actualiza el reproductor temporal inferior unificado según la capa activa en el mapa
    */
   updateUnifiedTimelinePlayer() {
+    this.updatePredictionBanner();
+
     const bottomPlayer = this.timelineBottomPlayer || document.getElementById('timeline-bottom-player');
     if (!bottomPlayer) return;
 
@@ -1738,7 +1819,6 @@ export class UIManager {
    */
   updateEcmwfPlayerUI(metadata, currentStep, currentType, isPlaying) {
     const slider = document.getElementById('ecmwf-step-slider');
-    const badge = document.getElementById('ecmwf-current-step-badge');
     const maxPill = document.getElementById('ecmwf-max-pill');
     const btnTotal = document.getElementById('ecmwf-btn-total');
     const btnInterval = document.getElementById('ecmwf-btn-interval');
@@ -1766,38 +1846,6 @@ export class UIManager {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
       maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
-    }
-
-    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
-    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
-      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
-      this.predictionBannerExactTime.textContent = formattedInstant;
-    }
-    if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `🇪🇺 ECMWF IFS (+${currentStep}h)`;
-    }
-    if (this.predictionBannerRun) {
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
-      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-      if (stepRun) {
-        this.predictionBannerRun.style.display = 'inline-flex';
-        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
-        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
-        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
-      } else {
-        this.predictionBannerRun.style.display = 'none';
-      }
-    }
-    if (this.predictionBannerMode) {
-      const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 144 ? 'Intervalo 6h' : 'Intervalo 3h');
-      this.predictionBannerMode.textContent = modeText;
-    }
-
-    // Visibilidad del banner: visible si alguna capa de predicción está activa
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateEcmwfPlayState(isPlaying);
@@ -1838,38 +1886,6 @@ export class UIManager {
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }
 
-    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
-    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
-      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
-      this.predictionBannerExactTime.textContent = formattedInstant;
-    }
-    if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `🇺🇸 NOAA GFS (+${currentStep}h)`;
-    }
-    if (this.predictionBannerRun) {
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
-      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-      if (stepRun) {
-        this.predictionBannerRun.style.display = 'inline-flex';
-        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
-        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
-        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
-      } else {
-        this.predictionBannerRun.style.display = 'none';
-      }
-    }
-    if (this.predictionBannerMode) {
-      const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h');
-      this.predictionBannerMode.textContent = modeText;
-    }
-
-    // Visibilidad del banner: visible si alguna capa de predicción está activa
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
-    }
-
     this.updateGfsPlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
   }
@@ -1906,38 +1922,6 @@ export class UIManager {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
       maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
-    }
-
-    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
-    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
-      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
-      this.predictionBannerExactTime.textContent = formattedInstant;
-    }
-    if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `🇫🇷 AROME HD (+${currentStep}h)`;
-    }
-    if (this.predictionBannerRun) {
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
-      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-      if (stepRun) {
-        this.predictionBannerRun.style.display = 'inline-flex';
-        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
-        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
-        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
-      } else {
-        this.predictionBannerRun.style.display = 'none';
-      }
-    }
-    if (this.predictionBannerMode) {
-      const modeText = currentType === 'total' ? 'Acumulado Total' : 'Intervalo 1h';
-      this.predictionBannerMode.textContent = modeText;
-    }
-
-    // Visibilidad del banner: visible si alguna capa de predicción está activa
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateAromePlayState(isPlaying);
@@ -1978,38 +1962,6 @@ export class UIManager {
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }
 
-    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
-    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
-      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
-      this.predictionBannerExactTime.textContent = formattedInstant;
-    }
-    if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `🇩🇪 ICON-EU (+${currentStep}h)`;
-    }
-    if (this.predictionBannerRun) {
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
-      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-      if (stepRun) {
-        this.predictionBannerRun.style.display = 'inline-flex';
-        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
-        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
-        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
-      } else {
-        this.predictionBannerRun.style.display = 'none';
-      }
-    }
-    if (this.predictionBannerMode) {
-      const modeText = currentType === 'total' ? 'Acumulado Total' : (currentStep > 78 ? 'Intervalo 3h' : 'Intervalo 1h');
-      this.predictionBannerMode.textContent = modeText;
-    }
-
-    // Visibilidad del banner: visible si alguna capa de predicción está activa
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
-    }
-
     this.updateIconPlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
   }
@@ -2046,38 +1998,6 @@ export class UIManager {
       const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
       maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
-    }
-
-    // Actualizar el Banner Superior con el instante exacto en hora local (Europe/Madrid)
-    if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
-      const formattedInstant = formatPredictionInstant(stepInfo.valid_time_iso);
-      this.predictionBannerExactTime.textContent = formattedInstant;
-    }
-    if (this.predictionBannerModel) {
-      this.predictionBannerModel.textContent = `🇨🇦 GEM-GDPS (+${currentStep}h)`;
-    }
-    if (this.predictionBannerRun) {
-      const isFallback = Boolean(stepInfo && stepInfo.is_fallback);
-      const mainRun = (metadata.run || (metadata.cycle_str ? metadata.cycle_str.split('_')[1] : '')).toUpperCase();
-      const stepRun = (stepInfo && (stepInfo.run || stepInfo.fallback_run)) ? (stepInfo.run || stepInfo.fallback_run).toUpperCase() : mainRun;
-      if (stepRun) {
-        this.predictionBannerRun.style.display = 'inline-flex';
-        this.predictionBannerRun.textContent = isFallback ? `Run ${stepRun} ant.` : `Run ${stepRun}`;
-        this.predictionBannerRun.className = `prediction-run-tag ${isFallback ? 'fallback-run' : 'new-run'}`;
-        this.predictionBannerRun.title = isFallback ? `Paso de la salida anterior (${stepRun}) mientras se descarga la nueva salida (${mainRun})` : `Salida ${stepRun}`;
-      } else {
-        this.predictionBannerRun.style.display = 'none';
-      }
-    }
-    if (this.predictionBannerMode) {
-      const modeText = currentType === 'total' ? 'Acumulado Total' : 'Intervalo 3h';
-      this.predictionBannerMode.textContent = modeText;
-    }
-
-    // Visibilidad del banner: visible si alguna capa de predicción está activa
-    if (this.predictionBanner) {
-      const isPredActive = Boolean(this.layerManager && (this.layerManager.isLayerOnMap('ecmwf_ifs') || this.layerManager.isLayerOnMap('gfs_0p25') || this.layerManager.isLayerOnMap('arome_precip') || this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('gem_gdps')));
-      this.predictionBanner.style.display = isPredActive ? 'flex' : 'none';
     }
 
     this.updateGemPlayState(isPlaying);
