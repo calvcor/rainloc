@@ -288,6 +288,18 @@ export class LayerManager {
           }
         }
       });
+
+      if (activePredId === 'ecmwf_ifs') {
+        this.reloadEcmwfLayer();
+      } else if (activePredId === 'gfs_0p25') {
+        this.reloadGfsLayer();
+      } else if (activePredId === 'arome_precip') {
+        this.reloadAromeLayer();
+      } else if (activePredId === 'icon_eu') {
+        this.reloadIconLayer();
+      } else if (activePredId === 'gem_gdps') {
+        this.reloadGemLayer();
+      }
     } else {
       // 1. Ocultar del mapa cualquier modelo de predicción
       CONFIG.overlayLayers.prediction.forEach(def => {
@@ -301,6 +313,12 @@ export class LayerManager {
       }
       if (this.isAromePlaying) {
         this.pauseAromePlayback();
+      }
+      if (this.isIconPlaying) {
+        this.pauseIconPlayback();
+      }
+      if (this.isGemPlaying) {
+        this.pauseGemPlayback();
       }
 
       // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
@@ -399,6 +417,18 @@ export class LayerManager {
         if (this.layerStates[layerId]) this.layerStates[layerId].active = true;
         StorageManager.setLayerActive(layerId, true);
         if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, true);
+
+        if (layerId === 'ecmwf_ifs') {
+          this.reloadEcmwfLayer();
+        } else if (layerId === 'gfs_0p25') {
+          this.reloadGfsLayer();
+        } else if (layerId === 'arome_precip') {
+          this.reloadAromeLayer();
+        } else if (layerId === 'icon_eu') {
+          this.reloadIconLayer();
+        } else if (layerId === 'gem_gdps') {
+          this.reloadGemLayer();
+        }
       } else {
         this._hideLayerFromMap(layerId);
         if (this.layerStates[layerId]) this.layerStates[layerId].active = false;
@@ -1348,27 +1378,20 @@ export class LayerManager {
    * Cambia el paso temporal activo de GFS
    */
   setGfsStep(step) {
-    if (this.currentGfsStep === step) return;
-    this.currentGfsStep = step;
-    const gfsGroup = this.layers['gfs_0p25'];
-    if (gfsGroup && this.isLayerOnMap('gfs_0p25')) {
-      const opacity = (this.layerStates['gfs_0p25'] && this.layerStates['gfs_0p25'].opacity) || 0.65;
-      this._loadGfsLayer(gfsGroup, opacity, false);
-    }
+    const parsedStep = parseInt(step, 10);
+    if (this.currentGfsStep === parsedStep && this.currentGfsOverlay) return;
+    this.currentGfsStep = parsedStep;
+    this.reloadGfsLayer();
   }
 
   /**
    * Cambia el modo de visualización de GFS ('total' vs 'interval')
    */
   setGfsType(type) {
-    if (this.currentGfsType === type) return;
+    if (this.currentGfsType === type && this.currentGfsOverlay) return;
     this.currentGfsType = type;
     this._gfsImageCache.clear();
-    const gfsGroup = this.layers['gfs_0p25'];
-    if (gfsGroup && this.isLayerOnMap('gfs_0p25')) {
-      const opacity = (this.layerStates['gfs_0p25'] && this.layerStates['gfs_0p25'].opacity) || 0.65;
-      this._loadGfsLayer(gfsGroup, opacity, false);
-    }
+    this.reloadGfsLayer();
   }
 
   reloadGfsLayer(forceMetaFetch = false) {
