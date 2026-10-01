@@ -729,8 +729,10 @@ export class LayerManager {
    */
   _getRadarImageUrl(timestep) {
     const mode = this.currentRadarMode || 'mixed';
+    const isLatest = !timestep || (this.radarTimeline && this.radarTimeline.length > 0 && timestep === this.radarTimeline[this.radarTimeline.length - 1]?.timestep);
+    const vParam = isLatest ? `&_v=${encodeURIComponent((this.radarMetadata && this.radarMetadata.last_updated) || Date.now())}` : '';
     if (timestep) {
-      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&timestep=${encodeURIComponent(timestep)}`;
+      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&timestep=${encodeURIComponent(timestep)}${vParam}`;
     }
     return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&_t=${Date.now()}`;
   }

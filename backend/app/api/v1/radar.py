@@ -58,9 +58,18 @@ async def get_radar_image(
         if not img_path or not img_path.exists():
             raise HTTPException(status_code=404, detail="Fotograma de radar no encontrado o en proceso de descarga")
         
-        # Si se solicita un timestep histórico concreto, cachear a largo plazo en Cloudflare / navegador
-        is_historical = bool(timestep and timestep in img_path.name and not img_path.name.startswith("latest_"))
-        cache_control = "public, max-age=86400, s-maxage=86400" if is_historical else "public, max-age=30, s-maxage=30"
+        # Fotogramas recientes (< 90 min) usan caché corta para recibir mejoras y escaneos de AEMET; fotogramas históricos consolidados usan caché larga
+        is_recent = True
+        if timestep and len(timestep) >= 13 and "T" in timestep:
+            try:
+                from datetime import datetime, timezone, timedelta
+                dt_ts = datetime.strptime(timestep[:13], "%Y%m%dT%H%M").replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - dt_ts).total_seconds() > 5400: # > 1.5 horas
+                    is_recent = False
+            except Exception:
+                pass
+
+        cache_control = "public, max-age=60, s-maxage=60, must-revalidate" if is_recent else "public, max-age=86400, s-maxage=86400"
 
         return FileResponse(
             img_path,
