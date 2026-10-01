@@ -22,16 +22,7 @@ export class MapManager {
    * Inicializa la instancia del mapa Leaflet
    */
   init() {
-    const {
-      initialCenter,
-      initialZoom,
-      minZoom,
-      maxZoom,
-      maxBounds,
-      zoomSnap = 0,
-      zoomDelta = 1,
-      wheelPxPerZoomLevel = 60
-    } = CONFIG.map;
+    const { initialCenter, initialZoom, minZoom, maxZoom, maxBounds } = CONFIG.map;
 
     this.map = L.map(this.containerId, {
       center: initialCenter,
@@ -39,9 +30,6 @@ export class MapManager {
       minZoom: minZoom,
       maxZoom: maxZoom,
       maxBounds: maxBounds,
-      zoomSnap: zoomSnap,
-      zoomDelta: zoomDelta,
-      wheelPxPerZoomLevel: wheelPxPerZoomLevel,
       zoomControl: false, // Usamos control personalizado para mejor posición UI
       attributionControl: false // Personalizaremos el control
     });
