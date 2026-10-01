@@ -878,9 +878,10 @@ export class LayerManager {
         this._preloadRadarSteps(currentStep);
       };
 
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._radarStepRequestId) return;
 
         // Actualizar canvas único de inspección bajo demanda (solo en escritorio)
@@ -891,8 +892,13 @@ export class LayerManager {
 
         swapOverlay();
       };
+
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId === this._radarStepRequestId) {
+        if (!isImgLoaded && requestId === this._radarStepRequestId) {
+          isImgLoaded = true;
           swapOverlay();
         }
       };
@@ -900,7 +906,7 @@ export class LayerManager {
 
       // Si ya está en caché del navegador, continuar
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
@@ -1117,10 +1123,10 @@ export class LayerManager {
         this._preloadEcmwfSteps(step, type);
       };
 
-      // Precargar y decodificar la imagen antes de montar en Leaflet
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._ecmwfStepRequestId) return;
 
         const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'ecmwf', type: type });
@@ -1131,15 +1137,20 @@ export class LayerManager {
         swapOverlay();
       };
 
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId !== this._ecmwfStepRequestId) return;
-        console.warn(`La imagen ECMWF IFS para paso +${step}h no pudo ser cargada.`);
+        if (!isImgLoaded && requestId === this._ecmwfStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen ECMWF IFS para paso +${step}h no pudo ser cargada.`);
+        }
       };
-
       offscreenImg.src = imgUrl;
 
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
@@ -1347,10 +1358,10 @@ export class LayerManager {
         this._preloadGfsSteps(step, type);
       };
 
-      // Precargar y decodificar la imagen antes de montar en Leaflet
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._gfsStepRequestId) return;
 
         const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'gfs', type: type });
@@ -1361,15 +1372,20 @@ export class LayerManager {
         swapOverlay();
       };
 
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId !== this._gfsStepRequestId) return;
-        console.warn(`La imagen GFS para paso +${step}h no pudo ser cargada.`);
+        if (!isImgLoaded && requestId === this._gfsStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen GFS para paso +${step}h no pudo ser cargada.`);
+        }
       };
-
       offscreenImg.src = imgUrl;
 
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
@@ -1571,10 +1587,10 @@ export class LayerManager {
         this._preloadAromeSteps(step, type);
       };
 
-      // Precargar y decodificar la imagen antes de montar en Leaflet
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._aromeStepRequestId) return;
 
         const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'arome', type: type });
@@ -1585,15 +1601,20 @@ export class LayerManager {
         swapOverlay();
       };
 
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId !== this._aromeStepRequestId) return;
-        console.warn(`La imagen AROME para paso +${step}h no pudo ser cargada.`);
+        if (!isImgLoaded && requestId === this._aromeStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen AROME para paso +${step}h no pudo ser cargada.`);
+        }
       };
-
       offscreenImg.src = imgUrl;
 
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
@@ -1798,9 +1819,10 @@ export class LayerManager {
         this._preloadIconSteps(step, type);
       };
 
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._iconStepRequestId) return;
 
         const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'icon', type: type });
@@ -1811,15 +1833,19 @@ export class LayerManager {
         swapOverlay();
       };
 
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId !== this._iconStepRequestId) return;
-        console.warn(`La imagen ICON-EU para paso +${step}h no pudo ser cargada.`);
+        if (!isImgLoaded && requestId === this._iconStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen ICON-EU para paso +${step}h no pudo ser cargada.`);
+        }
       };
-
       offscreenImg.src = imgUrl;
 
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
@@ -2024,9 +2050,10 @@ export class LayerManager {
         this._preloadGemSteps(step, type);
       };
 
-      const offscreenImg = new Image();
-      offscreenImg.crossOrigin = 'anonymous';
-      offscreenImg.onload = () => {
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
         if (requestId !== this._gemStepRequestId) return;
 
         const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'gem', type: type });
@@ -2037,15 +2064,19 @@ export class LayerManager {
         swapOverlay();
       };
 
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
       offscreenImg.onerror = () => {
-        if (requestId !== this._gemStepRequestId) return;
-        console.warn(`La imagen GEM-GDPS para paso +${step}h no pudo ser cargada.`);
+        if (!isImgLoaded && requestId === this._gemStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen GEM-GDPS para paso +${step}h no pudo ser cargada.`);
+        }
       };
-
       offscreenImg.src = imgUrl;
 
       if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
-        offscreenImg.onload();
+        handleImageReady();
       }
 
     } catch (err) {
