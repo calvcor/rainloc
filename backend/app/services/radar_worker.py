@@ -720,12 +720,12 @@ class RadarService:
                         list(pool.map(fetch_and_blend_aemet, missing_aemet))
 
             # 3. Generar el Compuesto Mixto de Alta Definición
-            # En áreas con cobertura de corto alcance (radio <= 145 km):
-            # - Si el radar de corto alcance detecta eco (>= 8 dBZ), prevalece su núcleo de alta definición.
-            # - Si el radar de corto alcance confirma atmósfera limpia (< 8 dBZ), elimina ecos espurios.
-            # En áreas sin cobertura de corto alcance (frentes lejanos, mar, etc.), se usa el largo alcance.
-            mixed_grid = long_grid.copy()
-            mixed_grid[cov_mask_2d] = short_grid_2d[cov_mask_2d]
+            # Fusión por reflectividad máxima (np.maximum) entre el compuesto de largo alcance (EUMETNET / OPERA)
+            # y los barridos de corto alcance / AEMET OpenData (short_grid_2d).
+            # - Si EUMETNET detecta lluvia y el radar local no tiene datos o sufre desfase, se conserva la lluvia de EUMETNET.
+            # - Si el radar local o AEMET detecta núcleos convectivos más intensos, prevalece el valor máximo.
+            # - Se evita que la falta de sincronización o retardos en una fuente borren la lluvia real detectada por la otra.
+            mixed_grid = np.maximum(long_grid, short_grid_2d)
 
             # 4. Guardar matrices .npz comprimidas históricas (ahorro del 98% de espacio en disco)
             np.savez_compressed(self.composites_dir / f"mixed_{timestep}.npz", data=mixed_grid)
