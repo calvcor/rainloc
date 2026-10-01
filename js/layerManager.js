@@ -2418,51 +2418,16 @@ export class LayerManager {
       const longKm = st.range_km || 240;
 
       if (isActive) {
-        if (mode === 'short_range') {
-          // Corto alcance 0.5º (145 km)
-          const circle = L.circle([st.lat, st.lon], {
-            radius: shortKm * 1000,
-            color: '#0284c7',
-            weight: 1.5,
-            fillColor: '#38bdf8',
-            fillOpacity: 0.05,
-            interactive: false
-          });
-          this.radarCoverageGroup.addLayer(circle);
-        } else if (mode === 'long_range') {
-          // Largo alcance (240-250 km)
-          const circle = L.circle([st.lat, st.lon], {
-            radius: longKm * 1000,
-            color: '#2563eb',
-            weight: 1.5,
-            fillColor: '#60a5fa',
-            fillOpacity: 0.04,
-            interactive: false
-          });
-          this.radarCoverageGroup.addLayer(circle);
-        } else {
-          // Modo Mixto: Anillo primario de alta resolución 0.5º + contorno tenue de largo alcance
-          const innerCircle = L.circle([st.lat, st.lon], {
-            radius: shortKm * 1000,
-            color: '#0284c7',
-            weight: 1.5,
-            dashArray: '5, 4',
-            fillColor: '#38bdf8',
-            fillOpacity: 0.06,
-            interactive: false
-          });
-          this.radarCoverageGroup.addLayer(innerCircle);
-
-          const outerCircle = L.circle([st.lat, st.lon], {
-            radius: longKm * 1000,
-            color: '#64748b',
-            weight: 1,
-            dashArray: '2, 6',
-            fill: false,
-            interactive: false
-          });
-          this.radarCoverageGroup.addLayer(outerCircle);
-        }
+        // Cobertura completa de radar meteorológico (240-250 km)
+        const circle = L.circle([st.lat, st.lon], {
+          radius: longKm * 1000,
+          color: '#0284c7',
+          weight: 1.5,
+          fillColor: '#38bdf8',
+          fillOpacity: 0.04,
+          interactive: false
+        });
+        this.radarCoverageGroup.addLayer(circle);
 
         // Marcador central interactivo del radar
         const marker = L.circleMarker([st.lat, st.lon], {
@@ -2473,9 +2438,7 @@ export class LayerManager {
           weight: 2
         });
 
-        const modeDescription = mode === 'short_range' 
-          ? `Corto alcance 0.5º · ${shortKm} km`
-          : (mode === 'long_range' ? `Largo alcance · ${longKm} km` : `Mixto 0.5º (${shortKm} km) + Largo (${longKm} km)`);
+        const modeDescription = `Cobertura operativa · ${longKm} km`;
 
         marker.bindTooltip(`
           <div class="radar-station-coverage-tooltip">

@@ -385,25 +385,15 @@ class RadarService:
         return result
 
     def get_metadata(self) -> Dict[str, Any]:
-        """Retorna metadatos, línea temporal y opciones de modos para la UI."""
+        """Retorna metadatos, línea temporal y configuración unificada de radar para la UI."""
         return {
             "status": self.state["status"],
             "last_updated": self.state["last_updated"],
             "modes": [
                 {
                     "id": "mixed",
-                    "name": "Compuesto Mixto (Corto 0.5º + Largo)",
-                    "description": "Prevalece el corto alcance 0.5º de alta definición y rellena a gran distancia con largo alcance"
-                },
-                {
-                    "id": "short_range",
-                    "name": "Corto Alcance 0.5º (Alta Def. - DBZH+VRADH)",
-                    "description": "Barridos Doppler a 0.5º de elevación con 500m de resolución (radio ≤ 145 km)"
-                },
-                {
-                    "id": "long_range",
-                    "name": "Largo Alcance (OPERA / DBZH+TH)",
-                    "description": "Compuesto tradicional de largo alcance (250 km)"
+                    "name": "Radar Meteorológico (Compuesto Completo)",
+                    "description": "Compuesto unificado de radar meteorológico con máxima reflectividad (AEMET + EUMETNET)"
                 }
             ],
             "default_mode": "mixed",
@@ -424,38 +414,23 @@ class RadarService:
 
     def get_composite_image_path(self, mode: str = "mixed", timestep: Optional[str] = None) -> Optional[Path]:
         """
-        Ruta del archivo PNG del compuesto solicitado según el modo ('mixed', 'short_range', 'long_range')
-        y el instante temporal (o el más reciente).
+        Ruta del archivo PNG del compuesto solicitado.
+        Garantiza que todos los modos (incluido long_range) muestren el compuesto completo con Cullera y EUMETNET.
         """
-        prefix = "composite_"
-        if mode == "short_range":
-            prefix = "short_"
-        elif mode == "long_range":
-            prefix = "long_"
-        elif mode in ("mixed", "composite"):
-            prefix = "mixed_"
-
         if timestep:
-            p = self.composites_dir / f"{prefix}{timestep}.png"
-            if p.exists():
-                return p
-            # Fallback a composite_{timestep}.png
-            p_fallback = self.composites_dir / f"composite_{timestep}.png"
-            if p_fallback.exists():
-                return p_fallback
+            for pfx in ("mixed_", "composite_", "long_", "short_"):
+                p = self.composites_dir / f"{pfx}{timestep}.png"
+                if p.exists():
+                    return p
 
         # Fotograma más reciente
-        if mode == "short_range":
-            p_lat = self.cache_dir / "latest_short_composite.png"
-            if p_lat.exists():
-                return p_lat
-        elif mode == "long_range":
-            p_lat = self.cache_dir / "latest_long_composite.png"
-            if p_lat.exists():
-                return p_lat
-
         p_latest = self.cache_dir / "latest_spain_composite.png"
-        return p_latest if p_latest.exists() else None
+        if p_latest.exists():
+            return p_latest
+        p_long = self.cache_dir / "latest_long_composite.png"
+        if p_long.exists():
+            return p_long
+        return None
 
     def get_station_image_path(self, station_id: str, timestep: Optional[str] = None) -> Optional[Path]:
         """Compatibilidad: retorna el compuesto mixto nacional."""
@@ -729,18 +704,16 @@ class RadarService:
             np.savez_compressed(self.composites_dir / f"mixed_{timestep}.npz", data=mixed_grid)
             np.savez_compressed(self.composites_dir / f"composite_{timestep}.npz", data=mixed_grid) # Alias estándar
             np.savez_compressed(self.composites_dir / f"short_{timestep}.npz", data=short_grid_2d)
-            np.savez_compressed(self.composites_dir / f"long_{timestep}.npz", data=long_grid)
+            np.savez_compressed(self.composites_dir / f"long_{timestep}.npz", data=mixed_grid)
 
             # 5. Generar y guardar imágenes PNG transparentes georreferenciadas
             img_mixed = Image.fromarray(colorize_dbz_array(mixed_grid), "RGBA")
             img_mixed.save(self.composites_dir / f"mixed_{timestep}.png", format="PNG", optimize=True)
             img_mixed.save(self.composites_dir / f"composite_{timestep}.png", format="PNG", optimize=True)
+            img_mixed.save(self.composites_dir / f"long_{timestep}.png", format="PNG", optimize=True)
 
             img_short = Image.fromarray(colorize_dbz_array(short_grid_2d), "RGBA")
             img_short.save(self.composites_dir / f"short_{timestep}.png", format="PNG", optimize=True)
-
-            img_long = Image.fromarray(colorize_dbz_array(long_grid), "RGBA")
-            img_long.save(self.composites_dir / f"long_{timestep}.png", format="PNG", optimize=True)
 
             # 6. Actualizar fotograma más reciente
             is_latest_or_newer = True
@@ -756,15 +729,15 @@ class RadarService:
             if is_latest_or_newer:
                 self._composite_dbz_grid = mixed_grid
                 self._short_range_dbz_grid = short_grid_2d
-                self._long_range_dbz_grid = long_grid
+                self._long_range_dbz_grid = mixed_grid
 
                 try:
                     np.savez_compressed(self.cache_dir / "latest_spain_composite.npz", data=mixed_grid)
                     np.savez_compressed(self.cache_dir / "latest_short_composite.npz", data=short_grid_2d)
-                    np.savez_compressed(self.cache_dir / "latest_long_composite.npz", data=long_grid)
+                    np.savez_compressed(self.cache_dir / "latest_long_composite.npz", data=mixed_grid)
                     img_mixed.save(self.cache_dir / "latest_spain_composite.png", format="PNG", optimize=True)
+                    img_mixed.save(self.cache_dir / "latest_long_composite.png", format="PNG", optimize=True)
                     img_short.save(self.cache_dir / "latest_short_composite.png", format="PNG", optimize=True)
-                    img_long.save(self.cache_dir / "latest_long_composite.png", format="PNG", optimize=True)
                 except Exception as e:
                     logger.warning(f"Error actualizando latest_spain_composite: {e}")
 

@@ -996,14 +996,7 @@ export class MultiLayerInspector {
 
               const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
 
-              let stMode = 'Compuesto Mixto (Corto 0.5º + Largo)';
-              if (this.layerManager.currentRadarMode === 'short_range') {
-                stMode = 'Corto Alcance 0.5º (Doppler ≤145km)';
-              } else if (this.layerManager.currentRadarMode === 'long_range') {
-                stMode = 'Largo Alcance (OPERA / 250km)';
-              } else if (this.layerManager.currentRadarMode === 'single' && this.layerManager.currentRadarStationId) {
-                stMode = `Estación: ${CONFIG.radarStations[this.layerManager.currentRadarStationId]?.name || this.layerManager.currentRadarStationId} (0.5º)`;
-              }
+              let stMode = 'Compuesto Nacional (AEMET + EUMETNET)';
 
               sections.push({
                 type: "radar",
