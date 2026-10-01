@@ -26,12 +26,23 @@ from app.config import (
 logger = logging.getLogger("rainloc-backend.aemet_opendata")
 
 # Mapeo exacto de índices de paleta de la imagen GIF de AEMET a valores dBZ
-# Descarta completamente fondos (0, 1, 2), bordes CCAA/provinciales (10) y textos (42)
+# Descarta completamente fondos (0, 1), relieve topográfico (2), bordes CCAA/provinciales (10) y textos (42)
 AEMET_INDEX_TO_DBZ: Dict[int, float] = {
+    11: 10.0,
+    12: 10.0,
     13: 10.0,  # Azul marino (6-12 dBZ / lluvia muy débil)
+    14: 10.0,
     16: 12.0,  # Azul oscuro (12-18 dBZ)
+    17: 12.0,
+    18: 12.0,
+    20: 15.0,
+    21: 15.0,
+    22: 18.0,
     23: 18.0,  # Azul cielo (18-24 dBZ)
+    24: 20.0,
+    25: 22.0,
     26: 24.0,  # Cian (24-30 dBZ)
+    29: 24.0,
     6:  30.0,  # Verde oliva (30-36 dBZ)
     7:  36.0,  # Verde medio (36-42 dBZ)
     8:  42.0,  # Verde claro (42-48 dBZ)
@@ -203,47 +214,10 @@ class AemetOpenDataService:
             src_y = np.round(c_y - dy_km / km_per_px).astype(np.int32)
             valid_src = in_range & (src_x >= 0) & (src_x < radar_w) & (src_y >= 0) & (src_y < radar_h)
 
-            # Generar tabla de conversión dinámica basada en los colores RGB de la paleta del GIF
-            raw_pal = img.getpalette()
+            # Tabla de conversión estricta de índices de reflectividad meteorológica (descarta completamente bordes, costas y textos)
             lut = np.full(256, -9999.0, dtype=np.float32)
-            if raw_pal and len(raw_pal) >= 3:
-                palette_rgb = np.array(raw_pal, dtype=np.uint8).reshape(-1, 3)
-                for idx in range(min(256, len(palette_rgb))):
-                    r, g, b = int(palette_rgb[idx, 0]), int(palette_rgb[idx, 1]), int(palette_rgb[idx, 2])
-                    # Descartar fondos, bordes de relieve y textos
-                    if (r == 0 and g == 0 and b == 0) or (r == 127 and g == 127 and b == 127) or (r == 255 and g == 255 and b == 255) or (r == 0 and g == 43 and b == 102):
-                        continue
-                    
-                    # Granizo / Púrpura (>60 dBZ)
-                    if r > 180 and b > 180 and g < 120:
-                        lut[idx] = 66.0
-                    # Rojo (55-60 dBZ)
-                    elif r > 200 and g < 70 and b < 70:
-                        lut[idx] = 60.0
-                    # Naranja intenso (50-55 dBZ)
-                    elif r > 230 and 100 <= g < 180 and b < 70:
-                        lut[idx] = 54.0
-                    # Amarillo (45-50 dBZ)
-                    elif r > 220 and g > 200 and b < 100:
-                        lut[idx] = 48.0
-                    # Verde brillante / verde medio (35-45 dBZ)
-                    elif g > 160 and r < 130 and b < 130:
-                        lut[idx] = 40.0
-                    # Verde oscuro / oliva (28-35 dBZ)
-                    elif 100 <= g <= 160 and r < 100 and b < 100:
-                        lut[idx] = 32.0
-                    # Cyan (22-28 dBZ)
-                    elif b > 200 and g > 180 and r < 100:
-                        lut[idx] = 25.0
-                    # Azul claro / cielo (16-22 dBZ)
-                    elif b > 200 and 100 <= g < 180 and r < 100:
-                        lut[idx] = 18.0
-                    # Azul oscuro / marino (8-16 dBZ)
-                    elif b > 120 and g < 120 and r < 100:
-                        lut[idx] = 12.0
-            else:
-                for idx, dbz_val in AEMET_INDEX_TO_DBZ.items():
-                    lut[idx] = dbz_val
+            for idx, dbz_val in AEMET_INDEX_TO_DBZ.items():
+                lut[idx] = dbz_val
 
             # Mapeo inverso continuo directo (sin huecos / sin bandas verticales)
             dbz_sub = np.full(lats_2d.shape, -9999.0, dtype=np.float32)
