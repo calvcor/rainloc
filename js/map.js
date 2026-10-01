@@ -29,8 +29,8 @@ export class MapManager {
       maxZoom,
       maxBounds,
       zoomSnap = 0,
-      zoomDelta = 0.5,
-      wheelPxPerZoomLevel = 120
+      zoomDelta = 1,
+      wheelPxPerZoomLevel = 60
     } = CONFIG.map;
 
     this.map = L.map(this.containerId, {
