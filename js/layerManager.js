@@ -899,7 +899,7 @@ export class LayerManager {
       offscreenImg.onerror = () => {
         if (!isImgLoaded && requestId === this._radarStepRequestId) {
           isImgLoaded = true;
-          swapOverlay();
+          console.warn(`No se pudo cargar la imagen de radar (${imgUrl}). Manteniendo capa previa visible.`);
         }
       };
       offscreenImg.src = imgUrl;

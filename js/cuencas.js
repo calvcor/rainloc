@@ -326,6 +326,19 @@ export class CuencasLayer {
       window.RainLoc.multiInspector.inspectAtLatLng(e.latlng, true);
       return;
     }
+
+    this.openBasinPopup(feature, layer, e.latlng);
+  }
+
+  /**
+   * Abre el popup enriquecido de la cuenca con indicador de favorita, hidrograma de aportación y centrado
+   * @param {Object} feature 
+   * @param {L.Layer} layer 
+   * @param {L.LatLng} latlng 
+   */
+  openBasinPopup(feature, layer, latlng) {
+    if (!feature || !latlng || !this.map) return;
+
     const props = feature.properties || {};
     const sistema = props.NomSistExp || 'Demarcación CHJ';
     const subsistema = props.Subsistema || `Subsistema ${feature.id || 'N/D'}`;
@@ -392,7 +405,7 @@ export class CuencasLayer {
       autoPan: true,
       offset: [0, -10]
     })
-    .setLatLng(e.latlng)
+    .setLatLng(latlng)
     .setContent(popupContent)
     .openOn(this.map);
 
@@ -422,7 +435,9 @@ export class CuencasLayer {
       const zoomBtn = document.querySelector(`.popup-btn-zoom[data-feature-id="${feature.id}"]`);
       if (zoomBtn) {
         zoomBtn.addEventListener('click', () => {
-          this.mapManager.fitBounds(layer.getBounds());
+          if (layer && layer.getBounds) {
+            this.mapManager.fitBounds(layer.getBounds());
+          }
         });
       }
 
@@ -436,14 +451,18 @@ export class CuencasLayer {
             StorageManager.removeFavoriteBasin();
             favBtn.classList.remove('is-fav');
             favBtn.title = 'Marcar como cuenca favorita';
-            svg.setAttribute('fill', 'none');
-            svg.setAttribute('stroke', 'currentColor');
+            if (svg) {
+              svg.setAttribute('fill', 'none');
+              svg.setAttribute('stroke', 'currentColor');
+            }
           } else {
             StorageManager.setFavoriteBasin(feature.id, subsistema);
             favBtn.classList.add('is-fav');
             favBtn.title = 'Quitar de cuencas favoritas';
-            svg.setAttribute('fill', '#f59e0b');
-            svg.setAttribute('stroke', '#f59e0b');
+            if (svg) {
+              svg.setAttribute('fill', '#f59e0b');
+              svg.setAttribute('stroke', '#f59e0b');
+            }
           }
 
           // Actualizar estilos en el mapa en tiempo real
@@ -457,7 +476,9 @@ export class CuencasLayer {
     }, 50);
 
     // Fijar selección en capa
-    this._selectFeature(feature, layer);
+    if (layer) {
+      this._selectFeature(feature, layer);
+    }
   }
 
   /**

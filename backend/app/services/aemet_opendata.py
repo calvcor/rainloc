@@ -52,19 +52,36 @@ class AemetOpenDataService:
         """Indica si hay una clave de API de AEMET configurada."""
         return bool(settings.AEMET_API_KEY and len(settings.AEMET_API_KEY.strip()) > 10)
 
-    def fetch_regional_radar_gif(self, aemet_code: str, min_interval_sec: float = 240.0) -> Optional[bytes]:
+    def _get_fallback_bytes(self, aemet_code: str) -> Optional[bytes]:
+        """Obtiene la última imagen válida desde memoria o disco."""
+        if aemet_code in self._cache_bytes and self._cache_bytes[aemet_code]:
+            return self._cache_bytes[aemet_code]
+        try:
+            disk_p = settings.RADAR_CACHE_DIR / f"aemet_regional_{aemet_code}.gif"
+            if disk_p.exists():
+                data = disk_p.read_bytes()
+                if data and len(data) > 500:
+                    self._cache_bytes[aemet_code] = data
+                    return data
+        except Exception:
+            pass
+        return None
+
+    def fetch_regional_radar_gif(self, aemet_code: str, min_interval_sec: float = 180.0) -> Optional[bytes]:
         """
         Descarga la última imagen GIF del radar regional desde AEMET OpenData.
-        Aplica proxy seguro desde el servidor, control de rate-limits y caché en memoria (mínimo 4 min entre peticiones).
+        Aplica proxy seguro desde el servidor, control de rate-limits, persistencia en disco y fallback ininterrumpido.
         """
         if not self.is_configured:
-            return None
+            return self._get_fallback_bytes(aemet_code)
 
         # Caché en memoria para no saturar la API de AEMET (AEMET solo actualiza radares cada 10-15 min)
         now_ts = time.time()
         last_ts = self._last_download_time.get(aemet_code, 0.0)
-        if (now_ts - last_ts) < min_interval_sec and aemet_code in self._cache_bytes:
-            return self._cache_bytes[aemet_code]
+        if (now_ts - last_ts) < min_interval_sec:
+            cached = self._get_fallback_bytes(aemet_code)
+            if cached:
+                return cached
 
         api_key = settings.AEMET_API_KEY.strip()
         url = f"{self.base_url}/red/radar/regional/{aemet_code}?api_key={api_key}"
@@ -81,26 +98,32 @@ class AemetOpenDataService:
             with urllib.request.urlopen(req, timeout=12) as resp:
                 if resp.status != 200:
                     logger.warning(f"AEMET OpenData HTTP {resp.status} al consultar radar {aemet_code}")
-                    return self._cache_bytes.get(aemet_code)
+                    return self._get_fallback_bytes(aemet_code)
                 data = json.loads(resp.read().decode("utf-8", "ignore"))
 
             datos_url = data.get("datos")
             if not datos_url:
                 logger.warning(f"AEMET OpenData no devolvió URL de datos para radar {aemet_code}: {data.get('descripcion')}")
-                return self._cache_bytes.get(aemet_code)
+                return self._get_fallback_bytes(aemet_code)
 
             # Descargar imagen GIF desde la URL temporal devuelta
             img_req = urllib.request.Request(datos_url, headers={"User-Agent": settings.AEMET_USER_AGENT})
             with urllib.request.urlopen(img_req, timeout=15) as img_resp:
                 gif_bytes = img_resp.read()
-                if gif_bytes:
+                if gif_bytes and len(gif_bytes) > 500:
                     self._last_download_time[aemet_code] = time.time()
                     self._cache_bytes[aemet_code] = gif_bytes
-                return gif_bytes
+                    try:
+                        disk_p = settings.RADAR_CACHE_DIR / f"aemet_regional_{aemet_code}.gif"
+                        disk_p.write_bytes(gif_bytes)
+                    except Exception:
+                        pass
+                    return gif_bytes
+                return self._get_fallback_bytes(aemet_code)
 
         except Exception as e:
             logger.warning(f"Error en AEMET OpenData para radar {aemet_code}: {e}")
-            return self._cache_bytes.get(aemet_code)
+            return self._get_fallback_bytes(aemet_code)
 
     def decode_and_blend_station(
         self,

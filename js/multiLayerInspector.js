@@ -642,9 +642,6 @@ export class MultiLayerInspector {
   _onMapClick(e) {
     if (!e || !e.latlng) return;
 
-    // En PC de escritorio con ratón/puntero fino, el click no debe abrir la tarjeta táctil ni crear pin
-    if (!this._isTouchDevice()) return;
-
     // Si se hizo click en un marcador interactivo o elemento con su propio modal, ignorar
     if (e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopInspector || e.originalEvent._stopBasinClick)) {
       return;
@@ -652,15 +649,36 @@ export class MultiLayerInspector {
     if (e.originalEvent && e.originalEvent.target) {
       const el = e.originalEvent.target;
       if (
-        (el.classList && (el.classList.contains('caudal-marker') || el.classList.contains('embalse-marker') || el.classList.contains('saih-lluvia-marker'))) ||
-        (el.closest && (el.closest('.caudal-marker') || el.closest('.embalse-marker') || el.closest('.saih-lluvia-marker') || el.closest('.mobile-inspector-sheet') || el.closest('.leaflet-popup')))
+        (el.classList && (el.classList.contains('caudal-marker') || el.classList.contains('embalse-marker') || el.classList.contains('saih-lluvia-marker') || el.classList.contains('lightning-marker'))) ||
+        (el.closest && (el.closest('.caudal-marker') || el.closest('.embalse-marker') || el.closest('.saih-lluvia-marker') || el.closest('.lightning-marker') || el.closest('.mobile-inspector-sheet') || el.closest('.leaflet-popup')))
       ) {
         return;
       }
     }
 
-    // Inspección puntual persistente con marcador y tarjeta (solo táctil)
-    this.inspectAtLatLng(e.latlng, true);
+    // En pantallas táctiles (móviles, iPad, tablets): abrir tarjeta táctil persistente
+    if (this._isTouchDevice()) {
+      this.inspectAtLatLng(e.latlng, true);
+      return;
+    }
+
+    // En PC de escritorio: si el usuario hace clic en el mapa y hay una cuenca activa bajo el cursor, abrir popup enriquecido de la cuenca
+    if (this.cuencasLayer && this.cuencasLayer.isVisible && this.cuencasLayer.geoJsonLayer) {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      let cuencaFound = null;
+      this.cuencasLayer.geoJsonLayer.eachLayer((layer) => {
+        if (cuencaFound) return;
+        const feature = layer.feature;
+        if (feature && feature.geometry && this._isPointInGeometry(lat, lng, feature.geometry)) {
+          cuencaFound = { feature, layer };
+        }
+      });
+
+      if (cuencaFound) {
+        this.cuencasLayer.openBasinPopup(cuencaFound.feature, cuencaFound.layer, e.latlng);
+      }
+    }
   }
 
   inspectAtLatLng(latlng, isExplicit = false) {
@@ -1612,7 +1630,16 @@ export class MultiLayerInspector {
       const badgeColor = sec.badgeColor || '#fff';
 
       let actionsHtml = '';
+      let favBtnHtml = '';
       if (sec.type === 'cuenca' && sec.basinId) {
+        const isFav = StorageManager.isFavorite(sec.basinId);
+        favBtnHtml = `
+          <button type="button" class="mobile-inspector-btn-fav ${isFav ? 'is-fav' : ''}" data-action="toggle-fav-basin" data-basin-id="${sec.basinId}" data-basin-name="${sec.name || ''}" title="${isFav ? 'Quitar de cuencas favoritas' : 'Marcar como cuenca favorita'}" aria-label="Favorito">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${isFav ? '#f59e0b' : 'none'}" stroke="${isFav ? '#f59e0b' : 'currentColor'}" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </button>
+        `;
         actionsHtml = `
           <div class="mobile-inspector-actions-row">
             <button type="button" class="mobile-inspector-btn-action btn-action-primary" data-action="hydro" data-basin-id="${sec.basinId}">
@@ -1652,7 +1679,10 @@ export class MultiLayerInspector {
               <span class="mobile-inspector-sec-icon">${sec.icon}</span>
               <span class="mobile-inspector-sec-title" style="color: ${headerColor};">${sec.title}</span>
             </div>
-            ${sec.badge ? `<span class="mobile-inspector-sec-badge" style="background:${badgeBg}; color:${badgeColor};">${sec.badge}</span>` : ''}
+            <div style="display: flex; align-items: center; gap: 6px;">
+              ${sec.badge ? `<span class="mobile-inspector-sec-badge" style="background:${badgeBg}; color:${badgeColor};">${sec.badge}</span>` : ''}
+              ${favBtnHtml}
+            </div>
           </div>
           <div class="mobile-inspector-sec-name">${sec.name}</div>
           ${sec.details ? `<div class="mobile-inspector-sec-details">${sec.details}</div>` : ''}
@@ -1668,7 +1698,35 @@ export class MultiLayerInspector {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const action = btn.getAttribute('data-action');
-        if (action === 'hydro') {
+        if (action === 'toggle-fav-basin') {
+          const basinId = btn.getAttribute('data-basin-id');
+          const basinName = btn.getAttribute('data-basin-name') || `Subsistema ${basinId}`;
+          const currentlyFav = StorageManager.isFavorite(basinId);
+          const svg = btn.querySelector('svg');
+          if (currentlyFav) {
+            StorageManager.removeFavoriteBasin();
+            btn.classList.remove('is-fav');
+            btn.title = 'Marcar como cuenca favorita';
+            if (svg) {
+              svg.setAttribute('fill', 'none');
+              svg.setAttribute('stroke', 'currentColor');
+            }
+          } else {
+            StorageManager.setFavoriteBasin(basinId, basinName);
+            btn.classList.add('is-fav');
+            btn.title = 'Quitar de cuencas favoritas';
+            if (svg) {
+              svg.setAttribute('fill', '#f59e0b');
+              svg.setAttribute('stroke', '#f59e0b');
+            }
+          }
+          if (this.cuencasLayer) {
+            this.cuencasLayer.refreshStyles();
+          }
+          if (this.uiManager) {
+            this.uiManager.renderFavoriteBadge();
+          }
+        } else if (action === 'hydro') {
           const basinId = btn.getAttribute('data-basin-id');
           const cuencaSec = sections.find((s) => s.type === 'cuenca' && s.basinId == basinId);
           const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';

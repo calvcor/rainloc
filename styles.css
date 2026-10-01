@@ -4622,6 +4622,34 @@ body {
   letter-spacing: 0.02em;
 }
 
+.mobile-inspector-btn-fav {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.mobile-inspector-btn-fav:hover,
+.mobile-inspector-btn-fav:active {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+  transform: scale(1.1);
+}
+
+.mobile-inspector-btn-fav.is-fav {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
 .mobile-inspector-sec-name {
   font-size: 0.88rem;
   font-weight: 700;
