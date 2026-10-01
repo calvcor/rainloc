@@ -27,6 +27,7 @@ logger = logging.getLogger("rainloc-backend.aemet_opendata")
 # Mapeo exacto de índices de paleta de la imagen GIF de AEMET a valores dBZ
 # Descarta completamente fondos (0, 1, 2), bordes CCAA/provinciales (10) y textos (42)
 AEMET_INDEX_TO_DBZ: Dict[int, float] = {
+    13: 10.0,  # Azul marino (6-12 dBZ / lluvia muy débil)
     16: 12.0,  # Azul oscuro (12-18 dBZ)
     23: 18.0,  # Azul cielo (18-24 dBZ)
     26: 24.0,  # Cian (24-30 dBZ)
