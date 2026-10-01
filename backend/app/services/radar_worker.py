@@ -699,17 +699,9 @@ class RadarService:
             cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
 
             # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma')
-            # AEMET OpenData solo suministra la imagen en tiempo real actual; solo se consulta para el fotograma en curso o reciente (< 35 min)
-            now_utc = datetime.now(timezone.utc)
-            ts_info = parse_timestep_info(timestep)
-            try:
-                dt_step = datetime.fromisoformat(ts_info["valid_time_iso"])
-                is_recent_step = abs((now_utc - dt_step).total_seconds()) <= 2100.0  # Últimos 35 min
-            except Exception:
-                is_recent_step = True
-
-            if aemet_opendata_service.is_configured and is_recent_step:
-                # Priorizar estaciones clave que requieren fallback regional
+            # Las estaciones como Cullera ('escul' / 'va') no disponen de volcado directo en OPERA ni en S3 PVOL.
+            # Se integran de forma continua mediante su imagen regional oficial de AEMET (en vivo o fallback persistido).
+            if aemet_opendata_service.is_configured:
                 priority_stations = ["escul", "espma", "espmb"]
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
