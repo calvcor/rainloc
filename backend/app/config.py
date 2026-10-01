@@ -34,10 +34,10 @@ GEM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
     # Radares actualmente sincronizando en EUMETNET ORD
-    "esahr": {"name": "Málaga / Alhaurín", "province": "Málaga", "lat": 36.6134, "lon": -4.6593, "range_km": 240, "alt_m": 1159, "aemet_code": "ma"},
+    "esahr": {"name": "Málaga / Alhaurín", "province": "Málaga", "lat": 36.6134, "lon": -4.6593, "range_km": 240, "alt_m": 1159, "aemet_code": "ml"},
     "esclg": {"name": "Sevilla / El Castillo", "province": "Sevilla", "lat": 37.6887, "lon": -6.3331, "range_km": 250, "alt_m": 531, "aemet_code": "se"},
     "esnjr": {"name": "Almería / Níjar", "province": "Almería", "lat": 36.8324, "lon": -2.0821, "range_km": 240, "alt_m": 499, "aemet_code": "am"},
-    "estjv": {"name": "Madrid / Torrejón de Velasco", "province": "Madrid", "lat": 40.1759, "lon": -3.7137, "range_km": 240, "alt_m": 717, "aemet_code": "to"},
+    "estjv": {"name": "Madrid / Torrejón de Velasco", "province": "Madrid", "lat": 40.1759, "lon": -3.7137, "range_km": 240, "alt_m": 717, "aemet_code": "ma"},
     "essft": {"name": "Cáceres / Sierra Fuentes", "province": "Cáceres", "lat": 39.4288, "lon": -6.2853, "range_km": 240, "alt_m": 667, "aemet_code": "cc"},
     "esgrm": {"name": "Salamanca / Guadramiro", "province": "Salamanca", "lat": 41.0116, "lon": -6.4777, "range_km": 240, "alt_m": 793, "aemet_code": "sa"},
     "eslid": {"name": "Valladolid", "province": "Valladolid", "lat": 41.9956, "lon": -4.6028, "range_km": 240, "alt_m": 887, "aemet_code": "vd"},
@@ -50,7 +50,6 @@ SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
     "escul": {"name": "Valencia / Cullera", "province": "Valencia", "lat": 39.1864, "lon": -0.2520, "range_km": 240, "alt_m": 236, "aemet_code": "va"},
     "espma": {"name": "Murcia / Cabezo de la Plata", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460, "aemet_code": "mu"},
     "espmb": {"name": "Mallorca / Puig de Randa", "province": "Illes Balears", "lat": 39.5290, "lon": 2.9230, "range_km": 240, "alt_m": 543, "aemet_code": "pm"},
-    "esast": {"name": "Asturias / Salas", "province": "Asturias", "lat": 43.3420, "lon": -6.5210, "range_km": 240, "alt_m": 850, "aemet_code": "as"},
     "escor": {"name": "A Coruña / Lousame", "province": "A Coruña", "lat": 42.8360, "lon": -8.8470, "range_km": 240, "alt_m": 680, "aemet_code": "co"}
 }
 

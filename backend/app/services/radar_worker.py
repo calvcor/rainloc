@@ -699,25 +699,31 @@ class RadarService:
             cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
 
             # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma')
-            if aemet_opendata_service.is_configured:
-                missing_aemet = [
-                    (st_id, st_info["aemet_code"])
-                    for st_id, st_info in SPANISH_RADAR_STATIONS.items()
-                    if st_id not in short_scans and "aemet_code" in st_info
-                ]
-                if missing_aemet:
-                    def fetch_and_blend_aemet(item):
-                        st_id, aemet_code = item
-                        gif_bytes = aemet_opendata_service.fetch_regional_radar_gif(aemet_code)
-                        if gif_bytes:
-                            mapped = aemet_opendata_service.decode_and_blend_station(
-                                st_id, gif_bytes, short_grid_2d, cov_mask_2d
-                            )
-                            if mapped:
-                                short_scans[st_id] = b"AEMET_OPENDATA_FALLBACK"
+            # AEMET OpenData solo suministra la imagen en tiempo real actual; solo se consulta para el fotograma en curso o reciente (< 35 min)
+            now_utc = datetime.now(timezone.utc)
+            ts_info = parse_timestep_info(timestep)
+            try:
+                dt_step = datetime.fromisoformat(ts_info["valid_time_iso"])
+                is_recent_step = abs((now_utc - dt_step).total_seconds()) <= 2100.0  # Últimos 35 min
+            except Exception:
+                is_recent_step = True
 
-                    with ThreadPoolExecutor(max_workers=5) as pool:
-                        list(pool.map(fetch_and_blend_aemet, missing_aemet))
+            if aemet_opendata_service.is_configured and is_recent_step:
+                # Priorizar estaciones clave que requieren fallback regional
+                priority_stations = ["escul", "espma", "espmb"]
+                missing_aemet = [
+                    (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
+                    for st_id in priority_stations
+                    if st_id in SPANISH_RADAR_STATIONS and st_id not in short_scans and "aemet_code" in SPANISH_RADAR_STATIONS[st_id]
+                ]
+                for st_id, aemet_code in missing_aemet:
+                    gif_bytes = aemet_opendata_service.fetch_regional_radar_gif(aemet_code)
+                    if gif_bytes:
+                        mapped = aemet_opendata_service.decode_and_blend_station(
+                            st_id, gif_bytes, short_grid_2d, cov_mask_2d
+                        )
+                        if mapped:
+                            short_scans[st_id] = b"AEMET_OPENDATA_FALLBACK"
 
             # 3. Generar el Compuesto Mixto de Alta Definición
             # Fusión por reflectividad máxima (np.maximum) entre el compuesto de largo alcance (EUMETNET / OPERA)
@@ -865,15 +871,31 @@ class RadarService:
             return self.get_metadata()
 
     def _cleanup_old_cache(self):
-        """Elimina fotogramas y archivos con más de 25 horas de antigüedad."""
+        """Elimina fotogramas y archivos con más de 25 horas de antigüedad y sincroniza la línea temporal."""
         try:
-            cutoff = time.time() - (25 * 3600)
+            now_utc = datetime.now(timezone.utc)
+            cutoff_dt = now_utc - timedelta(hours=25)
+            cutoff_ts = cutoff_dt.strftime("%Y%m%dT%H%M")
+            cutoff_mtime = time.time() - (25 * 3600)
+
             for f in self.composites_dir.glob("*.*"):
-                if f.stat().st_mtime < cutoff:
+                stem = f.stem
+                is_old = False
+                if "T" in stem:
+                    parts = stem.split("_")
+                    if len(parts) >= 2 and len(parts[1]) >= 13:
+                        if parts[1][:13] < cutoff_ts:
+                            is_old = True
+                if is_old or f.stat().st_mtime < cutoff_mtime:
                     f.unlink(missing_ok=True)
+
             for f in self.cache_dir.glob("*.h5"):
-                if f.stat().st_mtime < cutoff:
+                if f.stat().st_mtime < cutoff_mtime:
                     f.unlink(missing_ok=True)
+
+            # Limpiar timeline en memoria de pasos obsoletos
+            self.timeline = [t for t in self.timeline if t.get("timestep", "") >= cutoff_ts]
+            self._save_state_to_cache()
         except Exception as e:
             logger.warning(f"Error en limpieza de caché de radar: {e}")
 
