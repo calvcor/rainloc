@@ -2649,22 +2649,19 @@ body {
   display: inline-block;
 }
 
-/* Animación de pulso y resplandor para impactos muy recientes (<1 min) */
+/* Animación de pulso y resplandor para impactos muy recientes (<1 min) optimizada para GPU */
 .lightning-pulse-active {
-  filter: drop-shadow(0 0 3px #ffff00) drop-shadow(0 0 6px #ffea00);
   animation: lightning-glow 1.4s ease-in-out infinite alternate;
 }
 
 @keyframes lightning-glow {
   0% {
-    stroke-opacity: 0.95;
-    fill-opacity: 0.90;
-    transform-origin: center;
+    stroke-opacity: 0.75;
+    fill-opacity: 0.80;
   }
   100% {
     stroke-opacity: 1.0;
     fill-opacity: 1.0;
-    filter: drop-shadow(0 0 5px #ffff00) drop-shadow(0 0 10px #ffe600);
   }
 }
 

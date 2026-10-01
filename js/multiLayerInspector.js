@@ -26,6 +26,7 @@ export class MultiLayerInspector {
 
     this._lastLatLng = null;
     this._hoverThrottle = null;
+    this._lastInspectTime = 0;
     this._currentHoveredCuenca = null;
 
     // Cache y debounce para consultas puntuales de reflectividad dBZ
@@ -600,12 +601,24 @@ export class MultiLayerInspector {
 
     this._lastLatLng = e.latlng;
 
-    // Throttle ligero (16ms ~ 60fps) para máxima suavidad sin sobrecargar la CPU
-    if (this._hoverThrottle) return;
-    this._hoverThrottle = requestAnimationFrame(() => {
-      this._inspectPoint(this._lastLatLng, false);
+    const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    if (this._lastInspectTime && (now - this._lastInspectTime < 32)) {
+      if (!this._hoverThrottle) {
+        this._hoverThrottle = setTimeout(() => {
+          this._hoverThrottle = null;
+          this._lastInspectTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+          this._inspectPoint(this._lastLatLng, false);
+        }, 32 - (now - this._lastInspectTime));
+      }
+      return;
+    }
+
+    this._lastInspectTime = now;
+    if (this._hoverThrottle) {
+      clearTimeout(this._hoverThrottle);
       this._hoverThrottle = null;
-    });
+    }
+    this._inspectPoint(this._lastLatLng, false);
   }
 
   _onMouseOut(e) {

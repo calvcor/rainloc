@@ -26,7 +26,10 @@ export class LayerManager {
     this.aromeEventSource = null;
     this.iconEventSource = null;
     this.gemEventSource = null;
+    this.lightningCanvasRenderer = L.canvas({ padding: 0.5, pane: 'lluviasPane' });
     this.lightningGroup = L.layerGroup();
+    this._pendingStrikesQueue = [];
+    this._lightningBatchRaf = null;
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
     this.currentAemetPeriod = prefs.aemetPeriod || 'now';
@@ -2500,6 +2503,11 @@ export class LayerManager {
       this._startLightningSSE();
       this._startLightningAgingTimer();
     } else {
+      if (this._lightningBatchRaf) {
+        cancelAnimationFrame(this._lightningBatchRaf);
+        this._lightningBatchRaf = null;
+      }
+      this._pendingStrikesQueue = [];
       this.lightningGroup.clearLayers();
       if (this._activeLightningStrikes) {
         this._activeLightningStrikes.clear();
@@ -2751,6 +2759,7 @@ export class LayerManager {
   _createStrikeMarker(strike, tier, opacity = 1.0) {
     const marker = L.circleMarker([strike.lat, strike.lon], {
       pane: 'lluviasPane',
+      renderer: this.lightningCanvasRenderer,
       radius: tier.radius,
       color: tier.color,
       weight: tier.weight,
@@ -2792,6 +2801,69 @@ export class LayerManager {
   }
 
   /**
+   * Encola un impacto entrante del stream SSE para procesarlo en lote (Batching)
+   */
+  _queueStrikeForRendering(strike) {
+    if (!this._pendingStrikesQueue) {
+      this._pendingStrikesQueue = [];
+    }
+    this._pendingStrikesQueue.push(strike);
+
+    if (!this._lightningBatchRaf) {
+      this._lightningBatchRaf = requestAnimationFrame(() => {
+        this._flushPendingStrikes();
+      });
+    }
+  }
+
+  /**
+   * Procesa en bloque todos los rayos pendientes en la cola del stream
+   */
+  _flushPendingStrikes() {
+    this._lightningBatchRaf = null;
+    if (!this._pendingStrikesQueue || this._pendingStrikesQueue.length === 0 || !this.showRadarLightning) {
+      this._pendingStrikesQueue = [];
+      return;
+    }
+
+    const queue = this._pendingStrikesQueue;
+    this._pendingStrikesQueue = [];
+
+    const radarOpacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 1.0;
+    const tierConfig = getLightningAgeTiers(this.lightningWindowMinutes);
+    const nowSec = Date.now() / 1000;
+    if (!this._activeLightningStrikes) this._activeLightningStrikes = new Map();
+
+    let addedCount = 0;
+    for (let i = 0; i < queue.length; i++) {
+      const strike = queue[i];
+      const ageSec = Math.max(0, nowSec - strike.time);
+      if (ageSec > tierConfig.maxAgeSec) continue;
+
+      const tier = getLightningTierForAge(ageSec, tierConfig);
+      if (!tier) continue;
+
+      const key = `${strike.time}_${strike.lat}_${strike.lon}`;
+      if (!this._activeLightningStrikes.has(key)) {
+        const marker = this._createStrikeMarker(strike, tier, radarOpacity);
+        if (marker) {
+          this.lightningGroup.addLayer(marker);
+          this._activeLightningStrikes.set(key, {
+            strike: strike,
+            marker: marker,
+            tierId: tier.id
+          });
+          addedCount++;
+        }
+      }
+    }
+
+    if (addedCount > 0) {
+      this._updateLightningStats();
+    }
+  }
+
+  /**
    * Inicia el stream de Server-Sent Events (SSE) para recibir rayos al milisegundo
    */
   _startLightningSSE() {
@@ -2807,31 +2879,7 @@ export class LayerManager {
         try {
           const strike = JSON.parse(event.data);
           if (this.showRadarLightning && this._isStrikeInCoverage(strike)) {
-            const radarOpacity = (this.layerStates['radar'] && this.layerStates['radar'].opacity) || 1.0;
-            const tierConfig = getLightningAgeTiers(this.lightningWindowMinutes);
-            const nowSec = Date.now() / 1000;
-            const ageSec = Math.max(0, nowSec - strike.time);
-
-            if (ageSec <= tierConfig.maxAgeSec) {
-              const tier = getLightningTierForAge(ageSec, tierConfig);
-              if (tier) {
-                const key = `${strike.time}_${strike.lat}_${strike.lon}`;
-                if (!this._activeLightningStrikes) this._activeLightningStrikes = new Map();
-
-                if (!this._activeLightningStrikes.has(key)) {
-                  const marker = this._createStrikeMarker(strike, tier, radarOpacity);
-                  if (marker) {
-                    this.lightningGroup.addLayer(marker);
-                    this._activeLightningStrikes.set(key, {
-                      strike: strike,
-                      marker: marker,
-                      tierId: tier.id
-                    });
-                    this._updateLightningStats();
-                  }
-                }
-              }
-            }
+            this._queueStrikeForRendering(strike);
           }
         } catch (e) {
           console.debug('Error procesando evento SSE de rayo:', e);
@@ -2851,6 +2899,11 @@ export class LayerManager {
    * Detiene el stream SSE de rayos
    */
   _stopLightningSSE() {
+    if (this._lightningBatchRaf) {
+      cancelAnimationFrame(this._lightningBatchRaf);
+      this._lightningBatchRaf = null;
+    }
+    this._pendingStrikesQueue = [];
     if (this.lightningEventSource) {
       try {
         this.lightningEventSource.close();
