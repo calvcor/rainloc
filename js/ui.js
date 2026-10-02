@@ -1827,7 +1827,9 @@ export class UIManager {
       if (maxPill) {
         maxPill.style.display = 'inline-flex';
         if (stepInfo) {
-          const maxVal = curType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+          const maxVal = curType === 'interval'
+            ? (stepInfo.max_interval_mm !== undefined ? stepInfo.max_interval_mm : stepInfo.max_interval_precip_mm)
+            : (stepInfo.max_total_mm !== undefined ? stepInfo.max_total_mm : stepInfo.max_total_precip_mm);
           maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
         } else {
           maxPill.innerHTML = `🎯 Máx: -- mm`;
@@ -2082,7 +2084,9 @@ export class UIManager {
     const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
 
     if (maxPill && stepInfo) {
-      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      const maxVal = currentType === 'interval'
+        ? (stepInfo.max_interval_mm !== undefined ? stepInfo.max_interval_mm : stepInfo.max_interval_precip_mm)
+        : (stepInfo.max_total_mm !== undefined ? stepInfo.max_total_mm : stepInfo.max_total_precip_mm);
       maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
       maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
     }

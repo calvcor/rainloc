@@ -307,7 +307,7 @@ export class LayerManager {
     if (layer && this.map && this.map.hasLayer(layer)) {
       this.map.removeLayer(layer);
     }
-    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'icon_eu' || layerId === 'gem_gdps') {
+    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'harmonie_aemet' || layerId === 'icon_eu' || layerId === 'gem_gdps') {
       this._refreshMaxMarkers();
     }
   }
@@ -2739,7 +2739,7 @@ export class LayerManager {
     if (!this.currentMaxPoints) return;
 
     for (const [modelKey, pt] of Object.entries(this.currentMaxPoints)) {
-      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : 'arome_precip')));
+      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip'))));
       if (!this.isLayerOnMap(layerId)) continue;
       if (!pt.lat || !pt.lon) continue;
 
@@ -2795,6 +2795,7 @@ export class LayerManager {
       if (this.isLayerOnMap('ecmwf_ifs')) modelKey = 'ecmwf';
       else if (this.isLayerOnMap('gfs_0p25')) modelKey = 'gfs';
       else if (this.isLayerOnMap('arome_precip')) modelKey = 'arome';
+      else if (this.isLayerOnMap('harmonie_aemet')) modelKey = 'harmonie';
       else if (this.isLayerOnMap('icon_eu')) modelKey = 'icon';
       else if (this.isLayerOnMap('gem_gdps')) modelKey = 'gem';
       else return;
@@ -2814,8 +2815,8 @@ export class LayerManager {
     if (this.currentMaxPoints && this.currentMaxPoints[modelKey] && this.currentMaxPoints[modelKey].lat !== null) {
       doFly(this.currentMaxPoints[modelKey]);
     } else {
-      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : ((modelKey === 'gem') ? this.currentGemStep : this.currentAromeStep)));
-      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : ((modelKey === 'gem') ? this.currentGemType : this.currentAromeType)));
+      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : ((modelKey === 'gem') ? this.currentGemStep : ((modelKey === 'harmonie') ? this.currentHarmonieStep : this.currentAromeStep))));
+      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : ((modelKey === 'gem') ? this.currentGemType : ((modelKey === 'harmonie') ? this.currentHarmonieType : this.currentAromeType))));
       this._updateModelMaxMarker(modelKey, step, type).then(() => {
         if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
           doFly(this.currentMaxPoints[modelKey]);

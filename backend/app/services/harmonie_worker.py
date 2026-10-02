@@ -276,6 +276,9 @@ class HarmonieWorker:
     def get_metadata(self) -> Dict[str, Any]:
         """Devuelve los metadatos completos del ciclo disponible."""
         if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
+
+        if not self.current_manifest:
             return {
                 "model": "HARMONIE-AROME (AEMET)",
                 "source": "AEMET / MITECO Datos Abiertos (0.025° / ~2.5km)",
@@ -294,10 +297,24 @@ class HarmonieWorker:
         run_part = cycle_str.split("_")[1] if "_" in cycle_str else cycle_str
         out["status"] = "ready" if self.current_manifest.get("is_complete") else "syncing"
         out["run"] = run_part
+
+        # Asegurar compatibilidad de campos max_total_mm y max_interval_mm
+        steps = []
+        for s in self.current_manifest.get("steps", []):
+            s_copy = dict(s)
+            tot_val = s_copy.get("max_total_mm", s_copy.get("max_total_precip_mm", 0.0))
+            int_val = s_copy.get("max_interval_mm", s_copy.get("max_interval_precip_mm", 0.0))
+            s_copy["max_total_mm"] = tot_val
+            s_copy["max_interval_mm"] = int_val
+            steps.append(s_copy)
+        out["steps"] = steps
+
         return out
 
     def get_image_path(self, step: int, layer_type: str = "total") -> Optional[Path]:
         """Retorna la ruta al archivo PNG en disco del paso y tipo solicitados."""
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
         if not self.current_manifest:
             return None
         cycle_str = self.current_manifest.get("cycle_str")
@@ -312,10 +329,28 @@ class HarmonieWorker:
 
     def get_array(self, step: int, layer_type: str = "total") -> Optional[np.ndarray]:
         """Obtiene la matriz 2D (GRID_H, GRID_W) de valores de precipitación en mm."""
+        if not self.current_manifest:
+            self._load_latest_manifest_from_disk()
+
         prefix = "total" if layer_type == "total" else "interval"
         key = f"{prefix}_{step:02d}"
         if key in self._in_memory_arrays:
             return self._in_memory_arrays[key]
+
+        # Intentar cargar desde arrays.npz si no estaba en memoria
+        if self.current_manifest:
+            cycle_str = self.current_manifest.get("cycle_str")
+            if cycle_str:
+                arrays_path = self.cache_dir / cycle_str / "arrays.npz"
+                if arrays_path.exists():
+                    try:
+                        loaded = np.load(arrays_path)
+                        for k in loaded.files:
+                            self._in_memory_arrays[k] = loaded[k]
+                        if key in self._in_memory_arrays:
+                            return self._in_memory_arrays[key]
+                    except Exception as e:
+                        logger.error(f"HarmonieWorker: Error cargando arrays.npz: {e}")
         return None
 
     def get_matrix(self, step: int, layer_type: str = "total") -> Optional[np.ndarray]:
@@ -343,8 +378,8 @@ class HarmonieWorker:
         if arr is None:
             return None
         max_val = float(np.max(arr))
-        if max_val <= 0:
-            return None
+        if max_val < 0.1:
+            return {"lat": None, "lon": None, "value_mm": round(max_val, 2)}
         max_row, max_col = np.unravel_index(np.argmax(arr), arr.shape)
         lat = float(SPAIN_GRID_LATS[max_row])
         lon = float(SPAIN_GRID_LONS[max_col])
@@ -545,6 +580,8 @@ class HarmonieWorker:
                             "delta_hours": 1,
                             "valid_time_iso": valid_iso,
                             "valid_time_local": valid_local,
+                            "max_total_mm": round(max_tot, 2),
+                            "max_interval_mm": round(max_int, 2),
                             "max_total_precip_mm": round(max_tot, 2),
                             "max_interval_precip_mm": round(max_int, 2),
                             "max_lat": round(max_lat, 4),
