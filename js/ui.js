@@ -574,12 +574,66 @@ export class UIManager {
       controls.style.display = isActive ? 'block' : 'none';
     }
 
+    if (layerId === 'saih_hidrologia' || layerId.startsWith('saih_')) {
+      this.updateSaihGroupUI();
+    }
+
     if (CONFIG.overlayLayers.prediction.some(p => p.id === layerId)) {
       this.updatePredictionFooterOpacity();
     }
 
     this.updateUnifiedTimelinePlayer();
     this.updateMobileLayersBadge();
+  }
+
+  /**
+   * Actualiza el contador de subcapas activas y el estado visual del selector agrupado SAIH
+   */
+  updateSaihGroupUI() {
+    const prefs = StorageManager.load();
+    const activeLayers = prefs.activeLayers || {};
+    const saihDef = CONFIG.overlayLayers.realtime.find(r => r.id === 'saih_hidrologia');
+    if (!saihDef) return;
+
+    const isMasterActive = (this.layerManager && this.layerManager.layerStates['saih_hidrologia']?.active !== undefined)
+      ? Boolean(this.layerManager.layerStates['saih_hidrologia'].active)
+      : Boolean(activeLayers['saih_hidrologia']);
+
+    const subLayers = saihDef.subLayers || [];
+
+    let activeCount = 0;
+    subLayers.forEach(sub => {
+      const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
+        ? Boolean(this.layerManager.layerStates[sub.id].active)
+        : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : (sub.defaultActive !== undefined ? sub.defaultActive : true));
+
+      if (isMasterActive && isSubActive) {
+        activeCount++;
+      }
+
+      const subItem = document.querySelector(`.saih-sublayer-item[data-sublayer-id="${sub.id}"]`);
+      const subCheckbox = document.querySelector(`.saih-sublayer-checkbox[data-sublayer-id="${sub.id}"]`);
+      if (subCheckbox) {
+        subCheckbox.checked = isSubActive;
+      }
+      if (subItem) {
+        subItem.classList.toggle('active', isMasterActive && isSubActive);
+      }
+    });
+
+    const countEl = document.getElementById('saih-active-count');
+    if (countEl) {
+      countEl.textContent = `${activeCount}/${subLayers.length} activos`;
+      countEl.classList.toggle('none-active', isMasterActive && activeCount === 0);
+    }
+
+    const masterCheckbox = document.querySelector(`.layer-toggle-input[data-layer-id="saih_hidrologia"]`);
+    const masterCard = document.querySelector(`.layer-card[data-layer-id="saih_hidrologia"]`);
+    const masterControls = document.getElementById('controls-saih_hidrologia');
+
+    if (masterCheckbox) masterCheckbox.checked = isMasterActive;
+    if (masterCard) masterCard.classList.toggle('active', isMasterActive);
+    if (masterControls) masterControls.style.display = isMasterActive ? 'block' : 'none';
   }
 
   /**
@@ -619,7 +673,81 @@ export class UIManager {
   _createLayerCardHtml(layer, isActive, opacity) {
     const opacityPct = Math.round(opacity * 100);
     const prefs = StorageManager.load();
+    const activeLayers = prefs.activeLayers || {};
     const refreshSec = prefs.autoRefreshInterval !== undefined ? prefs.autoRefreshInterval : 180;
+
+    // Tarjeta especial agrupada para la Red Hidrológica SAIH (CHJ)
+    if (layer.type === 'saih_group') {
+      const subLayers = layer.subLayers || [];
+      const activeCount = subLayers.filter(sub => {
+        const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
+          ? Boolean(this.layerManager.layerStates[sub.id].active)
+          : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : (sub.defaultActive !== undefined ? sub.defaultActive : true));
+        return isActive && isSubActive;
+      }).length;
+
+      const sublayersListHtml = subLayers.map(sub => {
+        const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
+          ? Boolean(this.layerManager.layerStates[sub.id].active)
+          : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : (sub.defaultActive !== undefined ? sub.defaultActive : true));
+        const isEffectiveActive = isActive && isSubActive;
+
+        return `
+          <div class="saih-sublayer-item ${isEffectiveActive ? 'active' : ''}" data-sublayer-id="${sub.id}">
+            <label class="saih-sublayer-label">
+              <input type="checkbox" class="saih-sublayer-checkbox" data-sublayer-id="${sub.id}" ${isSubActive ? 'checked' : ''}>
+              <span class="saih-sublayer-icon">${sub.icon}</span>
+              <div class="saih-sublayer-info">
+                <div class="saih-sublayer-title-row">
+                  <span class="saih-sublayer-name">${escapeHtml(sub.name)}</span>
+                  <span class="saih-sublayer-badge ${sub.badgeClass || ''}">${escapeHtml(sub.badge || '')}</span>
+                </div>
+                <span class="saih-sublayer-subtitle">${escapeHtml(sub.subtitle)}</span>
+              </div>
+            </label>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="layer-card saih-group-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
+          <div class="layer-card-main">
+            <label class="layer-switch" title="Activar/desactivar ${escapeHtml(layer.name)}">
+              <input type="checkbox" class="layer-toggle-input" data-layer-id="${layer.id}" ${isActive ? 'checked' : ''}>
+              <span class="switch-slider"></span>
+            </label>
+            <div class="layer-card-info">
+              <div class="layer-card-title-row">
+                <span class="layer-icon" style="color: ${layer.color};">${layer.icon}</span>
+                <span class="layer-card-name">${escapeHtml(layer.name)}</span>
+                <span class="saih-active-count-badge ${isActive && activeCount === 0 ? 'none-active' : ''}" id="saih-active-count">${activeCount}/${subLayers.length} activos</span>
+              </div>
+              <span class="layer-card-subtitle">${escapeHtml(layer.subtitle)}</span>
+              <div class="layer-timestamp-pill" id="timestamp-pill-${layer.id}">
+                <span class="timestamp-indicator"></span>
+                <span class="timestamp-val" id="time-val-${layer.id}">${this._getDefaultLayerTimestamp(layer.id)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="layer-card-controls" id="controls-${layer.id}" style="${isActive ? '' : 'display: none;'}">
+            <div class="layer-opacity-row">
+              <span class="layer-opacity-label">Opacidad general</span>
+              <span class="layer-opacity-value" id="val-${layer.id}">${opacityPct}%</span>
+            </div>
+            <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
+            
+            <div class="saih-sublayers-container">
+              <div class="saih-sublayers-header">
+                <span class="saih-sublayers-header-title">Marcadores visibles</span>
+              </div>
+              <div class="saih-sublayers-list">
+                ${sublayersListHtml}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     // Sub-controles específicos para la capa de Radar
     let radarExtraControls = '';
@@ -807,12 +935,21 @@ export class UIManager {
         return `Captura: <strong>${nowFormatted}</strong>`;
       case 'aemet_warnings':
         return `Vigencia: <strong>${nowFormatted}</strong>`;
+      case 'saih_hidrologia':
+      case 'saih_caudales':
+      case 'saih_embalses':
+      case 'saih_lluvias':
+        return `Actualizado: <strong>${nowFormatted}</strong>`;
       case 'arome_precip':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+6h)</strong>`;
+      case 'harmonie_aemet':
+        return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 00:00 (+6h)</strong>`;
       case 'icon_eu':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 06:00 (+1h)</strong>`;
       case 'ecmwf_ifs':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+12h)</strong>`;
+      case 'gem_gdps':
+        return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 00:00 (+3h)</strong>`;
       default:
         return `Fecha: <strong>${nowFormatted}</strong>`;
     }
@@ -934,6 +1071,17 @@ export class UIManager {
 
         if (this.layerManager) {
           this.layerManager.toggleLayer(layerId, isChecked);
+        }
+      });
+    });
+
+    // Sub-switches de la Red SAIH (CHJ)
+    document.querySelectorAll('.saih-sublayer-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const sublayerId = e.target.getAttribute('data-sublayer-id');
+        const isChecked = e.target.checked;
+        if (this.layerManager && this.layerManager.toggleSaihSublayer) {
+          this.layerManager.toggleSaihSublayer(sublayerId, isChecked);
         }
       });
     });

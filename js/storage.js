@@ -28,23 +28,29 @@ export class StorageManager {
       activeTab: 'realtime', // 'realtime' | 'prediction'
       activeLayers: {
         'radar': false,
+        'saih_hidrologia': false,
         'saih_caudales': false,
         'saih_embalses': false,
         'saih_lluvias': false,
         'aemet_warnings': false,
         'arome_precip': false,
+        'harmonie_aemet': false,
         'icon_eu': false,
+        'gem_gdps': false,
         'ecmwf_ifs': false,
         'gfs_0p25': false
       },
       layerOpacities: {
         'radar': 0.75,
+        'saih_hidrologia': 0.95,
         'saih_caudales': 0.95,
         'saih_embalses': 0.95,
         'saih_lluvias': 0.95,
         'aemet_warnings': 0.85,
         'arome_precip': 0.75,
+        'harmonie_aemet': 0.70,
         'icon_eu': 0.70,
+        'gem_gdps': 0.70,
         'ecmwf_ifs': 0.65,
         'gfs_0p25': 0.65
       },
@@ -64,7 +70,13 @@ export class StorageManager {
       const raw = localStorage.getItem(this.STORAGE_KEY);
       if (!raw) return this.getDefaults();
       const parsed = JSON.parse(raw);
-      return { ...this.getDefaults(), ...parsed };
+      const defaults = this.getDefaults();
+      return {
+        ...defaults,
+        ...parsed,
+        activeLayers: { ...defaults.activeLayers, ...(parsed.activeLayers || {}) },
+        layerOpacities: { ...defaults.layerOpacities, ...(parsed.layerOpacities || {}) }
+      };
     } catch (e) {
       console.warn('No se pudieron leer las preferencias de localStorage:', e);
       return this.getDefaults();

@@ -169,6 +169,8 @@ export class LayerManager {
   _registerLayerDefinition(def, isSavedActive, savedOpacity) {
     const prefs = StorageManager.load();
     const currentTab = prefs.activeTab || 'realtime';
+    const savedActive = prefs.activeLayers || {};
+    const savedOpacities = prefs.layerOpacities || {};
 
     let isActive = (isSavedActive !== undefined) ? Boolean(isSavedActive) : def.defaultActive;
     const opacity = (savedOpacity !== undefined) ? parseFloat(savedOpacity) : def.defaultOpacity;
@@ -180,6 +182,44 @@ export class LayerManager {
         isActive = false;
         StorageManager.setLayerActive(def.id, false);
       }
+    }
+
+    if (def.type === 'saih_group') {
+      this.layerStates[def.id] = {
+        id: def.id,
+        name: def.name,
+        active: isActive,
+        opacity: opacity,
+        type: def.type
+      };
+
+      if (Array.isArray(def.subLayers)) {
+        def.subLayers.forEach(subDef => {
+          const subSavedActive = savedActive[subDef.id] !== undefined 
+            ? Boolean(savedActive[subDef.id]) 
+            : (subDef.defaultActive !== undefined ? subDef.defaultActive : true);
+          const subOpacity = savedOpacities[subDef.id] !== undefined 
+            ? parseFloat(savedOpacities[subDef.id]) 
+            : opacity;
+
+          this.layerStates[subDef.id] = {
+            id: subDef.id,
+            name: subDef.name,
+            active: subSavedActive,
+            opacity: subOpacity,
+            type: 'saih_sublayer',
+            parentId: def.id
+          };
+
+          const leafletLayer = this._createLeafletLayer(subDef, subOpacity);
+          this.layers[subDef.id] = leafletLayer;
+
+          if (leafletLayer && isActive && subSavedActive && currentTab === 'realtime') {
+            leafletLayer.addTo(this.map);
+          }
+        });
+      }
+      return;
     }
 
     this.layerStates[def.id] = {
@@ -196,9 +236,9 @@ export class LayerManager {
 
     // Montar en el mapa según la pestaña activa actual
     if (leafletLayer && isActive) {
-      if (currentTab === 'realtime' && def.type === 'realtime') {
+      if (currentTab === 'realtime' && (def.type === 'realtime' || def.type === 'vector' || def.type === 'raster')) {
         leafletLayer.addTo(this.map);
-      } else if (currentTab === 'prediction' && def.type === 'prediction') {
+      } else if (currentTab === 'prediction' && (def.type === 'prediction' || def.type === 'model')) {
         leafletLayer.addTo(this.map);
       }
     }
@@ -281,7 +321,11 @@ export class LayerManager {
     if (tabId === 'prediction') {
       // 1. Ocultar del mapa todas las capas de tiempo real
       CONFIG.overlayLayers.realtime.forEach(def => {
-        this._hideLayerFromMap(def.id);
+        if (def.type === 'saih_group' && Array.isArray(def.subLayers)) {
+          def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
+        } else {
+          this._hideLayerFromMap(def.id);
+        }
       });
       if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
         this.map.removeLayer(this.lightningGroup);
@@ -315,6 +359,8 @@ export class LayerManager {
         this.reloadGfsLayer();
       } else if (activePredId === 'arome_precip') {
         this.reloadAromeLayer();
+      } else if (activePredId === 'harmonie_aemet') {
+        this.reloadHarmonieLayer();
       } else if (activePredId === 'icon_eu') {
         this.reloadIconLayer();
       } else if (activePredId === 'gem_gdps') {
@@ -334,6 +380,9 @@ export class LayerManager {
       if (this.isAromePlaying) {
         this.pauseAromePlayback();
       }
+      if (this.isHarmoniePlaying) {
+        this.pauseHarmoniePlayback();
+      }
       if (this.isIconPlaying) {
         this.pauseIconPlayback();
       }
@@ -344,6 +393,28 @@ export class LayerManager {
       // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
       CONFIG.overlayLayers.realtime.forEach(def => {
         const state = this.layerStates[def.id];
+        if (def.type === 'saih_group') {
+          if (state && state.active && Array.isArray(def.subLayers)) {
+            def.subLayers.forEach(sub => {
+              const subState = this.layerStates[sub.id];
+              if (subState && subState.active) {
+                this._showLayerOnMap(sub.id);
+                if (sub.id === 'saih_caudales') this.reloadCaudalesLayer();
+                if (sub.id === 'saih_embalses') this.reloadEmbalsesLayer();
+                if (sub.id === 'saih_lluvias') this.reloadLluviasLayer();
+              } else {
+                this._hideLayerFromMap(sub.id);
+              }
+            });
+          } else if (Array.isArray(def.subLayers)) {
+            def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
+          }
+          if (this.uiManager && state) {
+            this.uiManager.updateLayerCardActiveState(def.id, state.active);
+          }
+          return;
+        }
+
         if (state && state.active) {
           this._showLayerOnMap(def.id);
           if (def.id === 'radar') {
@@ -476,6 +547,79 @@ export class LayerManager {
       return;
     }
 
+    if (layerId === 'saih_hidrologia') {
+      const saihDef = CONFIG.overlayLayers.realtime.find(r => r.id === 'saih_hidrologia');
+      const subLayers = saihDef ? saihDef.subLayers : [];
+
+      if (active) {
+        // Desactivar del mapa cualquier modelo de predicción
+        CONFIG.overlayLayers.prediction.forEach(p => {
+          this._hideLayerFromMap(p.id);
+          if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
+          StorageManager.setLayerActive(p.id, false);
+          if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
+          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
+          if (p.id === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
+          if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
+          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
+          if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+          if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
+        });
+
+        if (this.layerStates['saih_hidrologia']) {
+          this.layerStates['saih_hidrologia'].active = true;
+        }
+        StorageManager.setLayerActive('saih_hidrologia', true);
+
+        // Si no hay ninguna subcapa activa seleccionada, activar las 3 por defecto
+        const anySubActive = subLayers.some(s => this.layerStates[s.id] && this.layerStates[s.id].active);
+        if (!anySubActive) {
+          subLayers.forEach(s => {
+            if (this.layerStates[s.id]) this.layerStates[s.id].active = true;
+            StorageManager.setLayerActive(s.id, true);
+          });
+        }
+
+        // Mostrar en mapa las subcapas activas
+        subLayers.forEach(s => {
+          if (this.layerStates[s.id] && this.layerStates[s.id].active) {
+            this._showLayerOnMap(s.id);
+            if (s.id === 'saih_caudales') {
+              const op = this.layerStates['saih_caudales'].opacity || 0.95;
+              this._loadCaudalesLayer(this.layers['saih_caudales'], op);
+            } else if (s.id === 'saih_embalses') {
+              const op = this.layerStates['saih_embalses'].opacity || 0.95;
+              this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
+            } else if (s.id === 'saih_lluvias') {
+              const op = this.layerStates['saih_lluvias'].opacity || 0.95;
+              this._loadLluviasLayer(this.layers['saih_lluvias'], op);
+            }
+          } else {
+            this._hideLayerFromMap(s.id);
+          }
+        });
+      } else {
+        if (this.layerStates['saih_hidrologia']) {
+          this.layerStates['saih_hidrologia'].active = false;
+        }
+        StorageManager.setLayerActive('saih_hidrologia', false);
+
+        subLayers.forEach(s => {
+          this._hideLayerFromMap(s.id);
+        });
+
+        if (this._caudalesPollInterval) { clearInterval(this._caudalesPollInterval); this._caudalesPollInterval = null; }
+        if (this._embalsesPollInterval) { clearInterval(this._embalsesPollInterval); this._embalsesPollInterval = null; }
+        if (this._lluviasPollInterval) { clearInterval(this._lluviasPollInterval); this._lluviasPollInterval = null; }
+      }
+
+      if (this.uiManager) {
+        this.uiManager.updateLayerCardActiveState('saih_hidrologia', active);
+        if (this.uiManager.updateSaihGroupUI) this.uiManager.updateSaihGroupUI();
+      }
+      return;
+    }
+
     if (isRealtime) {
       if (active) {
         // Ocultar cualquier modelo de predicción
@@ -492,6 +636,9 @@ export class LayerManager {
           }
           if (p.id === 'arome_precip' && this.isAromePlaying) {
             this.pauseAromePlayback();
+          }
+          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) {
+            this.pauseHarmoniePlayback();
           }
           if (p.id === 'icon_eu' && this.isIconPlaying) {
             this.pauseIconPlayback();
@@ -617,13 +764,81 @@ export class LayerManager {
   }
 
   /**
+   * Conmuta la visibilidad de una subcapa individual de la Red SAIH (Caudales, Embalses, Lluvias)
+   */
+  toggleSaihSublayer(sublayerId, active) {
+    const saihDef = CONFIG.overlayLayers.realtime.find(r => r.id === 'saih_hidrologia');
+    const subLayers = saihDef ? saihDef.subLayers : [];
+
+    if (active) {
+      // Si la capa maestra estaba inactiva, la encendemos
+      if (!this.layerStates['saih_hidrologia'] || !this.layerStates['saih_hidrologia'].active) {
+        if (this.layerStates['saih_hidrologia']) this.layerStates['saih_hidrologia'].active = true;
+        StorageManager.setLayerActive('saih_hidrologia', true);
+
+        // Desactivar modelos de predicción
+        CONFIG.overlayLayers.prediction.forEach(p => {
+          this._hideLayerFromMap(p.id);
+          if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
+          StorageManager.setLayerActive(p.id, false);
+          if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
+          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
+          if (p.id === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
+          if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
+          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
+          if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+          if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
+        });
+      }
+
+      if (this.layerStates[sublayerId]) {
+        this.layerStates[sublayerId].active = true;
+      }
+      StorageManager.setLayerActive(sublayerId, true);
+      this._showLayerOnMap(sublayerId);
+
+      const op = (this.layerStates[sublayerId] && this.layerStates[sublayerId].opacity) || 0.95;
+      if (sublayerId === 'saih_caudales') {
+        this._loadCaudalesLayer(this.layers['saih_caudales'], op);
+      } else if (sublayerId === 'saih_embalses') {
+        this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
+      } else if (sublayerId === 'saih_lluvias') {
+        this._loadLluviasLayer(this.layers['saih_lluvias'], op);
+      }
+    } else {
+      if (this.layerStates[sublayerId]) {
+        this.layerStates[sublayerId].active = false;
+      }
+      StorageManager.setLayerActive(sublayerId, false);
+      this._hideLayerFromMap(sublayerId);
+
+      // Si no queda ninguna subcapa activa, desactivar el master SAIH
+      const anySubActive = subLayers.some(s => this.layerStates[s.id] && this.layerStates[s.id].active);
+      if (!anySubActive) {
+        if (this.layerStates['saih_hidrologia']) {
+          this.layerStates['saih_hidrologia'].active = false;
+        }
+        StorageManager.setLayerActive('saih_hidrologia', false);
+      }
+    }
+
+    if (this.uiManager) {
+      const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+      this.uiManager.updateLayerCardActiveState('saih_hidrologia', isMasterActive);
+      if (this.uiManager.updateSaihGroupUI) {
+        this.uiManager.updateSaihGroupUI();
+      }
+      this.uiManager.updateMobileLayersBadge();
+    }
+  }
+
+  /**
    * Modifica la opacidad de una capa temática individual
    * @param {string} layerId 
    * @param {number} opacity 0.0 a 1.0
    */
   setLayerOpacity(layerId, opacity) {
     const op = parseFloat(opacity);
-    const layer = this.layers[layerId];
 
     if (this.layerStates[layerId]) {
       this.layerStates[layerId].opacity = op;
@@ -631,6 +846,32 @@ export class LayerManager {
 
     StorageManager.setLayerOpacity(layerId, op);
 
+    if (layerId === 'saih_hidrologia') {
+      const saihDef = CONFIG.overlayLayers.realtime.find(r => r.id === 'saih_hidrologia');
+      const subLayers = saihDef ? saihDef.subLayers : [];
+      subLayers.forEach(s => {
+        if (this.layerStates[s.id]) {
+          this.layerStates[s.id].opacity = op;
+        }
+        StorageManager.setLayerOpacity(s.id, op);
+        const subGroup = this.layers[s.id];
+        if (subGroup) {
+          subGroup.eachLayer(subLayer => {
+            if (subLayer.setOpacity) {
+              subLayer.setOpacity(op);
+            } else if (subLayer.setStyle) {
+              subLayer.setStyle({
+                opacity: op,
+                fillOpacity: Math.min(1.0, op * 0.95)
+              });
+            }
+          });
+        }
+      });
+      return;
+    }
+
+    const layer = this.layers[layerId];
     if (layer) {
       layer.eachLayer((subLayer) => {
         if (subLayer.setOpacity) {
@@ -3748,13 +3989,14 @@ export class LayerManager {
       if (this.layerStates['aemet_warnings'] && this.layerStates['aemet_warnings'].active) {
         this.reloadAemetWarnings();
       }
-      if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
+      const isSaihActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+      if (isSaihActive && this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
         this.reloadCaudalesLayer();
       }
-      if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) {
+      if (isSaihActive && this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) {
         this.reloadEmbalsesLayer();
       }
-      if (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
+      if (isSaihActive && this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
         this.reloadLluviasLayer();
       }
     }, sec * 1000);
@@ -3876,7 +4118,9 @@ export class LayerManager {
     layerGroup.addLayer(caudalesGeoJSON);
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      this.uiManager.updateLayerTimestamp('saih_caudales', `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`);
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      this.uiManager.updateLayerTimestamp('saih_caudales', tsHtml);
+      this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
   }
 
@@ -4516,7 +4760,9 @@ export class LayerManager {
     layerGroup.addLayer(embalsesGeoJSON);
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      this.uiManager.updateLayerTimestamp('saih_embalses', `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`);
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      this.uiManager.updateLayerTimestamp('saih_embalses', tsHtml);
+      this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
   }
 
@@ -4629,7 +4875,9 @@ export class LayerManager {
     layerGroup.addLayer(lluviasGeoJSON);
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      this.uiManager.updateLayerTimestamp('saih_lluvias', `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`);
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      this.uiManager.updateLayerTimestamp('saih_lluvias', tsHtml);
+      this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
   }
 

@@ -155,43 +155,46 @@ export const CONFIG = {
         icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"></path><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path><path d="M12 2v2"></path><path d="M12 22v-2"></path><path d="m17 17 1.4 1.4"></path><path d="m5.6 5.6 1.4 1.4"></path></svg>`
       },
       {
-        id: 'saih_caudales',
-        name: 'Caudales en Ríos',
-        subtitle: 'Red SAIH Júcar (CHJ)',
-        description: 'Estaciones de aforo y medición de caudal en tiempo real (m³/s), niveles de alerta hidrológica y series temporales.',
-        type: 'vector',
+        id: 'saih_hidrologia',
+        name: 'Red Hidrológica SAIH (CHJ)',
+        subtitle: 'Aforos en Ríos, Embalses y Pluviómetros',
+        description: 'Monitorización integral en tiempo real: 79 aforos de ríos, 25 embalses y presas, y 182 pluviómetros de la CHJ.',
+        type: 'saih_group',
         defaultActive: false,
         defaultOpacity: 0.95,
-        badge: 'SAIH',
+        badge: 'SAIH CHJ',
         badgeType: 'info',
         color: '#0284c7',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M2 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path><path d="M2 7c2-2 4-2 6 0s4 2 6 0 4-2 6 0"></path></svg>`
-      },
-      {
-        id: 'saih_embalses',
-        name: 'Embalses y Presas',
-        subtitle: 'Capacidad y Volumen (CHJ)',
-        description: 'Estado de llenado de los 25 embalses de la cuenca: volumen (hm³), porcentaje de reserva, cota y caudales.',
-        type: 'vector',
-        defaultActive: false,
-        defaultOpacity: 0.95,
-        badge: 'Embalses',
-        badgeType: 'live',
-        color: '#0ea5e9',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"></path><path d="M3 10h18"></path><path d="M7 6v4"></path><path d="M12 6v4"></path><path d="M17 6v4"></path></svg>`
-      },
-      {
-        id: 'saih_lluvias',
-        name: 'Lluvia en Tiempo Real',
-        subtitle: 'Pluviómetros SAIH Júcar',
-        description: 'Red de 182 estaciones pluviométricas con precipitación acumulada en tiempo real (1h, 4h, 12h y 24h).',
-        type: 'vector',
-        defaultActive: false,
-        defaultOpacity: 0.95,
-        badge: 'Lluvia',
-        badgeType: 'live',
-        color: '#06b6d4',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"></path><path d="M8 19v2"></path><path d="M8 13v2"></path><path d="M12 21v2"></path><path d="M12 15v2"></path><path d="M16 19v2"></path><path d="M16 13v2"></path></svg>`
+        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>`,
+        subLayers: [
+          {
+            id: 'saih_caudales',
+            name: 'Caudales en Ríos',
+            subtitle: '79 aforos en directo (m³/s y alertas)',
+            icon: '🌊',
+            badge: 'Aforos',
+            badgeClass: 'badge-caudal',
+            defaultActive: true
+          },
+          {
+            id: 'saih_embalses',
+            name: 'Embalses y Presas',
+            subtitle: '25 embalses (volumen, cota y %)',
+            icon: '🏞️',
+            badge: 'Embalses',
+            badgeClass: 'badge-embalse',
+            defaultActive: true
+          },
+          {
+            id: 'saih_lluvias',
+            name: 'Lluvia en Tiempo Real',
+            subtitle: '182 pluviómetros (1h, 4h, 12h, 24h)',
+            icon: '🌧️',
+            badge: 'Pluviómetros',
+            badgeClass: 'badge-lluvia',
+            defaultActive: true
+          }
+        ]
       }
     ],
     prediction: [
