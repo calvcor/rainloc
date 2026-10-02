@@ -281,6 +281,7 @@ class HarmonieWorker:
                 "source": "AEMET / MITECO Datos Abiertos (0.025° / ~2.5km)",
                 "cycle_str": "",
                 "status": "empty",
+                "run": "",
                 "available_steps": [],
                 "steps": [],
                 "is_complete": False,
@@ -289,6 +290,8 @@ class HarmonieWorker:
             }
         out = dict(self.current_manifest)
         out["is_syncing"] = self._is_syncing
+        out["status"] = "ready" if self.current_manifest.get("is_complete") else "syncing"
+        out["run"] = self.current_manifest.get("cycle_str", "")
         return out
 
     def get_image_path(self, step: int, layer_type: str = "total") -> Optional[Path]:
@@ -312,6 +315,10 @@ class HarmonieWorker:
         if key in self._in_memory_arrays:
             return self._in_memory_arrays[key]
         return None
+
+    def get_matrix(self, step: int, layer_type: str = "total") -> Optional[np.ndarray]:
+        """Alias compatible con BasinHydrologyService para obtener la matriz 2D (GRID_H, GRID_W)."""
+        return self.get_array(step, layer_type)
 
     def get_value_at(self, lat: float, lon: float, step: int, layer_type: str = "total") -> Optional[float]:
         """Consulta en O(1) el valor en mm para unas coordenadas lat/lon dadas."""
@@ -533,6 +540,7 @@ class HarmonieWorker:
                         available_steps.append(step_num)
                         steps_metadata.append({
                             "step": step_num,
+                            "delta_hours": 1,
                             "valid_time_iso": valid_iso,
                             "valid_time_local": valid_local,
                             "max_total_precip_mm": round(max_tot, 2),

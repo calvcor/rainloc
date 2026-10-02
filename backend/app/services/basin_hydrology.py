@@ -276,7 +276,7 @@ class BasinHydrologyService:
 
             series.append({
                 "step": step,
-                "delta_hours": s_info.get("delta_hours", 3),
+                "delta_hours": s_info.get("delta_hours", 1 if ("harmonie" in model_clean or "arome" in model_clean) else 3),
                 "valid_time_iso": s_info.get("valid_time_iso", ""),
                 "valid_time_local": s_info.get("valid_time_local", f"+{step}h"),
                 "total_vol_hm3": tot_vol_hm3,
