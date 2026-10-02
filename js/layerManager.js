@@ -5346,16 +5346,24 @@ export class LayerManager {
       this._basinHydroCache = new Map();
     }
     if (this._basinHydroCache.has(cacheKey)) {
-      return this._basinHydroCache.get(cacheKey);
+      const cached = this._basinHydroCache.get(cacheKey);
+      if (cached && cached.series && cached.series.length > 0) {
+        return cached;
+      }
     }
     try {
       const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(basinId)}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        console.warn(`[RainLoc Hydro] HTTP ${resp.status} al consultar cuenca ${basinId} para modelo ${cleanModel}`);
+        return null;
+      }
       const data = await resp.json();
-      this._basinHydroCache.set(cacheKey, data);
+      if (data && data.series && data.series.length > 0) {
+        this._basinHydroCache.set(cacheKey, data);
+      }
       return data;
     } catch (err) {
-      console.warn(`Error fetching basin hydrograph for ${basinId} (${cleanModel}):`, err);
+      console.warn(`[RainLoc Hydro] Error fetching basin hydrograph for ${basinId} (${cleanModel}):`, err);
       return null;
     }
   }

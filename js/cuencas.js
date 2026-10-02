@@ -423,27 +423,40 @@ export class CuencasLayer {
       });
     }
 
-    // Escuchar botones dentro del popup
-    setTimeout(() => {
-      const hydroBtn = document.querySelector(`.popup-btn-hydro[data-basin-id="${feature.id}"]`);
-      if (hydroBtn && this.layerManager) {
-        hydroBtn.addEventListener('click', () => {
-          this.layerManager.openBasinHydroModal(feature.id, props, activeModel);
-        });
+    // Escuchar botones dentro del popup de forma robusta
+    const attachPopupEvents = () => {
+      const popupEl = popup.getElement();
+      if (!popupEl) return;
+
+      const hydroBtn = popupEl.querySelector('.popup-btn-hydro');
+      const hydroCard = popupEl.querySelector('.popup-hydro-card');
+      const onOpenHydro = (ev) => {
+        ev.stopPropagation();
+        const currentModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
+        if (this.layerManager) {
+          this.layerManager.openBasinHydroModal(feature.id, props, currentModel);
+        }
+      };
+
+      if (hydroBtn) hydroBtn.onclick = onOpenHydro;
+      if (hydroCard) {
+        hydroCard.style.cursor = 'pointer';
+        hydroCard.onclick = onOpenHydro;
       }
 
-      const zoomBtn = document.querySelector(`.popup-btn-zoom[data-feature-id="${feature.id}"]`);
+      const zoomBtn = popupEl.querySelector('.popup-btn-zoom');
       if (zoomBtn) {
-        zoomBtn.addEventListener('click', () => {
-          if (layer && layer.getBounds) {
+        zoomBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          if (layer && layer.getBounds && this.mapManager) {
             this.mapManager.fitBounds(layer.getBounds());
           }
-        });
+        };
       }
 
-      const favBtn = document.querySelector(`.popup-star-fav[data-fav-id="${feature.id}"]`);
+      const favBtn = popupEl.querySelector('.popup-star-fav');
       if (favBtn) {
-        favBtn.addEventListener('click', (ev) => {
+        favBtn.onclick = (ev) => {
           ev.stopPropagation();
           const currentlyFav = StorageManager.isFavorite(feature.id);
           const svg = favBtn.querySelector('svg');
@@ -464,16 +477,17 @@ export class CuencasLayer {
               svg.setAttribute('stroke', '#f59e0b');
             }
           }
-
-          // Actualizar estilos en el mapa en tiempo real
           this.refreshStyles();
-
           if (this.uiManager) {
             this.uiManager.renderFavoriteBadge();
           }
-        });
+        };
       }
-    }, 50);
+    };
+
+    popup.on('add', attachPopupEvents);
+    setTimeout(attachPopupEvents, 10);
+    setTimeout(attachPopupEvents, 100);
 
     // Fijar selección en capa
     if (layer) {
