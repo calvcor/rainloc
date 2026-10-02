@@ -290,8 +290,10 @@ class HarmonieWorker:
             }
         out = dict(self.current_manifest)
         out["is_syncing"] = self._is_syncing
+        cycle_str = self.current_manifest.get("cycle_str", "")
+        run_part = cycle_str.split("_")[1] if "_" in cycle_str else cycle_str
         out["status"] = "ready" if self.current_manifest.get("is_complete") else "syncing"
-        out["run"] = self.current_manifest.get("cycle_str", "")
+        out["run"] = run_part
         return out
 
     def get_image_path(self, step: int, layer_type: str = "total") -> Optional[Path]:

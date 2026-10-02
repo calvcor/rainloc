@@ -641,10 +641,10 @@ export function formatHarmonieTimestamp(metadata) {
   const maxStep = metadata.max_step !== undefined ? metadata.max_step : (availSteps.length > 0 ? Math.max(...availSteps) : 0);
 
   // Extraer corrida (00z, 06z, 12z, 18z)
-  let run = metadata.run;
-  if (!run && metadata.cycle_str) {
-    const parts = metadata.cycle_str.split('_');
-    if (parts.length > 1) run = parts[1].toLowerCase();
+  let run = metadata.run || metadata.run_id || metadata.cycle_str || '';
+  if (typeof run === 'string' && run.includes('_')) {
+    const parts = run.split('_');
+    run = parts[parts.length - 1];
   }
   if (!run && metadata.cycle) {
     try {
@@ -654,7 +654,8 @@ export function formatHarmonieTimestamp(metadata) {
     } catch (e) {}
   }
   if (run) {
-    run = run.replace(/^0(\d)z$/, '$1z').toLowerCase();
+    run = String(run).replace(/^20\d{6}_?/i, '');
+    run = run.replace(/^0(\d)z$/i, '$1z').toLowerCase();
   } else {
     run = '0z';
   }
