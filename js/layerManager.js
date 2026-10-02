@@ -5327,12 +5327,12 @@ export class LayerManager {
    * Determina el modelo de predicción activo en el mapa
    */
   getActivePredictionModel() {
-    if (this.isLayerOnMap('harmonie_aemet')) return 'harmonie';
-    if (this.isLayerOnMap('gem_gdps')) return 'gem';
-    if (this.isLayerOnMap('icon_eu')) return 'icon';
     if (this.isLayerOnMap('arome_precip')) return 'arome';
-    if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
+    if (this.isLayerOnMap('harmonie_aemet')) return 'harmonie';
+    if (this.isLayerOnMap('icon_eu')) return 'icon';
+    if (this.isLayerOnMap('gem_gdps')) return 'gem';
     if (this.isLayerOnMap('ecmwf_ifs')) return 'ecmwf';
+    if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
     return 'ecmwf';
   }
 

@@ -196,19 +196,6 @@ export const CONFIG = {
     ],
     prediction: [
       {
-        id: 'harmonie_aemet',
-        name: 'Modelo Harmonie-Arome (2.5 km)',
-        subtitle: 'Previsión convectiva AEMET (48h)',
-        description: 'Modelo no hidrostático de alta resolución de AEMET para predicción explícita de precipitaciones y tormentas (hasta +48h).',
-        type: 'model',
-        defaultActive: false,
-        defaultOpacity: 0.70,
-        badge: 'AEMET',
-        badgeType: 'model',
-        color: '#f59e0b',
-        icon: '<span class="model-flag-icon">🇪🇸</span>'
-      },
-      {
         id: 'arome_precip',
         name: 'Modelo AROME (1.3 km)',
         subtitle: 'Previsión convectiva alta resolución (48h)',
@@ -220,6 +207,19 @@ export const CONFIG = {
         badgeType: 'model',
         color: '#8b5cf6',
         icon: '<span class="model-flag-icon">🇫🇷</span>'
+      },
+      {
+        id: 'harmonie_aemet',
+        name: 'Modelo Harmonie-Arome (2.5 km)',
+        subtitle: 'Previsión convectiva AEMET (48h)',
+        description: 'Modelo no hidrostático de alta resolución de AEMET para predicción explícita de precipitaciones y tormentas (hasta +48h).',
+        type: 'model',
+        defaultActive: false,
+        defaultOpacity: 0.70,
+        badge: 'AEMET',
+        badgeType: 'model',
+        color: '#f59e0b',
+        icon: '<span class="model-flag-icon">🇪🇸</span>'
       },
       {
         id: 'icon_eu',
