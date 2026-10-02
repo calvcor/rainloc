@@ -2452,7 +2452,7 @@ export class LayerManager {
       this.modelMaxMarkerGroup = L.layerGroup().addTo(this.map);
     }
 
-    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : 'arome_precip')));
+    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip'))));
     if (!this.isLayerOnMap(layerId)) {
       if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
         delete this.currentMaxPoints[modelKey];

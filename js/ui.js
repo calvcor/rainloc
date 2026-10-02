@@ -714,6 +714,12 @@ export class UIManager {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         </button>
       `;
+    } else if (layer.id === 'harmonie_aemet') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="harmonie-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
     } else if (layer.id === 'icon_eu') {
       modelSyncBtnHtml = `
         <button type="button" class="btn-model-sync-pill" id="icon-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
@@ -1038,6 +1044,7 @@ export class UIManager {
     this._setupModelSyncButton('ecmwf-sync-btn', 'ecmwf');
     this._setupModelSyncButton('gfs-sync-btn', 'gfs');
     this._setupModelSyncButton('arome-sync-btn', 'arome');
+    this._setupModelSyncButton('harmonie-sync-btn', 'harmonie');
     this._setupModelSyncButton('icon-sync-btn', 'icon');
     this._setupModelSyncButton('gem-sync-btn', 'gem');
     this._setupPredictionBannerSync();
@@ -1090,6 +1097,9 @@ export class UIManager {
       try {
         if (this.layerManager) {
           const syncTasks = [];
+          if (this.layerManager.isLayerActive('harmonie_aemet')) {
+            syncTasks.push(this.layerManager.triggerModelSync('harmonie'));
+          }
           if (this.layerManager.isLayerActive('ecmwf_ifs')) {
             syncTasks.push(this.layerManager.triggerModelSync('ecmwf'));
           }
@@ -1109,6 +1119,7 @@ export class UIManager {
           if (syncTasks.length === 0) {
             // Si ninguno está activo visible, sincroniza todos
             await Promise.all([
+              this.layerManager.triggerModelSync('harmonie'),
               this.layerManager.triggerModelSync('ecmwf'),
               this.layerManager.triggerModelSync('gfs'),
               this.layerManager.triggerModelSync('arome'),
