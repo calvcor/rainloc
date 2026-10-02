@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatHarmonieTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
 import { StorageManager } from './storage.js';
 
 export class LayerManager {
@@ -78,6 +78,17 @@ export class LayerManager {
     this._aromeStepRequestId = 0;
     this._aromeImageCache = new Map();
 
+    // AEMET HARMONIE-AROME NWP Model State
+    this.currentHarmonieStep = 1;
+    this.currentHarmonieType = 'total'; // 'total' | 'interval'
+    this.harmonieMetadata = null;
+    this.harmoniePlaybackInterval = null;
+    this.isHarmoniePlaying = false;
+    this.harmonieCanvasData = null;
+    this.currentHarmonieOverlay = null;
+    this._harmonieStepRequestId = 0;
+    this._harmonieImageCache = new Map();
+
     // DWD ICON-EU NWP Model State
     this.currentIconStep = 1;
     this.currentIconType = 'total'; // 'total' | 'interval'
@@ -137,6 +148,9 @@ export class LayerManager {
 
     // Iniciar conexión SSE en tiempo real para el modelo AROME (aviso reactivo de nuevos pasos)
     this._startAromeSSE();
+
+    // Iniciar conexión SSE en tiempo real para el modelo AEMET HARMONIE-AROME (aviso reactivo de nuevos pasos)
+    this._startHarmonieSSE();
 
     // Iniciar conexión SSE en tiempo real para el modelo DWD ICON-EU (aviso reactivo de nuevos pasos)
     this._startIconSSE();
@@ -219,6 +233,9 @@ export class LayerManager {
     }
     else if (def.id === 'arome_precip') {
       this._loadAromeLayer(layerGroup, opacity);
+    }
+    else if (def.id === 'harmonie_aemet' || def.id.startsWith('harmonie')) {
+      this._loadHarmonieLayer(layerGroup, opacity);
     }
     else if (def.id === 'icon_eu' || def.id.startsWith('icon')) {
       this._loadIconLayer(layerGroup, opacity);
@@ -1700,6 +1717,237 @@ export class LayerManager {
   }
 
   // =========================================================================
+  // AEMET HARMONIE-AROME (2.5 km) Pipeline & Interactivity
+  // =========================================================================
+
+  /**
+   * Genera una URL estable para la imagen de un paso de Harmonie-Arome
+   */
+  _getHarmonieImageUrl(step, type) {
+    const meta = this.harmonieMetadata;
+    const runId = (meta && (meta.run_id || meta.cycle_str)) || '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/harmonie/image?step=${step}&type=${type}${runParam}${vParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de Harmonie en la memoria del navegador para transiciones fluidas
+   */
+  _preloadHarmonieSteps(currentStep, type) {
+    if (!this.harmonieMetadata || !this.harmonieMetadata.available_steps) return;
+    const steps = this.harmonieMetadata.available_steps;
+    const idx = steps.indexOf(currentStep);
+    if (idx === -1) return;
+
+    if (!this._harmoniePreloadSet) this._harmoniePreloadSet = new Set();
+
+    const stepsToPreload = [];
+    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
+    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
+    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
+    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
+
+    stepsToPreload.forEach(step => {
+      for (const t of [type, (type === 'total' ? 'interval' : 'total')]) {
+        const key = `${t}_${step}`;
+        if (!this._harmoniePreloadSet.has(key)) {
+          this._harmoniePreloadSet.add(key);
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = this._getHarmonieImageUrl(step, t);
+
+          if (this._harmoniePreloadSet.size > 30) {
+            const first = this._harmoniePreloadSet.values().next().value;
+            this._harmoniePreloadSet.delete(first);
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Carga la capa del modelo AEMET Harmonie-Arome con doble búfer (sin parpadeo) y caché inteligente
+   */
+  async _loadHarmonieLayer(layerGroup, opacity, forceMetaFetch = false) {
+    try {
+      if (!this.harmonieMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/harmonie/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.harmonieMetadata = metadata;
+        if (this._harmoniePreloadSet) this._harmoniePreloadSet.clear();
+      }
+
+      const metadata = this.harmonieMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('harmonie_aemet', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      if (!availSteps.includes(this.currentHarmonieStep)) {
+        this.currentHarmonieStep = availSteps[0];
+      }
+
+      const step = this.currentHarmonieStep;
+      const type = this.currentHarmonieType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI de inmediato
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('harmonie_aemet', formatHarmonieTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateHarmoniePlayerUI) {
+        this.uiManager.updateHarmoniePlayerUI(metadata, step, type, this.isHarmoniePlaying);
+      }
+
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('harmonie', step, type);
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentHarmonieBounds = bounds;
+
+      const imgUrl = this._getHarmonieImageUrl(step, type);
+      const requestId = ++this._harmonieStepRequestId;
+
+      // Función para reemplazar la capa overlay una vez la imagen esté completamente lista
+      const swapOverlay = () => {
+        if (requestId !== this._harmonieStepRequestId) return;
+
+        const newOverlay = L.imageOverlay(imgUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'harmonie-raster-overlay'
+        });
+
+        layerGroup.addLayer(newOverlay);
+        const oldOverlay = this.currentHarmonieOverlay;
+        if (oldOverlay && oldOverlay !== newOverlay) {
+          layerGroup.removeLayer(oldOverlay);
+        }
+        this.currentHarmonieOverlay = newOverlay;
+
+        this._preloadHarmonieSteps(step, type);
+      };
+
+      let isImgLoaded = false;
+      const handleImageReady = () => {
+        if (isImgLoaded) return;
+        isImgLoaded = true;
+        if (requestId !== this._harmonieStepRequestId) return;
+
+        const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'harmonie', type: type });
+        if (probeData) {
+          this.harmonieCanvasData = probeData;
+        }
+
+        swapOverlay();
+      };
+
+      // Precargar y decodificar la imagen antes de montar en Leaflet
+      const offscreenImg = new Image();
+      offscreenImg.crossOrigin = 'anonymous';
+      offscreenImg.onload = handleImageReady;
+      offscreenImg.onerror = () => {
+        if (!isImgLoaded && requestId === this._harmonieStepRequestId) {
+          isImgLoaded = true;
+          console.warn(`La imagen Harmonie para paso +${step}h no pudo ser cargada.`);
+        }
+      };
+      offscreenImg.src = imgUrl;
+
+      if (offscreenImg.complete && offscreenImg.naturalWidth > 0) {
+        handleImageReady();
+      }
+
+    } catch (err) {
+      console.warn('Error al cargar Harmonie desde backend API:', err);
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo Harmonie
+   */
+  setHarmonieStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentHarmonieType || 'total';
+    if (this.currentHarmonieStep === parsedStep && this.currentHarmonieType === targetType && this.currentHarmonieOverlay) {
+      return;
+    }
+    this.currentHarmonieStep = parsedStep;
+    this.currentHarmonieType = targetType;
+    this.reloadHarmonieLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de Harmonie
+   */
+  setHarmonieType(type) {
+    if (this.currentHarmonieType === type && this.currentHarmonieOverlay) return;
+    this.currentHarmonieType = type;
+    this.reloadHarmonieLayer();
+  }
+
+  /**
+   * Recarga la capa Harmonie con los parámetros activos
+   */
+  reloadHarmonieLayer(forceMetaFetch = false) {
+    const harmonieGroup = this.layers['harmonie_aemet'];
+    if (!harmonieGroup) return;
+    const opacity = (this.layerStates['harmonie_aemet'] && this.layerStates['harmonie_aemet'].opacity) || 0.70;
+    this._loadHarmonieLayer(harmonieGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de Harmonie
+   */
+  toggleHarmoniePlayback() {
+    if (this.isHarmoniePlaying) {
+      this.pauseHarmoniePlayback();
+    } else {
+      this.startHarmoniePlayback();
+    }
+  }
+
+  startHarmoniePlayback() {
+    if (this.isHarmoniePlaying) return;
+    this.isHarmoniePlaying = true;
+    if (this.uiManager && this.uiManager.updateHarmoniePlayState) {
+      this.uiManager.updateHarmoniePlayState(true);
+    }
+
+    this.harmoniePlaybackInterval = setInterval(() => {
+      if (!this.harmonieMetadata || !this.harmonieMetadata.available_steps || this.harmonieMetadata.available_steps.length === 0) {
+        this.pauseHarmoniePlayback();
+        return;
+      }
+
+      const steps = this.harmonieMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentHarmonieStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setHarmonieStep(steps[nextIdx]);
+    }, 1000);
+  }
+
+  pauseHarmoniePlayback() {
+    this.isHarmoniePlaying = false;
+    if (this.harmoniePlaybackInterval) {
+      clearInterval(this.harmoniePlaybackInterval);
+      this.harmoniePlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateHarmoniePlayState) {
+      this.uiManager.updateHarmoniePlayState(false);
+    }
+  }
+
+  // =========================================================================
   // DWD ICON-EU (6.5 km) Pipeline & Interactivity
   // =========================================================================
 
@@ -2172,6 +2420,8 @@ export class LayerManager {
       'gfs': 'gfs',
       'arome_precip': 'arome',
       'arome': 'arome',
+      'harmonie_aemet': 'harmonie',
+      'harmonie': 'harmonie',
       'icon_eu': 'icon',
       'icon': 'icon',
       'gem_gdps': 'gem',
@@ -2185,6 +2435,7 @@ export class LayerManager {
       if (apiName === 'ecmwf') this.reloadEcmwfLayer(true);
       else if (apiName === 'gfs') this.reloadGfsLayer(true);
       else if (apiName === 'arome') this.reloadAromeLayer(true);
+      else if (apiName === 'harmonie') this.reloadHarmonieLayer(true);
       else if (apiName === 'icon') this.reloadIconLayer(true);
       else if (apiName === 'gem') this.reloadGemLayer(true);
     } catch (e) {
@@ -3219,6 +3470,82 @@ export class LayerManager {
     if (this.aromeEventSource) {
       this.aromeEventSource.close();
       this.aromeEventSource = null;
+    }
+  }
+
+  /**
+   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de AEMET Harmonie-Arome
+   */
+  _startHarmonieSSE() {
+    if (this.harmonieEventSource) {
+      return;
+    }
+
+    const sseUrl = `${CONFIG.apiBaseUrl}/models/harmonie/stream`;
+    try {
+      this.harmonieEventSource = new EventSource(sseUrl);
+
+      this.harmonieEventSource.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && (data.event === 'harmonie_update' || data.event === 'harmonie_init')) {
+            console.log('🌐 Notificación SSE Harmonie recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+            // Refrescar metadatos completos desde la API
+            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/harmonie/metadata?_t=${Date.now()}`);
+            if (metaResp.ok) {
+              const metadata = await metaResp.json();
+              this.harmonieMetadata = metadata;
+              this._harmonieImageCache.clear();
+
+              const availSteps = metadata.available_steps || [];
+              if (availSteps.length > 0 && !availSteps.includes(this.currentHarmonieStep)) {
+                this.currentHarmonieStep = availSteps[0];
+              }
+
+              // Actualizar timestamp y estado de actualización en la tarjeta
+              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+                this.uiManager.updateLayerTimestamp('harmonie_aemet', formatHarmonieTimestamp(metadata));
+              }
+
+              // Actualizar reproductor en la interfaz
+              if (this.uiManager && this.uiManager.updateHarmoniePlayerUI) {
+                this.uiManager.updateHarmoniePlayerUI(
+                  metadata,
+                  this.currentHarmonieStep,
+                  this.currentHarmonieType || 'total',
+                  this.isHarmoniePlaying
+                );
+              }
+
+              // Si la capa está montada en el mapa, refrescar el raster
+              if (this.isLayerOnMap('harmonie_aemet')) {
+                this.reloadHarmonieLayer();
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Error procesando evento SSE de Harmonie:', e);
+        }
+      };
+
+      this.harmonieEventSource.onerror = (err) => {
+        console.warn('Stream SSE de Harmonie desconectado. Intentando reconexión en 5s...', err);
+        this._stopHarmonieSSE();
+        setTimeout(() => this._startHarmonieSSE(), 5000);
+      };
+    } catch (err) {
+      console.warn('No se pudo inicializar EventSource para Harmonie:', err);
+    }
+  }
+
+  /**
+   * Detiene el stream SSE de Harmonie
+   */
+  _stopHarmonieSSE() {
+    if (this.harmonieEventSource) {
+      this.harmonieEventSource.close();
+      this.harmonieEventSource = null;
     }
   }
 
@@ -5000,6 +5327,7 @@ export class LayerManager {
    * Determina el modelo de predicción activo en el mapa
    */
   getActivePredictionModel() {
+    if (this.isLayerOnMap('harmonie_aemet')) return 'harmonie';
     if (this.isLayerOnMap('gem_gdps')) return 'gem';
     if (this.isLayerOnMap('icon_eu')) return 'icon';
     if (this.isLayerOnMap('arome_precip')) return 'arome';
@@ -5127,6 +5455,7 @@ export class LayerManager {
     }
 
     const modelNames = {
+      harmonie: '🇪🇸 AEMET HARMONIE (2.5 km)',
       arome: '🇫🇷 Météo-France AROME (1.3 km)',
       icon: '🇩🇪 DWD ICON-EU (6.5 km)',
       gem: '🇨🇦 GEM GDPS (15 km)',
@@ -5144,6 +5473,10 @@ export class LayerManager {
         badgeModel.style.background = 'rgba(37, 99, 235, 0.2)';
         badgeModel.style.color = '#38bdf8';
         badgeModel.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+      } else if (modelKey === 'harmonie') {
+        badgeModel.style.background = 'rgba(234, 88, 12, 0.2)';
+        badgeModel.style.color = '#f97316';
+        badgeModel.style.borderColor = 'rgba(249, 115, 22, 0.4)';
       } else if (modelKey === 'icon') {
         badgeModel.style.background = 'rgba(2, 132, 199, 0.2)';
         badgeModel.style.color = '#0284c7';

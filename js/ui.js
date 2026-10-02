@@ -1136,11 +1136,12 @@ export class UIManager {
   _getActiveTimelineType() {
     if (!this.layerManager) return null;
     if (this.layerManager.isLayerOnMap('radar')) return 'radar';
-    if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
-    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
+    if (this.layerManager.isLayerOnMap('harmonie_aemet') || this.layerManager.isLayerOnMap('harmonie')) return 'harmonie_aemet';
     if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
     if (this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('icon')) return 'icon_eu';
     if (this.layerManager.isLayerOnMap('gem_gdps') || this.layerManager.isLayerOnMap('gem')) return 'gem_gdps';
+    if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
+    if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
     return null;
   }
 
@@ -1155,16 +1156,18 @@ export class UIManager {
         const activeType = this._getActiveTimelineType();
         if (activeType === 'radar') {
           this.layerManager.toggleRadarPlayback();
-        } else if (activeType === 'ecmwf_ifs') {
-          this.layerManager.toggleEcmwfPlayback();
-        } else if (activeType === 'gfs_0p25') {
-          this.layerManager.toggleGfsPlayback();
+        } else if (activeType === 'harmonie_aemet') {
+          this.layerManager.toggleHarmoniePlayback();
         } else if (activeType === 'arome_precip') {
           this.layerManager.toggleAromePlayback();
         } else if (activeType === 'icon_eu') {
           this.layerManager.toggleIconPlayback();
         } else if (activeType === 'gem_gdps') {
           this.layerManager.toggleGemPlayback();
+        } else if (activeType === 'ecmwf_ifs') {
+          this.layerManager.toggleEcmwfPlayback();
+        } else if (activeType === 'gfs_0p25') {
+          this.layerManager.toggleGfsPlayback();
         }
       });
     }
@@ -1220,20 +1223,22 @@ export class UIManager {
       modeTotal.addEventListener('click', () => {
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
-        if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('total');
-        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
+        if (activeType === 'harmonie_aemet') this.layerManager.setHarmonieType('total');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('total');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('total');
         else if (activeType === 'gem_gdps') this.layerManager.setGemType('total');
+        else if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('total');
+        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
       });
       modeInterval.addEventListener('click', () => {
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
-        if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('interval');
-        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
+        if (activeType === 'harmonie_aemet') this.layerManager.setHarmonieType('interval');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('interval');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('interval');
         else if (activeType === 'gem_gdps') this.layerManager.setGemType('interval');
+        else if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('interval');
+        else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
       });
     }
 
@@ -1242,11 +1247,12 @@ export class UIManager {
       maxPill.addEventListener('click', () => {
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
-        if (activeType === 'ecmwf_ifs') this.layerManager.flyToModelMax('ecmwf');
-        else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
+        if (activeType === 'harmonie_aemet') this.layerManager.flyToModelMax('harmonie');
         else if (activeType === 'arome_precip') this.layerManager.flyToModelMax('arome');
         else if (activeType === 'icon_eu') this.layerManager.flyToModelMax('icon');
         else if (activeType === 'gem_gdps') this.layerManager.flyToModelMax('gem');
+        else if (activeType === 'ecmwf_ifs') this.layerManager.flyToModelMax('ecmwf');
+        else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
       });
     }
 
@@ -1313,14 +1319,10 @@ export class UIManager {
     let meta = null;
     let curStep = null;
     let setStepFn = null;
-    if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
-      meta = this.layerManager.ecmwfMetadata;
-      curStep = this.layerManager.currentEcmwfStep;
-      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
-    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
-      meta = this.layerManager.gfsMetadata;
-      curStep = this.layerManager.currentGfsStep;
-      setStepFn = (s) => this.layerManager.setGfsStep(s);
+    if (modelId === 'harmonie_aemet' || modelId === 'harmonie') {
+      meta = this.layerManager.harmonieMetadata;
+      curStep = this.layerManager.currentHarmonieStep;
+      setStepFn = (s) => this.layerManager.setHarmonieStep(s);
     } else if (modelId === 'arome_precip' || modelId === 'arome') {
       meta = this.layerManager.aromeMetadata;
       curStep = this.layerManager.currentAromeStep;
@@ -1333,6 +1335,14 @@ export class UIManager {
       meta = this.layerManager.gemMetadata;
       curStep = this.layerManager.currentGemStep;
       setStepFn = (s) => this.layerManager.setGemStep(s);
+    } else if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
+      meta = this.layerManager.ecmwfMetadata;
+      curStep = this.layerManager.currentEcmwfStep;
+      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
+    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
+      meta = this.layerManager.gfsMetadata;
+      curStep = this.layerManager.currentGfsStep;
+      setStepFn = (s) => this.layerManager.setGfsStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1346,12 +1356,9 @@ export class UIManager {
     if (!this.layerManager) return;
     let meta = null;
     let setStepFn = null;
-    if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
-      meta = this.layerManager.ecmwfMetadata;
-      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
-    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
-      meta = this.layerManager.gfsMetadata;
-      setStepFn = (s) => this.layerManager.setGfsStep(s);
+    if (modelId === 'harmonie_aemet' || modelId === 'harmonie') {
+      meta = this.layerManager.harmonieMetadata;
+      setStepFn = (s) => this.layerManager.setHarmonieStep(s);
     } else if (modelId === 'arome_precip' || modelId === 'arome') {
       meta = this.layerManager.aromeMetadata;
       setStepFn = (s) => this.layerManager.setAromeStep(s);
@@ -1361,6 +1368,12 @@ export class UIManager {
     } else if (modelId === 'gem_gdps' || modelId === 'gem') {
       meta = this.layerManager.gemMetadata;
       setStepFn = (s) => this.layerManager.setGemStep(s);
+    } else if (modelId === 'ecmwf_ifs' || modelId === 'ecmwf') {
+      meta = this.layerManager.ecmwfMetadata;
+      setStepFn = (s) => this.layerManager.setEcmwfStep(s);
+    } else if (modelId === 'gfs_0p25' || modelId === 'gfs') {
+      meta = this.layerManager.gfsMetadata;
+      setStepFn = (s) => this.layerManager.setGfsStep(s);
     }
     if (!meta || !setStepFn) return;
     const steps = meta.available_steps || [];
@@ -1398,18 +1411,12 @@ export class UIManager {
     let modelName = '';
     let modeIntervalText = 'Intervalo 1h';
 
-    if (activeType === 'ecmwf_ifs') {
-      metadata = this.layerManager.ecmwfMetadata;
-      currentStep = this.layerManager.currentEcmwfStep;
-      currentType = this.layerManager.currentEcmwfType || 'total';
-      modelName = `🇪🇺 ECMWF IFS (+${currentStep}h)`;
-      modeIntervalText = currentStep > 144 ? 'Intervalo 6h' : 'Intervalo 3h';
-    } else if (activeType === 'gfs_0p25') {
-      metadata = this.layerManager.gfsMetadata;
-      currentStep = this.layerManager.currentGfsStep;
-      currentType = this.layerManager.currentGfsType || 'total';
-      modelName = `🇺🇸 NOAA GFS (+${currentStep}h)`;
-      modeIntervalText = currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h';
+    if (activeType === 'harmonie_aemet') {
+      metadata = this.layerManager.harmonieMetadata;
+      currentStep = this.layerManager.currentHarmonieStep;
+      currentType = this.layerManager.currentHarmonieType || 'total';
+      modelName = `🇪🇸 HARMONIE (+${currentStep}h)`;
+      modeIntervalText = 'Intervalo 1h';
     } else if (activeType === 'arome_precip') {
       metadata = this.layerManager.aromeMetadata;
       currentStep = this.layerManager.currentAromeStep;
@@ -1428,6 +1435,18 @@ export class UIManager {
       currentType = this.layerManager.currentGemType || 'total';
       modelName = `🇨🇦 GEM-GDPS (+${currentStep}h)`;
       modeIntervalText = 'Intervalo 3h';
+    } else if (activeType === 'ecmwf_ifs') {
+      metadata = this.layerManager.ecmwfMetadata;
+      currentStep = this.layerManager.currentEcmwfStep;
+      currentType = this.layerManager.currentEcmwfType || 'total';
+      modelName = `🇪🇺 ECMWF IFS (+${currentStep}h)`;
+      modeIntervalText = currentStep > 144 ? 'Intervalo 6h' : 'Intervalo 3h';
+    } else if (activeType === 'gfs_0p25') {
+      metadata = this.layerManager.gfsMetadata;
+      currentStep = this.layerManager.currentGfsStep;
+      currentType = this.layerManager.currentGfsType || 'total';
+      modelName = `🇺🇸 NOAA GFS (+${currentStep}h)`;
+      modeIntervalText = currentStep > 120 ? 'Intervalo 6h' : 'Intervalo 3h';
     } else {
       // Si el radar u otra capa no predictiva está activa o no hay modelo en el mapa
       this.predictionBanner.style.display = 'none';
@@ -1578,7 +1597,7 @@ export class UIManager {
 
       this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
 
-    } else if (activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps') {
+    } else if (activeType === 'harmonie_aemet' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps' || activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25') {
       let meta = null;
       let curStep = null;
       let curType = null;
@@ -1587,22 +1606,14 @@ export class UIManager {
       let modelFlag = '';
       let labelsHtml = '';
 
-      if (activeType === 'ecmwf_ifs') {
-        meta = this.layerManager.ecmwfMetadata || {};
-        curStep = this.layerManager.currentEcmwfStep || 3;
-        curType = this.layerManager.currentEcmwfType || 'total';
-        isPlaying = this.layerManager.isEcmwfPlaying;
-        modelLabel = 'ECMWF IFS';
-        modelFlag = '🇪🇺';
-        labelsHtml = '<span>+3h</span><span>+72h (3d)</span><span>+144h (6d)</span><span>+240h (10d)</span>';
-      } else if (activeType === 'gfs_0p25') {
-        meta = this.layerManager.gfsMetadata || {};
-        curStep = this.layerManager.currentGfsStep || 3;
-        curType = this.layerManager.currentGfsType || 'total';
-        isPlaying = this.layerManager.isGfsPlaying;
-        modelLabel = 'NOAA GFS';
-        modelFlag = '🇺🇸';
-        labelsHtml = '<span>+3h</span><span>+96h (4d)</span><span>+192h (8d)</span><span>+288h (12d)</span><span>+384h (16d)</span>';
+      if (activeType === 'harmonie_aemet') {
+        meta = this.layerManager.harmonieMetadata || {};
+        curStep = this.layerManager.currentHarmonieStep || 1;
+        curType = this.layerManager.currentHarmonieType || 'total';
+        isPlaying = this.layerManager.isHarmoniePlaying;
+        modelLabel = 'HARMONIE (2.5km)';
+        modelFlag = '🇪🇸';
+        labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h (2d)</span>';
       } else if (activeType === 'arome_precip') {
         meta = this.layerManager.aromeMetadata || {};
         curStep = this.layerManager.currentAromeStep || 1;
@@ -1627,6 +1638,22 @@ export class UIManager {
         modelLabel = 'GEM-GDPS (15km)';
         modelFlag = '🇨🇦';
         labelsHtml = '<span>+3h</span><span>+48h (2d)</span><span>+96h (4d)</span><span>+168h (7d)</span><span>+240h (10d)</span>';
+      } else if (activeType === 'ecmwf_ifs') {
+        meta = this.layerManager.ecmwfMetadata || {};
+        curStep = this.layerManager.currentEcmwfStep || 3;
+        curType = this.layerManager.currentEcmwfType || 'total';
+        isPlaying = this.layerManager.isEcmwfPlaying;
+        modelLabel = 'ECMWF IFS';
+        modelFlag = '🇪🇺';
+        labelsHtml = '<span>+3h</span><span>+72h (3d)</span><span>+144h (6d)</span><span>+240h (10d)</span>';
+      } else if (activeType === 'gfs_0p25') {
+        meta = this.layerManager.gfsMetadata || {};
+        curStep = this.layerManager.currentGfsStep || 3;
+        curType = this.layerManager.currentGfsType || 'total';
+        isPlaying = this.layerManager.isGfsPlaying;
+        modelLabel = 'NOAA GFS';
+        modelFlag = '🇺🇸';
+        labelsHtml = '<span>+3h</span><span>+96h (4d)</span><span>+192h (8d)</span><span>+288h (12d)</span><span>+384h (16d)</span>';
       }
 
       if (liveDot) liveDot.style.display = 'none';
@@ -1664,15 +1691,7 @@ export class UIManager {
         let maxStep = availSteps[availSteps.length - 1];
         let stepInc = 3;
 
-        if (activeType === 'ecmwf_ifs') {
-          minStep = 3;
-          maxStep = 240;
-          stepInc = 3;
-        } else if (activeType === 'gfs_0p25') {
-          minStep = 3;
-          maxStep = 384;
-          stepInc = 3;
-        } else if (activeType === 'arome_precip') {
+        if (activeType === 'harmonie_aemet' || activeType === 'arome_precip') {
           minStep = 1;
           maxStep = 48;
           stepInc = 1;
@@ -1683,6 +1702,14 @@ export class UIManager {
         } else if (activeType === 'gem_gdps') {
           minStep = 3;
           maxStep = 240;
+          stepInc = 3;
+        } else if (activeType === 'ecmwf_ifs') {
+          minStep = 3;
+          maxStep = 240;
+          stepInc = 3;
+        } else if (activeType === 'gfs_0p25') {
+          minStep = 3;
+          maxStep = 384;
           stepInc = 3;
         }
 
@@ -1695,7 +1722,7 @@ export class UIManager {
         // Estilizar track del slider cuando la salida es parcial o se está actualizando (hay corte con la salida anterior)
         if (hasFallback && nativeMax && nativeMax < maxStep) {
           const splitPct = Math.max(0, Math.min(100, ((nativeMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
-          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'icon_eu') ? '#0284c7' : ((activeType === 'gem_gdps') ? '#e11d48' : '#8b5cf6')));
+          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'harmonie_aemet') ? '#f59e0b' : ((activeType === 'icon_eu') ? '#0284c7' : ((activeType === 'gem_gdps') ? '#e11d48' : '#8b5cf6'))));
           slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
           slider.title = `Salida ${mainRun} disponible hasta +${nativeMax}h (${splitPct.toFixed(0)}%). Pasos posteriores (+${nativeMax + 1}h a +${maxStep}h): Salida anterior`;
         } else {
@@ -1865,6 +1892,56 @@ export class UIManager {
 
     this.updateAromePlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de AEMET HARMONIE-AROME en la UI
+   */
+  updateHarmoniePlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('harmonie-step-slider');
+    const maxPill = document.getElementById('harmonie-max-pill');
+    const btnTotal = document.getElementById('harmonie-btn-total');
+    const btnInterval = document.getElementById('harmonie-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
+    }
+
+    this.updateHarmoniePlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  updateHarmoniePlayState(isPlaying) {
+    const playBtn = document.getElementById('harmonie-play-btn');
+    if (!playBtn) return;
+    if (isPlaying) {
+      playBtn.classList.add('playing');
+      playBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Pausar';
+    } else {
+      playBtn.classList.remove('playing');
+      playBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Animar';
+    }
   }
 
   /**

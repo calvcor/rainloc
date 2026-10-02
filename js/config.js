@@ -196,6 +196,19 @@ export const CONFIG = {
     ],
     prediction: [
       {
+        id: 'harmonie_aemet',
+        name: 'Modelo Harmonie-Arome (2.5 km)',
+        subtitle: 'Previsión convectiva AEMET (48h)',
+        description: 'Modelo no hidrostático de alta resolución de AEMET para predicción explícita de precipitaciones y tormentas (hasta +48h).',
+        type: 'model',
+        defaultActive: false,
+        defaultOpacity: 0.70,
+        badge: 'AEMET',
+        badgeType: 'model',
+        color: '#f59e0b',
+        icon: '<span class="model-flag-icon">🇪🇸</span>'
+      },
+      {
         id: 'arome_precip',
         name: 'Modelo AROME (1.3 km)',
         subtitle: 'Previsión convectiva alta resolución (48h)',
@@ -560,6 +573,74 @@ export function formatAromeTimestamp(metadata) {
   const maxStep = metadata.max_step !== undefined ? metadata.max_step : (availSteps.length > 0 ? Math.max(...availSteps) : 0);
 
   // Extraer corrida (00z, 03z, 06z, 09z, 12z, 15z, 18z, 21z)
+  let run = metadata.run;
+  if (!run && metadata.cycle_str) {
+    const parts = metadata.cycle_str.split('_');
+    if (parts.length > 1) run = parts[1].toLowerCase();
+  }
+  if (!run && metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const h = d.getUTCHours();
+      run = `${h}z`;
+    } catch (e) {}
+  }
+  if (run) {
+    run = run.replace(/^0(\d)z$/, '$1z').toLowerCase();
+  } else {
+    run = '0z';
+  }
+
+  // Formatear fecha del ciclo en hora local (Europe/Madrid)
+  let dateText = '';
+  if (metadata.cycle) {
+    try {
+      const d = new Date(metadata.cycle);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      dateText = `${day}/${month}`;
+    } catch (e) {
+      dateText = metadata.cycle;
+    }
+  } else if (metadata.cycle_str) {
+    const p = metadata.cycle_str.split('_')[0];
+    if (p && p.length === 8) {
+      dateText = `${p.substring(6, 8)}/${p.substring(4, 6)}`;
+    } else {
+      dateText = metadata.cycle_str;
+    }
+  }
+
+  const rawMax = metadata.downloaded_max_step !== undefined
+    ? metadata.downloaded_max_step
+    : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
+
+  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
+  const isUpdating = Boolean(
+    metadata.is_updating ||
+    metadata.is_syncing ||
+    (rawMax !== null && rawMax > 0 && rawMax < 48 && metadata.status !== 'complete')
+  );
+
+  if (isUpdating && displayStep > 0 && displayStep < 48) {
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  }
+
+  return `Salida modelo: <strong>${dateText} (${run})</strong>`;
+}
+
+/**
+ * Formatea el timestamp del modelo AEMET HARMONIE-AROME
+ * @param {Object} metadata 
+ * @returns {string}
+ */
+export function formatHarmonieTimestamp(metadata) {
+  if (!metadata) return 'Salida modelo: <strong>Sincronizando...</strong>';
+
+  const availSteps = metadata.available_steps || [];
+  const maxStep = metadata.max_step !== undefined ? metadata.max_step : (availSteps.length > 0 ? Math.max(...availSteps) : 0);
+
+  // Extraer corrida (00z, 06z, 12z, 18z)
   let run = metadata.run;
   if (!run && metadata.cycle_str) {
     const parts = metadata.cycle_str.split('_');

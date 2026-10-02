@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.harmonie_worker import harmonie_worker
 from app.services.icon_worker import icon_worker
 from app.services.gem_worker import gem_worker
 from app.services.basin_hydrology import basin_hydrology_service
@@ -640,6 +641,141 @@ async def sync_gem_forecast(
         "status": "synchronization_started",
         "max_steps": max_steps,
         "message": "La descarga y procesado de MSC GEM-GDPS ha comenzado en segundo plano."
+    }
+
+
+# =========================================================================
+# AEMET HARMONIE-AROME (2.5 km / 0.025°) Endpoints
+# =========================================================================
+
+@router.get("/harmonie/stream", summary="Stream de actualizaciones del modelo AEMET Harmonie-Arome en tiempo real (SSE)")
+async def stream_harmonie():
+    """
+    Canal Server-Sent Events (SSE) para notificar inmediatamente a los clientes
+    en cuanto el servidor descarga y procesa nuevos pasos de AEMET Harmonie-Arome.
+    """
+    async def event_generator():
+        async for event in harmonie_worker.subscribe_stream():
+            if event.get("event") == "ping":
+                yield ": ping\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/harmonie/metadata", summary="Metadatos y pasos disponibles de AEMET Harmonie-Arome")
+async def get_harmonie_metadata() -> Dict[str, Any]:
+    """
+    Devuelve los metadatos del ciclo operativo actual de AEMET Harmonie-Arome,
+    los pasos disponibles (+1h a +48h), fechas ISO y URLs de los rásteres.
+    """
+    meta = harmonie_worker.get_metadata()
+    return meta
+
+
+@router.get("/harmonie/image", summary="Ráster PNG transparente del modelo AEMET Harmonie-Arome")
+async def get_harmonie_image(
+    step: int = Query(..., description="Paso de pronóstico en horas (1 a 48)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (1 hora)")
+):
+    """
+    Sirve la imagen PNG georreferenciada en proyección Web Mercator
+    lista para ser consumida directamente por Leaflet (L.imageOverlay).
+    """
+    img_path = harmonie_worker.get_image_path(step=step, layer_type=type)
+    if not img_path or not img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Imagen para el paso +{step}h ({type}) de Harmonie no encontrada o aún no generada."
+        )
+
+    cur_cycle = harmonie_worker.current_manifest.get("cycle_str") if harmonie_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
+    return FileResponse(
+        img_path,
+        media_type="image/png",
+        headers={
+            "Cache-Control": cache_control,
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
+
+@router.get("/harmonie/value-at", summary="Consulta instantánea de precipitación Harmonie-Arome en coordenadas lat/lon")
+async def get_harmonie_value_at(
+    lat: float = Query(..., description="Latitud WGS84"),
+    lon: float = Query(..., description="Longitud WGS84"),
+    step: int = Query(..., description="Paso de pronóstico en horas (1 a 48)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    """
+    Consulta en O(1) (<1ms) el valor en milímetros (mm) de la predicción Harmonie-Arome
+    para las coordenadas indicadas.
+    """
+    val = harmonie_worker.get_value_at(lat=lat, lon=lon, step=step, layer_type=type)
+    return {
+        "model": "HARMONIE-AROME (AEMET)",
+        "lat": lat,
+        "lon": lon,
+        "step": step,
+        "type": type,
+        "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/harmonie/series", summary="Serie temporal de precipitación para una coordenada geográfica")
+async def get_harmonie_series(
+    lat: float = Query(..., description="Latitud WGS84"),
+    lon: float = Query(..., description="Longitud WGS84")
+) -> Dict[str, Any]:
+    """
+    Devuelve la evolución temporal horaria de precipitación acumulada e intervalar hasta +48h.
+    """
+    return harmonie_worker.get_series(lat=lat, lon=lon)
+
+
+@router.get("/harmonie/max-at", summary="Obtener punto y valor de máxima precipitación de Harmonie-Arome")
+async def get_harmonie_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = harmonie_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "HARMONIE-AROME (AEMET)", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "HARMONIE-AROME (AEMET)",
+        "step": step,
+        "type": type,
+        **res,
+        "unit": "mm"
+    }
+
+
+@router.post("/harmonie/sync", summary="Forzar sincronización de AEMET Harmonie-Arome en background")
+async def sync_harmonie_forecast(
+    background_tasks: BackgroundTasks,
+    force: bool = Query(True, description="Forzar descarga incluso si ya existe el ciclo")
+) -> Dict[str, Any]:
+    """
+    Dispara la sincronización asíncrona de los pasos del modelo AEMET Harmonie-Arome.
+    """
+    logger.info("API: Petición manual para comprobar/sincronizar AEMET Harmonie-Arome")
+    background_tasks.add_task(harmonie_worker.sync_harmonie_forecast, force)
+    return {
+        "status": "synchronization_started",
+        "message": "La descarga y procesado de AEMET Harmonie-Arome ha comenzado en segundo plano."
     }
 
 

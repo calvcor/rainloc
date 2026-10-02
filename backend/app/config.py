@@ -13,6 +13,7 @@ RADAR_CACHE_DIR = DATA_DIR / "radar_cache"
 ECMWF_CACHE_DIR = DATA_DIR / "ecmwf_cache"
 GFS_CACHE_DIR = DATA_DIR / "gfs_cache"
 AROME_CACHE_DIR = DATA_DIR / "arome_cache"
+HARMONIE_CACHE_DIR = DATA_DIR / "harmonie_cache"
 ICON_CACHE_DIR = DATA_DIR / "icon_cache"
 GEM_CACHE_DIR = DATA_DIR / "gem_cache"
 
@@ -28,6 +29,7 @@ RADAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ECMWF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GFS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 AROME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+HARMONIE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GEM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -117,6 +119,13 @@ try:
         AROME_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
         AROME_MAX_STEPS: int = 48  # Pasos hasta +48h (2 días)
 
+        # AEMET HARMONIE-AROME (High-Resolution Convective Model, ~2.5km / 0.025°)
+        HARMONIE_CACHE_DIR: Path = HARMONIE_CACHE_DIR
+        HARMONIE_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        HARMONIE_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
+        HARMONIE_MAX_STEPS: int = 48  # Pasos hasta +48h (2 días)
+        AEMET_HARMONIE_DOWNLOAD_URL: str = "https://www.aemet.es/es/api-eltiempo/modelos/download/harmonie/PB"
+
         # DWD ICON-EU (Icosahedral Non-hydrostatic Regional Model, ~6.5km / 0.0625°)
         ICON_CACHE_DIR: Path = ICON_CACHE_DIR
         ICON_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
@@ -151,6 +160,7 @@ except ImportError:
         ECMWF_CACHE_DIR: Path = ECMWF_CACHE_DIR
         GFS_CACHE_DIR: Path = GFS_CACHE_DIR
         AROME_CACHE_DIR: Path = AROME_CACHE_DIR
+        HARMONIE_CACHE_DIR: Path = HARMONIE_CACHE_DIR
         ICON_CACHE_DIR: Path = ICON_CACHE_DIR
         GEM_CACHE_DIR: Path = GEM_CACHE_DIR
         AEMET_ATOM_URL: str = os.getenv("AEMET_ATOM_URL", "https://www.aemet.es/documentos_d/eltiempo/prediccion/avisos/rss/CAP_AFAE_wah_ATOM.xml")
@@ -158,6 +168,7 @@ except ImportError:
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
         AEMET_API_KEY: Optional[str] = os.getenv("AEMET_API_KEY", None)
         AEMET_OPENDATA_BASE_URL: str = os.getenv("AEMET_OPENDATA_BASE_URL", "https://opendata.aemet.es/opendata/api")
+        AEMET_HARMONIE_DOWNLOAD_URL: str = os.getenv("AEMET_HARMONIE_DOWNLOAD_URL", "https://www.aemet.es/es/api-eltiempo/modelos/download/harmonie/PB")
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"
         ORD_MQTT_HOST: str = os.getenv("ORD_MQTT_HOST", "api.openradardata.eumetnet.eu")
@@ -174,6 +185,9 @@ except ImportError:
         AROME_POLL_INTERVAL_SECONDS: int = 1800
         AROME_UPDATING_INTERVAL_SECONDS: int = 300
         AROME_MAX_STEPS: int = 48
+        HARMONIE_POLL_INTERVAL_SECONDS: int = 1800
+        HARMONIE_UPDATING_INTERVAL_SECONDS: int = 300
+        HARMONIE_MAX_STEPS: int = 48
         ICON_POLL_INTERVAL_SECONDS: int = 1800
         ICON_UPDATING_INTERVAL_SECONDS: int = 300
         ICON_MAX_STEPS: int = 120

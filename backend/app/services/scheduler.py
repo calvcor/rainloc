@@ -12,13 +12,14 @@ from app.services.lightning_service import lightning_service
 from app.services.ecmwf_worker import ecmwf_worker
 from app.services.gfs_worker import gfs_worker
 from app.services.arome_worker import arome_worker
+from app.services.harmonie_worker import harmonie_worker
 from app.services.icon_worker import icon_worker
 from app.services.gem_worker import gem_worker
 
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME, ICON, GEM)."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME, HARMONIE, ICON, GEM)."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
@@ -27,6 +28,7 @@ class BackgroundScheduler:
         self._ecmwf_task: Optional[asyncio.Task] = None
         self._gfs_task: Optional[asyncio.Task] = None
         self._arome_task: Optional[asyncio.Task] = None
+        self._harmonie_task: Optional[asyncio.Task] = None
         self._icon_task: Optional[asyncio.Task] = None
         self._gem_task: Optional[asyncio.Task] = None
         self._running: bool = False
@@ -39,6 +41,8 @@ class BackgroundScheduler:
         self.gfs_updating_interval: int = getattr(settings, "GFS_UPDATING_INTERVAL_SECONDS", 300)
         self.arome_interval: int = getattr(settings, "AROME_POLL_INTERVAL_SECONDS", 1800)
         self.arome_updating_interval: int = getattr(settings, "AROME_UPDATING_INTERVAL_SECONDS", 300)
+        self.harmonie_interval: int = getattr(settings, "HARMONIE_POLL_INTERVAL_SECONDS", 1800)
+        self.harmonie_updating_interval: int = getattr(settings, "HARMONIE_UPDATING_INTERVAL_SECONDS", 300)
         self.icon_interval: int = getattr(settings, "ICON_POLL_INTERVAL_SECONDS", 1800)
         self.icon_updating_interval: int = getattr(settings, "ICON_UPDATING_INTERVAL_SECONDS", 300)
         self.gem_interval: int = getattr(settings, "GEM_POLL_INTERVAL_SECONDS", 1800)
@@ -143,6 +147,28 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de AROME: {e}")
 
+    async def _harmonie_loop(self):
+        # Primera comprobación y sincronización de AEMET Harmonie-Arome al iniciar
+        try:
+            await harmonie_worker.sync_harmonie_forecast()
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando AEMET Harmonie-Arome: {e}")
+
+        while self._running:
+            try:
+                meta = harmonie_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.harmonie_interval if is_complete else self.harmonie_updating_interval
+
+                logger.debug(f"Scheduler Harmonie: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
+                if self._running:
+                    await harmonie_worker.sync_harmonie_forecast()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de AEMET Harmonie-Arome: {e}")
+
     async def _icon_loop(self):
         # Primera comprobación y sincronización de ICON-EU al iniciar
         try:
@@ -219,13 +245,14 @@ class BackgroundScheduler:
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
             self._arome_task = asyncio.create_task(self._arome_loop())
+            self._harmonie_task = asyncio.create_task(self._harmonie_loop())
             self._icon_task = asyncio.create_task(self._icon_loop())
             self._gem_task = asyncio.create_task(self._gem_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME + DWD ICON-EU + MSC GEM-GDPS).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME + AEMET HARMONIE + DWD ICON-EU + MSC GEM-GDPS).")
 
     def stop(self):
         if self._running:
@@ -242,6 +269,8 @@ class BackgroundScheduler:
                 self._gfs_task.cancel()
             if self._arome_task and not self._arome_task.done():
                 self._arome_task.cancel()
+            if self._harmonie_task and not self._harmonie_task.done():
+                self._harmonie_task.cancel()
             if self._icon_task and not self._icon_task.done():
                 self._icon_task.cancel()
             if self._gem_task and not self._gem_task.done():
