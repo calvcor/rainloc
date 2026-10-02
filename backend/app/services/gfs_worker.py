@@ -144,15 +144,21 @@ class GFSWorker:
             run_str = cycle_str[-2:].lower()
 
         max_target = getattr(settings, "GFS_MAX_STEPS", 384)
+        target_steps_count = len([s for s in GFS_STEPS if s <= max_target])
+        is_complete = (len(available_steps) >= target_steps_count)
+
         payload = {
             "event": "gfs_update",
             "cycle_str": cycle_str,
             "run": run_str or "00z",
             "step_added": step_added,
             "available_steps": available_steps,
+            "raw_available_steps": available_steps,
+            "downloaded_max_step": max_step,
+            "raw_max_step": max_step,
             "max_step": max_step,
-            "is_complete": (max_step >= max_target),
-            "is_updating": is_syncing or (max_step < max_target and status != "complete"),
+            "is_complete": is_complete,
+            "is_updating": is_syncing or (not is_complete and len(available_steps) > 0),
             "status": status,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -200,17 +206,27 @@ class GFSWorker:
             self._subscribers.discard(q)
 
     def _load_latest_manifest_from_disk(self):
-        """Intenta cargar el último manifiesto existente en el disco al arrancar."""
+        """Intenta cargar el último manifiesto válido existente en el disco al arrancar."""
         try:
             cycle_dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
             if not cycle_dirs:
                 return
             cycle_dirs.sort(key=lambda d: d.name, reverse=True)
-            latest_dir = cycle_dirs[0]
-            manifest_file = latest_dir / "manifest.json"
-            with open(manifest_file, "r", encoding="utf-8") as f:
-                self.current_manifest = json.load(f)
-                logger.info(f"GFS: Manifiesto cargado desde disco para ciclo {self.current_manifest.get('cycle_str')}")
+            for latest_dir in cycle_dirs:
+                manifest_file = latest_dir / "manifest.json"
+                try:
+                    with open(manifest_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    avail = data.get("available_steps", [])
+                    if data.get("cycle_str") == latest_dir.name and avail:
+                        # Verificar que al menos el primer paso exista físicamente
+                        first_step = avail[0]
+                        if (latest_dir / f"total_step_{first_step:03d}.png").exists():
+                            self.current_manifest = data
+                            logger.info(f"GFS: Manifiesto cargado desde disco para ciclo {self.current_manifest.get('cycle_str')} ({len(avail)} pasos)")
+                            return
+                except Exception as e:
+                    logger.warning(f"GFS: Error leyendo manifiesto en {latest_dir}: {e}")
         except Exception as e:
             logger.warning(f"GFS: No se pudo cargar manifiesto previo: {e}")
 
@@ -218,12 +234,23 @@ class GFSWorker:
         """Devuelve el manifiesto del ciclo inmediatamente anterior para hibridación de pasos futuros."""
         try:
             dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
-            if len(dirs) < 2:
+            if not dirs:
                 return None
             dirs.sort(key=lambda d: d.name, reverse=True)
-            prev_dir = dirs[1]
-            with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
-                return json.load(f)
+            cur_cycle = self.current_manifest.get("cycle_str") if self.current_manifest else None
+            for d in dirs:
+                if cur_cycle and d.name == cur_cycle:
+                    continue
+                try:
+                    with open(d / "manifest.json", "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    avail = data.get("available_steps", [])
+                    if data.get("cycle_str") == d.name and avail:
+                        first_step = avail[0]
+                        if (d / f"total_step_{first_step:03d}.png").exists():
+                            return data
+                except Exception:
+                    pass
         except Exception:
             pass
         return None
@@ -257,7 +284,8 @@ class GFSWorker:
                     run_str = parts[1].lower()
 
             meta["run"] = run_str or "00z"
-            avail = list(meta.get("available_steps", []))
+            raw_avail = list(self.current_manifest.get("available_steps", []))
+            avail = list(raw_avail)
             steps_dict = {s["step"]: dict(s) for s in meta.get("steps", [])}
             # Asegurar que los pasos nativos tengan el tag de run
             for s_key, s_data in steps_dict.items():
@@ -266,8 +294,9 @@ class GFSWorker:
                 if "is_fallback" not in s_data:
                     s_data["is_fallback"] = False
 
+            target_steps = [s for s in GFS_STEPS if s <= max_target]
             # Si la corrida no está completa, intentar rellenar los pasos futuros desde el ciclo anterior
-            if len(avail) < len([s for s in GFS_STEPS if s <= max_target]) and cycle_iso:
+            if len(raw_avail) < len(target_steps) and cycle_iso:
                 prev_manifest = self._get_previous_manifest()
                 if prev_manifest and prev_manifest.get("cycle") and prev_manifest.get("steps"):
                     try:
@@ -310,14 +339,13 @@ class GFSWorker:
             meta["steps"] = sorted_steps
             max_step = max(avail) if avail else 0
             meta["max_step"] = max_step
-            raw_avail = list(self.current_manifest.get("available_steps", []))
             raw_max_step = max(raw_avail) if raw_avail else 0
-            raw_complete = (len(raw_avail) >= len([s for s in GFS_STEPS if s <= max_target]))
+            raw_complete = (len(raw_avail) >= len(target_steps))
             meta["raw_available_steps"] = raw_avail
             meta["downloaded_max_step"] = raw_max_step
             meta["raw_max_step"] = raw_max_step
             meta["is_complete"] = raw_complete
-            meta["is_updating"] = self._is_syncing or (not raw_complete and self.current_manifest.get("status") != "complete")
+            meta["is_updating"] = self._is_syncing or (not raw_complete and len(raw_avail) > 0)
             return meta
 
         return {
@@ -473,20 +501,43 @@ class GFSWorker:
             logger.error(f"Error calculando max_point GFS: {e}")
             return None
 
-    def _determine_latest_gfs_run(self) -> Tuple[datetime, str, str]:
+    def _get_candidate_cycles(self) -> List[Tuple[datetime, str, str]]:
         """
-        Determina cuál es la corrida operativa más reciente de GFS disponible en NOAA/AWS.
-        GFS corre a 00z, 06z, 12z, 18z. Se publican con ~3.5h de retraso.
-        Retorna (cycle_datetime_utc, date_str YYYYMMDD, hh 00|06|12|18).
+        Genera los ciclos candidatos más recientes en orden cronológico descendente
+        (4 corridas operativas diarias cada 6 horas: 00z, 06z, 12z, 18z).
         """
         now = datetime.now(timezone.utc)
-        # Retroceder 3.5 horas para asegurar disponibilidad del primer paso
-        ref_time = now - timedelta(hours=3, minutes=30)
-        run_hour = (ref_time.hour // 6) * 6
-        cycle_dt = ref_time.replace(hour=run_hour, minute=0, second=0, microsecond=0)
-        date_str = cycle_dt.strftime("%Y%m%d")
-        hh = f"{cycle_dt.hour:02d}"
-        return cycle_dt, date_str, hh
+        candidates = []
+        base_hour = (now.hour // 6) * 6
+        current_dt = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+
+        for i in range(5):
+            dt = current_dt - timedelta(hours=i * 6)
+            date_str = dt.strftime("%Y%m%d")
+            hh = f"{dt.hour:02d}"
+            candidates.append((dt, date_str, hh))
+
+        return candidates
+
+    def _check_step_availability(self, date_str: str, hh: str, step: int = 3) -> bool:
+        """Comprueba de forma rápida si un paso está publicado en AWS S3 o NOMADS."""
+        idx = self._fetch_gfs_idx(date_str, hh, step)
+        if idx and ":APCP:surface:" in idx:
+            return True
+        step_str = f"{step:03d}"
+        nomads_url = (
+            f"{NOMADS_GFS_FILTER_BASE}?dir=%2Fgfs.{date_str}%2F{hh}%2Fatmos"
+            f"&file=gfs.t{hh}z.pgrb2.0p25.f{step_str}&var_APCP=on&lev_surface=on"
+            f"&subregion=&toplat=44.5&leftlon=-10.0&rightlon=5.0&bottomlat=35.0"
+        )
+        try:
+            req = urllib.request.Request(nomads_url, headers={"User-Agent": "RainLoc-GIS/1.0"}, method="HEAD")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+        return False
 
     def _fetch_gfs_idx(self, date_str: str, hh: str, step: int) -> Optional[str]:
         """Descarga el archivo índice .idx para localizar el offset de APCP."""
@@ -663,16 +714,50 @@ class GFSWorker:
         async with self._sync_lock:
             self._is_syncing = True
             try:
-                cycle_dt, date_str, hh = self._determine_latest_gfs_run()
+                candidate_cycles = self._get_candidate_cycles()
+                selected_cycle = None
+                target_max_step = max_steps or getattr(settings, "GFS_MAX_STEPS", 384)
+                steps_to_process = [s for s in GFS_STEPS if s <= target_max_step]
+
+                # 1. Encontrar el ciclo operativo más reciente con datos disponibles
+                for cycle_dt, date_str, hh in candidate_cycles:
+                    test_cycle_str = f"{date_str}_{hh}z"
+                    test_cycle_dir = self.cache_dir / test_cycle_str
+                    test_manifest_file = test_cycle_dir / "manifest.json"
+
+                    # A. Si ya está en disco y tiene pasos válidos
+                    if test_manifest_file.exists():
+                        try:
+                            with open(test_manifest_file, "r", encoding="utf-8") as f:
+                                meta = json.load(f)
+                            avail = meta.get("available_steps", [])
+                            if meta.get("cycle_str") == test_cycle_str and avail:
+                                first_step = avail[0]
+                                if (test_cycle_dir / f"total_step_{first_step:03d}.png").exists():
+                                    selected_cycle = (cycle_dt, date_str, hh)
+                                    break
+                        except Exception:
+                            pass
+
+                    # B. Si no está en disco, comprobar si NOAA/AWS ya ha empezado a publicar el paso +3h
+                    logger.debug(f"GFS: Comprobando si NOAA ha publicado ciclo {test_cycle_str}...")
+                    is_available = await asyncio.to_thread(self._check_step_availability, date_str, hh, 3)
+                    if is_available:
+                        selected_cycle = (cycle_dt, date_str, hh)
+                        logger.info(f"GFS: Nueva corrida operativa detectada en NOAA: {test_cycle_str}")
+                        break
+
+                if not selected_cycle:
+                    logger.warning("GFS: No se encontró ningún ciclo disponible ni en NOAA/AWS ni en caché local.")
+                    return
+
+                cycle_dt, date_str, hh = selected_cycle
                 cycle_str = f"{date_str}_{hh}z"
                 cycle_iso = cycle_dt.isoformat()
                 cycle_dir = self.cache_dir / cycle_str
                 cycle_dir.mkdir(parents=True, exist_ok=True)
                 temp_grib_dir = cycle_dir / "temp_grib"
                 temp_grib_dir.mkdir(parents=True, exist_ok=True)
-
-                target_max_step = max_steps or getattr(settings, "GFS_MAX_STEPS", 384)
-                steps_to_process = [s for s in GFS_STEPS if s <= target_max_step]
 
                 logger.info(f"GFS: Iniciando sincronización para ciclo {cycle_str} (hasta +{target_max_step}h)...")
 
@@ -681,13 +766,13 @@ class GFSWorker:
 
                 # Cargar manifiesto previo si existe para reanudar pasos existentes
                 manifest_file = cycle_dir / "manifest.json"
-                prev_manifest = None
                 if manifest_file.exists():
                     try:
                         with open(manifest_file, "r", encoding="utf-8") as f:
-                            prev_manifest = json.load(f)
-                            available_steps = prev_manifest.get("available_steps", [])
-                            step_entries = prev_manifest.get("steps", [])
+                            disk_m = json.load(f)
+                        if disk_m.get("cycle_str") == cycle_str:
+                            available_steps = disk_m.get("available_steps", [])
+                            step_entries = disk_m.get("steps", [])
                     except Exception:
                         pass
 
@@ -701,10 +786,11 @@ class GFSWorker:
                 self.notify_gfs_update(cycle_str, available_steps, status="synchronizing", is_syncing=True)
 
                 prev_raw_grid: Optional[np.ndarray] = None
-                # Si reanudamos, intentar cargar el último .npz disponible para cálculo de intervalos
                 if available_steps:
                     last_step = max(available_steps)
                     prev_raw_grid = self._load_grid_file(cycle_dir / f"total_step_{last_step:03d}")
+
+                new_steps_downloaded = 0
 
                 for step in steps_to_process:
                     total_png = cycle_dir / f"total_step_{step:03d}.png"
@@ -725,7 +811,7 @@ class GFSWorker:
                     )
 
                     if not downloaded:
-                        logger.info(f"GFS: Paso +{step}h aún no disponible en NOAA/AWS para ciclo {cycle_str}.")
+                        logger.info(f"GFS: Paso +{step}h aún no disponible en NOAA/AWS para ciclo {cycle_str}. Deteniendo pipeline progresivo.")
                         break
                     logger.info(f"GFS: Paso +{step}h descargado con éxito. Procesando ráster...")
 
@@ -835,6 +921,7 @@ class GFSWorker:
                         json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
                     self.current_manifest = manifest_data
+                    new_steps_downloaded += 1
 
                     # Notificar a los clientes vía SSE
                     self.notify_gfs_update(cycle_str, available_steps, step_added=step, status="ready", is_syncing=True)
@@ -850,15 +937,31 @@ class GFSWorker:
                 # Limpiar ciclos antiguos en disco (mantener los 2 últimos ciclos)
                 self._cleanup_old_cycles()
 
-                # Estado final de la sincronización
-                final_status = "complete" if (available_steps and max(available_steps) >= target_max_step) else "ready"
-                if self.current_manifest:
-                    self.current_manifest["status"] = final_status
+                # Estado final de la sincronización: SOLO actualizar manifest si se han procesado pasos
+                if available_steps:
+                    is_complete = len(available_steps) >= len(steps_to_process)
+                    final_status = "complete" if is_complete else "ready"
+                    manifest_data = {
+                        "model": "NOAA GFS",
+                        "cycle": cycle_iso,
+                        "cycle_str": cycle_str,
+                        "run": f"{hh}z",
+                        "status": final_status,
+                        "available_steps": available_steps,
+                        "max_step": max(available_steps),
+                        "is_complete": is_complete,
+                        "bbox": SPAIN_BBOX,
+                        "steps": step_entries,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
                     with open(manifest_file, "w", encoding="utf-8") as f:
-                        json.dump(self.current_manifest, f, ensure_ascii=False, indent=2)
+                        json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
-                self.notify_gfs_update(cycle_str, available_steps, status=final_status, is_syncing=False)
-                logger.info(f"GFS: Sincronización finalizada para {cycle_str}. Pasos totales: {len(available_steps)}.")
+                    self.current_manifest = manifest_data
+                    self.notify_gfs_update(cycle_str, available_steps, status=final_status, is_syncing=False)
+                    logger.info(f"GFS: Sincronización finalizada para {cycle_str}. Pasos totales: {len(available_steps)}.")
+                else:
+                    logger.info(f"GFS: Ningún paso descargado para {cycle_str}.")
 
             except Exception as e:
                 logger.error(f"Error general en sync_gfs_forecast: {e}", exc_info=True)

@@ -206,17 +206,26 @@ class GEMWorker:
             self._subscribers.discard(q)
 
     def _load_latest_manifest_from_disk(self):
-        """Intenta cargar el último manifiesto existente en el disco al arrancar."""
+        """Intenta cargar el último manifiesto válido existente en el disco al arrancar."""
         try:
             cycle_dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
             if not cycle_dirs:
                 return
             cycle_dirs.sort(key=lambda d: d.name, reverse=True)
-            latest_dir = cycle_dirs[0]
-            manifest_file = latest_dir / "manifest.json"
-            with open(manifest_file, "r", encoding="utf-8") as f:
-                self.current_manifest = json.load(f)
-                logger.info(f"GEM: Manifiesto cargado desde disco para ciclo {self.current_manifest.get('cycle_str')}")
+            for latest_dir in cycle_dirs:
+                manifest_file = latest_dir / "manifest.json"
+                try:
+                    with open(manifest_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    avail = data.get("available_steps", [])
+                    if data.get("cycle_str") == latest_dir.name and avail:
+                        first_step = avail[0]
+                        if (latest_dir / f"total_step_{first_step:03d}.png").exists():
+                            self.current_manifest = data
+                            logger.info(f"GEM: Manifiesto cargado desde disco para ciclo {self.current_manifest.get('cycle_str')} ({len(avail)} pasos)")
+                            return
+                except Exception as e:
+                    logger.warning(f"GEM: Error leyendo manifiesto en {latest_dir}: {e}")
         except Exception as e:
             logger.warning(f"GEM: No se pudo cargar manifiesto previo: {e}")
 
@@ -224,12 +233,23 @@ class GEMWorker:
         """Devuelve el manifiesto del ciclo inmediatamente anterior para hibridación de pasos futuros."""
         try:
             dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
-            if len(dirs) < 2:
+            if not dirs:
                 return None
             dirs.sort(key=lambda d: d.name, reverse=True)
-            prev_dir = dirs[1]
-            with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
-                return json.load(f)
+            cur_cycle = self.current_manifest.get("cycle_str") if self.current_manifest else None
+            for d in dirs:
+                if cur_cycle and d.name == cur_cycle:
+                    continue
+                try:
+                    with open(d / "manifest.json", "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    avail = data.get("available_steps", [])
+                    if data.get("cycle_str") == d.name and avail:
+                        first_step = avail[0]
+                        if (d / f"total_step_{first_step:03d}.png").exists():
+                            return data
+                except Exception:
+                    pass
         except Exception:
             pass
         return None
@@ -853,15 +873,31 @@ class GEMWorker:
                 # Limpiar ciclos antiguos en disco (mantener los 2 últimos ciclos)
                 self._cleanup_old_cycles()
 
-                # Estado final de la sincronización
-                final_status = "complete" if (available_steps and max(available_steps) >= target_max_step) else "ready"
-                if self.current_manifest:
-                    self.current_manifest["status"] = final_status
+                # Estado final de la sincronización: SOLO actualizar manifest si se han procesado pasos
+                if available_steps:
+                    is_complete = len(available_steps) >= len(steps_to_process)
+                    final_status = "complete" if is_complete else "ready"
+                    manifest_data = {
+                        "model": "GEM-GDPS",
+                        "cycle": cycle_iso,
+                        "cycle_str": cycle_str,
+                        "run": f"{hh}z",
+                        "status": final_status,
+                        "available_steps": available_steps,
+                        "max_step": max(available_steps),
+                        "is_complete": is_complete,
+                        "bbox": SPAIN_BBOX,
+                        "steps": step_entries,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
                     with open(manifest_file, "w", encoding="utf-8") as f:
-                        json.dump(self.current_manifest, f, ensure_ascii=False, indent=2)
+                        json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
-                self.notify_gem_update(cycle_str, available_steps, status=final_status, is_syncing=False)
-                logger.info(f"GEM: Sincronización finalizada para {cycle_str}. Pasos totales: {len(available_steps)}.")
+                    self.current_manifest = manifest_data
+                    self.notify_gem_update(cycle_str, available_steps, status=final_status, is_syncing=False)
+                    logger.info(f"GEM: Sincronización finalizada para {cycle_str}. Pasos totales: {len(available_steps)}.")
+                else:
+                    logger.info(f"GEM: Ningún paso descargado para {cycle_str}.")
 
             except Exception as e:
                 logger.error(f"Error general en sync_gem_forecast: {e}", exc_info=True)

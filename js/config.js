@@ -481,15 +481,15 @@ export function formatEcmwfTimestamp(metadata) {
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < targetMax && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < targetMax && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < targetMax) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < targetMax)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -550,15 +550,15 @@ export function formatGfsTimestamp(metadata) {
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < 384 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < 384 && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < 384) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < 384)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -618,15 +618,15 @@ export function formatAromeTimestamp(metadata) {
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < 48 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < 48 && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < 48) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < 48)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -687,15 +687,15 @@ export function formatHarmonieTimestamp(metadata) {
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < 48 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < 48 && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < 48) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < 48)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -757,15 +757,15 @@ export function formatIconTimestamp(metadata) {
 
   const isMainRun = ['00z', '06z', '12z', '18z', '0z', '6z', '12z', '18z'].includes(run);
   const targetMax = isMainRun ? 120 : 30;
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < targetMax && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < targetMax && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < targetMax) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < targetMax)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
@@ -825,15 +825,15 @@ export function formatGemTimestamp(metadata) {
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
 
-  const displayStep = (rawMax !== null && rawMax > 0) ? rawMax : maxStep;
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax > 0 && rawMax < 240 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < 240 && metadata.status !== 'complete')
   );
 
-  if (isUpdating && displayStep > 0 && displayStep < 240) {
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando (+${displayStep}h)</span>`;
+  if (isUpdating && (rawMax === null || rawMax < 240)) {
+    const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
+    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
   return `Salida modelo: <strong>${dateText} (${run})</strong>`;
