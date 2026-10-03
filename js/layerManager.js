@@ -1005,7 +1005,7 @@ export class LayerManager {
    * @param {boolean} active 
    */
   togglePluvioGroup(active) {
-    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias'];
     
     if (active) {
       if (!this.layerStates['saih_hidrologia'] || !this.layerStates['saih_hidrologia'].active) {
@@ -1030,7 +1030,6 @@ export class LayerManager {
         else if (id === 'aemet_lluvias') this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
         else if (id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
         else if (id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
-        else if (id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
       });
     } else {
       pluvioIds.forEach(id => {

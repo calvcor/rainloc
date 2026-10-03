@@ -1321,13 +1321,12 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData, AVAMET, Meteocat y SAIH Hidrosur)
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH, AEMET OpenData, AVAMET, Meteocat)
       const pluvioLayerDefs = [
-        { id: "saih_lluvias", defaultSource: "SAIH CHJ", headerColor: "#0284c7" },
+        { id: "saih_lluvias", defaultSource: "SAIH", headerColor: "#0284c7" },
         { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" },
         { id: "avamet_lluvias", defaultSource: "AVAMET", headerColor: "#059669" },
-        { id: "meteocat_lluvias", defaultSource: "METEOCAT", headerColor: "#d97706" },
-        { id: "hidrosur_lluvias", defaultSource: "HIDROSUR", headerColor: "#0d9488" }
+        { id: "meteocat_lluvias", defaultSource: "METEOCAT", headerColor: "#d97706" }
       ];
 
       for (const pluvioDef of pluvioLayerDefs) {

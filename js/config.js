@@ -170,37 +170,37 @@ export const CONFIG = {
           {
             id: 'saih_caudales',
             group: 'hidro',
-            name: 'Caudales en Ríos',
-            subtitle: '117 aforos en directo (CHJ e Hidrosur)',
+            name: 'Caudales y Niveles en Ríos',
+            subtitle: '~650 aforos en directo (CHJ, Ebro, Guadalquivir e Hidrosur)',
             icon: '🌊',
             badge: 'Aforos',
             badgeClass: 'badge-caudal',
             defaultActive: true,
-            sourceName: 'SAIH CHJ e Hidrosur',
+            sourceName: 'Redes SAIH (CHJ, CHE, CHG e Hidrosur)',
             sourceUrl: 'https://saih.chj.es'
           },
           {
             id: 'saih_embalses',
             group: 'hidro',
             name: 'Embalses y Presas',
-            subtitle: '46 embalses y presas (CHJ e Hidrosur)',
+            subtitle: '~150 embalses y presas (CHJ, Ebro, Guadalquivir e Hidrosur)',
             icon: '🏞️',
             badge: 'Embalses',
             badgeClass: 'badge-embalse',
             defaultActive: true,
-            sourceName: 'SAIH CHJ e Hidrosur',
+            sourceName: 'Redes SAIH (CHJ, CHE, CHG e Hidrosur)',
             sourceUrl: 'https://saih.chj.es'
           },
           {
             id: 'saih_lluvias',
             group: 'pluvio',
-            name: 'Pluviómetros SAIH (CHJ)',
-            subtitle: '182 pluviómetros cuenca Júcar (1h, 4h, 12h, 24h)',
+            name: 'Pluviómetros SAIH',
+            subtitle: '~750 pluviómetros (CHJ, Ebro, Guadalquivir e Hidrosur)',
             icon: '🌧️',
-            badge: 'CHJ',
+            badge: 'SAIH',
             badgeClass: 'badge-lluvia',
             defaultActive: true,
-            sourceName: 'Confederación Hidrográfica del Júcar (MITECO)',
+            sourceName: 'Redes SAIH Hidrográficas (CHJ, CHE, CHG, Hidrosur)',
             sourceUrl: 'https://saih.chj.es'
           },
           {
@@ -238,18 +238,6 @@ export const CONFIG = {
             defaultActive: true,
             sourceName: 'Servei Meteorològic de Catalunya (Dades Obertes Gencat)',
             sourceUrl: 'https://analisi.transparenciacatalunya.cat/d/nzvn-apee'
-          },
-          {
-            id: 'hidrosur_lluvias',
-            group: 'pluvio',
-            name: 'Pluviómetros SAIH Hidrosur',
-            subtitle: '147 pluviómetros Cuencas Andaluzas (1h, 4h, 12h, 24h)',
-            icon: '🌧️',
-            badge: 'HIDROSUR',
-            badgeClass: 'badge-hidrosur',
-            defaultActive: true,
-            sourceName: 'S.A.I.H. Hidrosur (Junta de Andalucía)',
-            sourceUrl: 'https://www.redhidrosurmedioambiente.es/saih/'
           }
         ]
       }
