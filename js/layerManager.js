@@ -4336,8 +4336,19 @@ export class LayerManager {
         const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
         const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.red === 'EBRO' || props.unidad_grafica === 'm';
-        const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
+        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
+        let compareVal = null;
+        if (isNivelThreshold) {
+          if (nivel !== null) {
+            compareVal = nivel;
+          }
+        } else {
+          if (caudal !== null) {
+            compareVal = caudal;
+          } else if (nivel !== null) {
+            compareVal = nivel;
+          }
+        }
 
         const umbrales = props.umbrales || {};
         const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
@@ -4456,8 +4467,19 @@ export class LayerManager {
     const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
     const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.red === 'EBRO' || props.unidad_grafica === 'm';
-    const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
+    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
+    let compareVal = null;
+    if (isNivelThreshold) {
+      if (nivel !== null) {
+        compareVal = nivel;
+      }
+    } else {
+      if (caudal !== null) {
+        compareVal = caudal;
+      } else if (nivel !== null) {
+        compareVal = nivel;
+      }
+    }
 
     let alertColor = '#10b981';
     let alertText = isNivelThreshold ? 'Nivel Normal' : 'Caudal Normal';
@@ -4499,8 +4521,9 @@ export class LayerManager {
     if (titleEl) titleEl.textContent = props.nombre || (isCota ? 'Estación de Cota' : (caudal !== null ? 'Estación de Caudal' : 'Estación de Nivel'));
     if (subtitleEl) {
       const netName = isEbro ? 'SAIH Ebro' : (isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ'));
-      const isMeters = isHidro || isGuadal || isEbro || props.unidad_grafica === 'm';
-      const varDesc = isMeters ? (caudal !== null ? `Caudal: ${caudal.toFixed(2)} m³/s · Nivel: ${nivel !== null ? nivel.toFixed(2) + ' m' : '--'}` : (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit}` : 'Nivel en Río')) : (props.variable || 'Caudal');
+      const varDesc = (caudal !== null && nivel !== null)
+        ? `Caudal: ${caudal.toFixed(2)} m³/s · Nivel: ${nivel.toFixed(2)} m`
+        : (caudal !== null ? `Caudal: ${caudal.toFixed(2)} m³/s` : (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit}` : 'Nivel en Río'));
       const mun = props.poblacion || props.municipio || '--';
       subtitleEl.textContent = `${varDesc} · ${mun} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
     }
@@ -4547,7 +4570,7 @@ export class LayerManager {
     }
 
     // Chips de umbrales
-    const thUnit = isNivelThreshold ? (isCota ? 'm.s.n.m.' : 'm') : 'm³/s';
+    const thUnit = isNivelThreshold ? (isCota ? 'm.s.n.m.' : 'm (Nivel)') : 'm³/s';
     const chipY = document.getElementById('th-chip-yellow');
     const chipO = document.getElementById('th-chip-orange');
     const chipR = document.getElementById('th-chip-red');
@@ -4651,11 +4674,16 @@ export class LayerManager {
         return;
       }
 
-      const chartUnit = data.unidad || (this._currentModalStationProps && this._currentModalStationProps.unidad_grafica) || 'm³/s';
+      const stationProps = this._currentModalStationProps || {};
+      const isNivelThreshold = stationProps.unidad_umbrales === 'm' || stationProps.tipo_umbral === 'nivel' || stationProps.red === 'HIDROSUR';
+
+      const chartUnit = data.unidad || stationProps.unidad_grafica || 'm³/s';
       const isLevelChart = chartUnit === 'm';
+      const isFlowChart = chartUnit === 'm³/s';
+      const isVolChart = chartUnit === 'hm³';
 
       const values = validPoints.map(s => Number(s.valor));
-      const hasCaudalProp = this._currentModalStationProps && this._currentModalStationProps.caudal !== undefined && this._currentModalStationProps.caudal !== null;
+      const hasCaudalProp = stationProps.caudal !== undefined && stationProps.caudal !== null;
       const isCota = !hasCaudalProp && isLevelChart && (values.length > 0 && Math.min(...values) >= 20);
       const effectiveUnit = isCota ? 'm.s.n.m.' : chartUnit;
 
@@ -4668,10 +4696,10 @@ export class LayerManager {
       const controlsTitle = document.getElementById('caudal-chart-controls-title');
 
       if (statCurrentLabel) {
-        statCurrentLabel.textContent = !hasCaudalProp && isLevelChart ? (isCota ? 'Cota s.n.m. (Altitud)' : 'Nivel Actual') : 'Caudal Actual';
+        statCurrentLabel.textContent = isVolChart ? 'Volumen Actual' : (isCota ? 'Cota s.n.m. (Altitud)' : (isLevelChart ? 'Nivel Actual' : 'Caudal Actual'));
       }
       if (controlsTitle) {
-        controlsTitle.textContent = !hasCaudalProp && isLevelChart ? (isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : 'Evolución temporal del nivel:') : 'Evolución temporal del caudal:';
+        controlsTitle.textContent = isVolChart ? 'Evolución temporal del volumen (hm³):' : (isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (isLevelChart ? 'Evolución temporal del nivel:' : 'Evolución temporal del caudal:'));
       }
 
       const uAmarillo = (umbrales && umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales && umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
@@ -4681,15 +4709,18 @@ export class LayerManager {
       if (latestPoint) {
         const latestVal = Number(latestPoint.valor);
         if (statCurrent) {
-          if (hasCaudalProp && isLevelChart) {
-            statCurrent.textContent = `${Number(this._currentModalStationProps.caudal).toFixed(2)} m³/s`;
+          if (isFlowChart) {
+            statCurrent.textContent = `${latestVal.toFixed(2)} m³/s`;
+          } else if (isVolChart) {
+            statCurrent.textContent = `${latestVal.toFixed(2)} hm³`;
           } else {
             statCurrent.textContent = `${latestVal.toFixed(2)} ${effectiveUnit}`;
           }
         }
 
-        // Actualizar el badge de estado si la serie histórica contiene la lectura más reciente
-        if (alertBadge) {
+        // Actualizar el badge de estado SOLO si la serie histórica coincide con la variable del umbral
+        const isThresholdCompatible = (isNivelThreshold && (isLevelChart || isCota)) || (!isNivelThreshold && isFlowChart);
+        if (alertBadge && isThresholdCompatible) {
           let alertColor = '#10b981';
           let alertText = isCota ? 'Cota Normal' : (isLevelChart ? 'Nivel Normal' : 'Caudal Normal');
           if (uRojo !== null && latestVal >= uRojo) {
@@ -4728,8 +4759,10 @@ export class LayerManager {
         if (statAvg) statAvg.textContent = `Media: ${avgVal.toFixed(2)} ${effectiveUnit}`;
       }
 
+      const isThresholdCompatible = (isNivelThreshold && (isLevelChart || isCota)) || (!isNivelThreshold && isFlowChart);
+
       // Renderizar gráfica SVG de alta resolución con líneas de aviso horizontales
-      this._renderCaudalSvgChart(validPoints, umbrales, container, effectiveUnit);
+      this._renderCaudalSvgChart(validPoints, umbrales, container, effectiveUnit, isThresholdCompatible);
 
     } catch (err) {
       console.warn('Error al obtener histórico de caudal:', err);
@@ -4745,16 +4778,20 @@ export class LayerManager {
   /**
    * Genera el SVG interactivo con curva de caudal y líneas horizontales de avisos
    */
-  _renderCaudalSvgChart(points, umbrales, containerEl, unit = 'm³/s') {
+  _renderCaudalSvgChart(points, umbrales, containerEl, unit = 'm³/s', isThresholdCompatible = true) {
     if (!points || points.length === 0) return;
 
     // Asegurar orden cronológico de los puntos
     const sortedPoints = [...points].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 
     const values = sortedPoints.map(p => Number(p.valor));
-    const uA = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
-    const uN = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
-    const uR = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
+    const rawUA = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
+    const rawUN = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
+    const rawUR = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
+
+    const uA = isThresholdCompatible ? rawUA : null;
+    const uN = isThresholdCompatible ? rawUN : null;
+    const uR = isThresholdCompatible ? rawUR : null;
 
     // Calcular límites Y dinámicos adaptados tanto a caudal (cerca de 0) como a cotas/niveles elevados (m)
     const rawMax = Math.max(...values);

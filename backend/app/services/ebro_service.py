@@ -703,11 +703,11 @@ class EbroService:
                         "alerta": umb.get("rojo"),
                         "tipo_umbral": "nivel",
                         "unidad_umbrales": "m",
-                        "unidad_grafica": "m",
+                        "unidad_grafica": "m³/s" if caudal_val is not None else "m",
                         "ultima_hora": q_info.get("fecha") or n_info.get("fecha") or now_iso,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
-                        "unidad": "m³/s",
+                        "unidad": "m³/s" if caudal_val is not None else "m",
                         "unidad_nivel": "m",
                     }
                     aforos_list.append(st_dict)
@@ -790,11 +790,11 @@ class EbroService:
                         "alerta": umb.get("rojo"),
                         "tipo_umbral": "nivel",
                         "unidad_umbrales": "m",
-                        "unidad_grafica": "m",
+                        "unidad_grafica": "m³/s" if caudal_val is not None else "m",
                         "ultima_hora": fecha_val,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
-                        "unidad": "m³/s",
+                        "unidad": "m³/s" if caudal_val is not None else "m",
                         "unidad_nivel": "m",
                     }
                     aforos_list.append(st_dict)
@@ -1014,16 +1014,25 @@ class EbroService:
             points = await asyncio.to_thread(self._fetch_sparkline_series, tag, tipo_tag)
 
         # Ajustar nombres de campos según sea embalse o caudal
+        unit_str = "hm³" if is_embalse else ("m³/s" if tipo_tag == "QRIO" else "m")
+        var_type_str = "volumen" if is_embalse else ("caudal" if tipo_tag == "QRIO" else "nivel")
+
         if is_embalse:
             for p in points:
                 p["volumen"] = p.get("valor")
         else:
-            for p in points:
-                p["caudal"] = p.get("valor")
+            if tipo_tag == "QRIO":
+                for p in points:
+                    p["caudal"] = p.get("valor")
+            else:
+                for p in points:
+                    p["nivel"] = p.get("valor")
 
         return {
             "id_variable": str(id_or_code),
             "estacion": station_obj,
+            "tipo_variable": var_type_str,
+            "unidad": unit_str,
             "rango": {
                 "desde": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
