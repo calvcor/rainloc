@@ -292,10 +292,11 @@ export class LayerManager {
             parentId: def.id
           };
 
-          const leafletLayer = this._createLeafletLayer(subDef, subOpacity);
+          const shouldLoad = isActive && subSavedActive && currentTab === 'realtime';
+          const leafletLayer = this._createLeafletLayer(subDef, subOpacity, shouldLoad);
           this.layers[subDef.id] = leafletLayer;
 
-          if (leafletLayer && isActive && subSavedActive && currentTab === 'realtime') {
+          if (leafletLayer && shouldLoad) {
             leafletLayer.addTo(this.map);
           }
         });
@@ -311,25 +312,29 @@ export class LayerManager {
       type: def.type
     };
 
-    // Crear la instancia Leaflet correspondiente
-    const leafletLayer = this._createLeafletLayer(def, opacity);
+    const shouldLoad = isActive && (
+      (currentTab === 'realtime' && (def.type === 'realtime' || def.type === 'vector' || def.type === 'raster')) ||
+      (currentTab === 'prediction' && (def.type === 'prediction' || def.type === 'model'))
+    );
+
+    // Crear la instancia Leaflet correspondiente (solo cargando datos si está activa en la pestaña inicial)
+    const leafletLayer = this._createLeafletLayer(def, opacity, shouldLoad);
     this.layers[def.id] = leafletLayer;
 
     // Montar en el mapa según la pestaña activa actual
-    if (leafletLayer && isActive) {
-      if (currentTab === 'realtime' && (def.type === 'realtime' || def.type === 'vector' || def.type === 'raster')) {
-        leafletLayer.addTo(this.map);
-      } else if (currentTab === 'prediction' && (def.type === 'prediction' || def.type === 'model')) {
-        leafletLayer.addTo(this.map);
-      }
+    if (leafletLayer && shouldLoad) {
+      leafletLayer.addTo(this.map);
     }
   }
 
   /**
-   * Genera la capa Leaflet para cada feed temático
+   * Genera la capa Leaflet para cada feed temático (carga diferida bajo demanda)
    */
-  _createLeafletLayer(def, opacity) {
+  _createLeafletLayer(def, opacity, shouldLoad = false) {
     const layerGroup = L.layerGroup();
+    if (!shouldLoad) {
+      return layerGroup;
+    }
 
     if (def.id === 'aemet_warnings') {
       this._loadAemetWarnings(layerGroup, opacity);
