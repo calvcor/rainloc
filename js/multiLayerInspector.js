@@ -1398,9 +1398,10 @@ export class MultiLayerInspector {
               const isMeteocat = network === 'METEOCAT';
               const isHidrosur = network === 'HIDROSUR';
               const isGuadal = network === 'GUADALQUIVIR';
-              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : (isHidrosur ? 'SAIH HIDROSUR' : (isGuadal ? 'SAIH GUADALQUIVIR' : 'SAIH CHJ'))));
-              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : (isHidrosur ? '#0d9488' : (isGuadal ? '#4338ca' : '#0284c7'))));
-              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : (isHidrosur ? '#5eead4' : (isGuadal ? '#818cf8' : '#38bdf8'))));
+              const isEbro = network === 'EBRO';
+              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : (isHidrosur ? 'SAIH HIDROSUR' : (isGuadal ? 'SAIH GUADALQUIVIR' : (isEbro ? 'SAIH EBRO' : 'SAIH CHJ')))));
+              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : (isHidrosur ? '#0d9488' : (isGuadal ? '#4338ca' : (isEbro ? '#0891b2' : '#0284c7')))));
+              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : (isHidrosur ? '#5eead4' : (isGuadal ? '#818cf8' : (isEbro ? '#22d3ee' : '#38bdf8')))));
 
               const locParts = [];
               if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);

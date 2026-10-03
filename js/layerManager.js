@@ -4486,9 +4486,10 @@ export class LayerManager {
 
     const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_')) || (props.codigo && String(props.codigo).startsWith('HIDRO_'));
     const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_variable && String(props.id_variable).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
+    const isEbro = props.red === 'EBRO' || (props.id_variable && String(props.id_variable).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
 
     if (subcuencaBadge) {
-      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'));
+      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isEbro ? 'Cuenca del Ebro' : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ')));
     }
 
     const isCota = caudal === null && nivel !== null && nivel >= 20;
@@ -4497,8 +4498,8 @@ export class LayerManager {
 
     if (titleEl) titleEl.textContent = props.nombre || (isCota ? 'Estación de Cota' : (caudal !== null ? 'Estación de Caudal' : 'Estación de Nivel'));
     if (subtitleEl) {
-      const netName = isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ');
-      const isMeters = isHidro || isGuadal || props.unidad_grafica === 'm';
+      const netName = isEbro ? 'SAIH Ebro' : (isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ'));
+      const isMeters = isHidro || isGuadal || isEbro || props.unidad_grafica === 'm';
       const varDesc = isMeters ? (caudal !== null ? `Caudal: ${caudal.toFixed(2)} m³/s · Nivel: ${nivel !== null ? nivel.toFixed(2) + ' m' : '--'}` : (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit}` : 'Nivel en Río')) : (props.variable || 'Caudal');
       const mun = props.poblacion || props.municipio || '--';
       subtitleEl.textContent = `${varDesc} · ${mun} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
@@ -4514,7 +4515,9 @@ export class LayerManager {
       controlsTitle.textContent = isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (caudal !== null ? 'Evolución temporal del caudal:' : 'Evolución temporal del nivel:');
     }
     if (sourceTag) {
-      if (isGuadal) {
+      if (isEbro) {
+        sourceTag.innerHTML = 'Fuente: SAIH Confederación Hidrográfica del Ebro (CHE) &bull; Datos cada 15 min';
+      } else if (isGuadal) {
         sourceTag.innerHTML = 'Fuente: SAIH Confederación Hidrográfica del Guadalquivir (CHG) &bull; Datos cada 10 min';
       } else if (isHidro) {
         sourceTag.innerHTML = 'Fuente: SAIH Hidrosur (Junta de Andalucía) &bull; Datos cada hora';
@@ -4553,7 +4556,10 @@ export class LayerManager {
     if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' ' + thUnit : '--'}`;
 
     if (saihLink) {
-      if (isGuadal) {
+      if (isEbro) {
+        saihLink.href = 'https://www.saihebro.com/tiempo-real/mapa-aforos-HG-toda-la-cuenca';
+        saihLink.textContent = 'Ver en SAIH Ebro ↗';
+      } else if (isGuadal) {
         saihLink.href = 'https://www.chguadalquivir.es/saih/AforosMapa.aspx';
         saihLink.textContent = 'Ver en SAIH Guadalquivir ↗';
       } else if (isHidro) {
@@ -6034,11 +6040,12 @@ export class LayerManager {
 
     const isHidro = props.red === 'HIDROSUR' || (props.id_estacion && String(props.id_estacion).startsWith('hidrosur_')) || (props.codigo && String(props.codigo).startsWith('HIDRO_'));
     const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_estacion && String(props.id_estacion).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
+    const isEbro = props.red === 'EBRO' || (props.id_estacion && String(props.id_estacion).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
 
-    if (title) title.textContent = props.nombre || (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ'));
+    if (title) title.textContent = props.nombre || (isEbro ? 'Embalse Ebro' : (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ')));
     if (subtitle) {
       const locParts = [props.poblacion || props.municipio, props.provincia, props.subcuenca, props.codigo ? `Cód: ${props.codigo}` : null].filter(Boolean);
-      subtitle.textContent = locParts.join(' · ') || (isGuadal ? 'Demarcación Hidrográfica del Guadalquivir' : (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar'));
+      subtitle.textContent = locParts.join(' · ') || (isEbro ? 'Demarcación Hidrográfica del Ebro' : (isGuadal ? 'Demarcación Hidrográfica del Guadalquivir' : (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar')));
     }
 
     if (badgePct) {
@@ -6083,7 +6090,7 @@ export class LayerManager {
     }
 
     if (badgeSub) {
-      badgeSub.textContent = props.subcuenca || (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ'));
+      badgeSub.textContent = props.subcuenca || (isEbro ? 'Ebro' : (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ')));
     }
 
     if (statVol) statVol.textContent = vol !== null ? `${vol.toFixed(2)} hm³` : '-- hm³';
@@ -6105,7 +6112,7 @@ export class LayerManager {
       if (caudalLabel) caudalLabel.textContent = 'Caudales (Entrada / Aliviado)';
       if (statCaudalIn) statCaudalIn.textContent = caudalIn !== null ? `⬇ Entrada: ${caudalIn.toFixed(2)} m³/s` : '⬇ Entrada: -- m³/s';
       if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
-    } else if (varSem !== null || pluvAno !== null || isHidro || isGuadal) {
+    } else if (varSem !== null || pluvAno !== null || isHidro || isGuadal || isEbro) {
       if (caudalLabel) caudalLabel.textContent = 'Dinámica y Aportación';
       if (statCaudalIn) {
         const sign = (varSem !== null && varSem > 0) ? '+' : '';
@@ -6122,7 +6129,10 @@ export class LayerManager {
     }
 
     if (saihLink) {
-      if (isGuadal) {
+      if (isEbro) {
+        saihLink.href = 'https://www.saihebro.com/tiempo-real/mapa-embalses-HG-toda-la-cuenca';
+        saihLink.textContent = 'Ver en SAIH Ebro ↗';
+      } else if (isGuadal) {
         saihLink.href = 'https://www.chguadalquivir.es/saih/EmbalMapa.aspx';
         saihLink.textContent = 'Ver en SAIH Guadalquivir ↗';
       } else if (isHidro) {

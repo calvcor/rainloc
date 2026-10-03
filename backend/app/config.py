@@ -92,6 +92,9 @@ try:
         AEMET_API_KEY: Optional[str] = None
         AEMET_OPENDATA_BASE_URL: str = "https://opendata.aemet.es/opendata/api"
 
+        # SAIH Ebro Open Data API Key
+        EBRO_API_KEY: Optional[str] = None
+
         # Radar ORD (Open Radar Data / CloudFerro S3)
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"
@@ -168,6 +171,7 @@ except ImportError:
         AEMET_REFRESH_INTERVAL_SECONDS: int = int(os.getenv("AEMET_REFRESH_INTERVAL_SECONDS", "180"))
         AEMET_API_KEY: Optional[str] = os.getenv("AEMET_API_KEY", None)
         AEMET_OPENDATA_BASE_URL: str = os.getenv("AEMET_OPENDATA_BASE_URL", "https://opendata.aemet.es/opendata/api")
+        EBRO_API_KEY: Optional[str] = os.getenv("EBRO_API_KEY", None)
         AEMET_HARMONIE_DOWNLOAD_URL: str = os.getenv("AEMET_HARMONIE_DOWNLOAD_URL", "https://www.aemet.es/es/api-eltiempo/modelos/download/harmonie/PB")
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"

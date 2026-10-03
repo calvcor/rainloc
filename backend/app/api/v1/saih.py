@@ -149,7 +149,7 @@ async def get_embalse_history(
     if not emb:
         # Intentar consultar directamente como id_variable si es numérico o de Hidrosur
         target_var_id = id_or_code
-    elif emb.get("red") in ["HIDROSUR", "GUADALQUIVIR"] or str(emb.get("id_estacion", "")).startswith("hidrosur_") or str(emb.get("id_estacion", "")).startswith("guadal_"):
+    elif emb.get("red") in ["HIDROSUR", "GUADALQUIVIR", "EBRO"] or str(emb.get("id_estacion", "")).startswith("hidrosur_") or str(emb.get("id_estacion", "")).startswith("guadal_") or str(emb.get("id_estacion", "")).startswith("ebro_"):
         target_var_id = id_or_code
     else:
         if variable_type == "cota":

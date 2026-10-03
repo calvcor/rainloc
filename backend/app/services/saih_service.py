@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from pyproj import Transformer
 from app.services.hidrosur_service import hidrosur_service
 from app.services.guadalquivir_service import guadalquivir_service
+from app.services.ebro_service import ebro_service
 
 logger = logging.getLogger("rainloc-backend.saih_service")
 
@@ -209,7 +210,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando caudales de Guadalquivir: {e}")
             guadal_caudales = []
-        return self._stations + hidro_caudales + guadal_caudales
+        try:
+            ebro_caudales = await ebro_service.get_caudales()
+        except Exception as e:
+            logger.warning(f"Error cargando caudales de Ebro: {e}")
+            ebro_caudales = []
+        return self._stations + hidro_caudales + guadal_caudales + ebro_caudales
 
     async def get_stations_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_stations = await self.get_stations(auto_sync=auto_sync)
@@ -232,6 +238,10 @@ class SAIHService:
             or hidrosur_service._aforos_by_id.get(key.upper())
             or guadalquivir_service._aforos_by_id.get(key)
             or guadalquivir_service._aforos_by_id.get(key.upper())
+            or ebro_service._aforos_by_id.get(key)
+            or ebro_service._aforos_by_id.get(key.upper())
+            or ebro_service._aforos_by_id.get(key.replace("ebro_aforo_", ""))
+            or ebro_service._aforos_by_id.get(key.replace("ebro_aforo_", "").upper())
         )
 
     # ==========================================
@@ -412,7 +422,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando embalses de Guadalquivir: {e}")
             guadal_embalses = []
-        return self._embalses + hidro_embalses + guadal_embalses
+        try:
+            ebro_embalses = await ebro_service.get_embalses()
+        except Exception as e:
+            logger.warning(f"Error cargando embalses de Ebro: {e}")
+            ebro_embalses = []
+        return self._embalses + hidro_embalses + guadal_embalses + ebro_embalses
 
     async def get_embalses_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_embalses = await self.get_embalses(auto_sync=auto_sync)
@@ -436,6 +451,10 @@ class SAIHService:
             or hidrosur_service._embalses_by_id.get(str(id_or_code))
             or guadalquivir_service._embalses_by_id.get(key)
             or guadalquivir_service._embalses_by_id.get(str(id_or_code))
+            or ebro_service._embalses_by_id.get(key)
+            or ebro_service._embalses_by_id.get(str(id_or_code))
+            or ebro_service._embalses_by_id.get(key.replace("EBRO_EMB_", ""))
+            or ebro_service._embalses_by_id.get(str(id_or_code).replace("ebro_emb_", ""))
         )
 
     # ==========================================
@@ -613,7 +632,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando pluviómetros de Guadalquivir: {e}")
             guadal_pluvios = []
-        return self._pluvios + hidro_pluvios + guadal_pluvios
+        try:
+            ebro_pluvios = await ebro_service.get_pluvios()
+        except Exception as e:
+            logger.warning(f"Error cargando pluviómetros de Ebro: {e}")
+            ebro_pluvios = []
+        return self._pluvios + hidro_pluvios + guadal_pluvios + ebro_pluvios
 
     async def get_pluvios_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_pluvios = await self.get_pluvios(auto_sync=auto_sync)
@@ -637,6 +661,10 @@ class SAIHService:
             or hidrosur_service._pluvios_by_id.get(str(id_or_code))
             or guadalquivir_service._pluvios_by_id.get(key)
             or guadalquivir_service._pluvios_by_id.get(str(id_or_code))
+            or ebro_service._pluvios_by_id.get(key)
+            or ebro_service._pluvios_by_id.get(str(id_or_code))
+            or ebro_service._pluvios_by_id.get(key.replace("EBRO_PLUV_", ""))
+            or ebro_service._pluvios_by_id.get(str(id_or_code).replace("ebro_pluv_", ""))
         )
 
     # ==========================================
@@ -687,6 +715,23 @@ class SAIHService:
                 or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
             return await guadalquivir_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+
+        if (
+            id_str.startswith("ebro_")
+            or id_str.startswith("EBRO_")
+            or id_str in ebro_service._aforos_by_id
+            or id_str in ebro_service._embalses_by_id
+            or id_str.upper() in ebro_service._aforos_by_id
+            or id_str.upper() in ebro_service._embalses_by_id
+        ):
+            is_emb = (
+                id_str in ebro_service._embalses_by_id
+                or id_str.upper() in ebro_service._embalses_by_id
+                or "emb" in id_str.lower()
+                or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
+                or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
+            )
+            return await ebro_service.get_history(id_str, hours=hours, is_embalse=is_emb)
 
         now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):
