@@ -1438,10 +1438,6 @@ export class MultiLayerInspector {
           }
         }
       }
-            }
-          }
-        }
-      }
 
       // 2.6 Modelos Numéricos (ECMWF IFS, GFS, AROME, ICON, GEM)
       if (this.layerManager.isLayerOnMap("ecmwf_ifs")) {
