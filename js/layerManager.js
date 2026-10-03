@@ -579,6 +579,7 @@ export class LayerManager {
     }
 
     if (!this._preloadInFlight) this._preloadInFlight = new Set();
+    if (!this._modelMaxStore) this._modelMaxStore = new Map();
 
     targetIndices.forEach((idx, priorityOrder) => {
       const step = steps[idx];
@@ -594,6 +595,39 @@ export class LayerManager {
               .catch(() => {})
               .finally(() => {
                 if (this._preloadInFlight) this._preloadInFlight.delete(cacheKey);
+              });
+          }, delay);
+        }
+      }
+
+      // Precargar también el punto máximo en memoria si es un modelo numérico
+      if (modelKey !== 'radar' && !this._modelMaxStore.has(cacheKey)) {
+        const maxPreloadKey = `max_${cacheKey}`;
+        if (!this._preloadInFlight.has(maxPreloadKey)) {
+          this._preloadInFlight.add(maxPreloadKey);
+          const maxUrl = `${CONFIG.apiBaseUrl}/models/${modelKey}/max-at?step=${step}&type=${type}`;
+          const delay = priorityOrder < 8 ? 0 : Math.min((priorityOrder - 8) * 50, 900);
+          setTimeout(() => {
+            fetch(maxUrl)
+              .then(r => r.ok ? r.json() : null)
+              .then(data => {
+                if (data && data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
+                  this._modelMaxStore.set(cacheKey, {
+                    lat: Number(data.lat),
+                    lon: Number(data.lon),
+                    value_mm: Number(data.value_mm),
+                    modelKey: modelKey,
+                    modelName: data.model || modelKey.toUpperCase(),
+                    step: step,
+                    type: type
+                  });
+                } else {
+                  this._modelMaxStore.set(cacheKey, null);
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                if (this._preloadInFlight) this._preloadInFlight.delete(maxPreloadKey);
               });
           }, delay);
         }
@@ -2938,6 +2972,21 @@ export class LayerManager {
       return;
     }
 
+    const cacheKey = `${modelKey}_${type}_${step}`;
+    if (!this._modelMaxStore) this._modelMaxStore = new Map();
+
+    if (this._modelMaxStore.has(cacheKey)) {
+      const data = this._modelMaxStore.get(cacheKey);
+      if (data) {
+        if (!this.currentMaxPoints) this.currentMaxPoints = {};
+        this.currentMaxPoints[modelKey] = data;
+      } else {
+        if (this.currentMaxPoints) delete this.currentMaxPoints[modelKey];
+      }
+      this._refreshMaxMarkers();
+      return;
+    }
+
     if (!this._modelMaxAbortControllers) this._modelMaxAbortControllers = {};
     if (this._modelMaxAbortControllers[modelKey]) {
       this._modelMaxAbortControllers[modelKey].abort();
@@ -2950,10 +2999,8 @@ export class LayerManager {
       const resp = await fetch(url, { signal });
       if (resp.ok) {
         const data = await resp.json();
-        if (!this.currentMaxPoints) this.currentMaxPoints = {};
-
         if (data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
-          this.currentMaxPoints[modelKey] = {
+          const pointData = {
             lat: Number(data.lat),
             lon: Number(data.lon),
             value_mm: Number(data.value_mm),
@@ -2962,8 +3009,12 @@ export class LayerManager {
             step: step,
             type: type
           };
+          this._modelMaxStore.set(cacheKey, pointData);
+          if (!this.currentMaxPoints) this.currentMaxPoints = {};
+          this.currentMaxPoints[modelKey] = pointData;
         } else {
-          delete this.currentMaxPoints[modelKey];
+          this._modelMaxStore.set(cacheKey, null);
+          if (this.currentMaxPoints) delete this.currentMaxPoints[modelKey];
         }
         this._refreshMaxMarkers();
       }
