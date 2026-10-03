@@ -1140,7 +1140,7 @@ export class MultiLayerInspector {
             const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : closestStation.nivel;
             const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-            const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR';
+            const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.unidad_grafica === 'm';
             const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
 
             const umbrales = closestStation.umbrales || {};
@@ -1383,9 +1383,10 @@ export class MultiLayerInspector {
               const isAvamet = network === 'AVAMET';
               const isMeteocat = network === 'METEOCAT';
               const isHidrosur = network === 'HIDROSUR';
-              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : (isHidrosur ? 'SAIH HIDROSUR' : 'SAIH CHJ')));
-              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : (isHidrosur ? '#0d9488' : '#0284c7')));
-              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : (isHidrosur ? '#5eead4' : '#38bdf8')));
+              const isGuadal = network === 'GUADALQUIVIR';
+              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : (isHidrosur ? 'SAIH HIDROSUR' : (isGuadal ? 'SAIH GUADALQUIVIR' : 'SAIH CHJ'))));
+              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : (isHidrosur ? '#0d9488' : (isGuadal ? '#4338ca' : '#0284c7'))));
+              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : (isHidrosur ? '#5eead4' : (isGuadal ? '#818cf8' : '#38bdf8'))));
 
               const locParts = [];
               if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);

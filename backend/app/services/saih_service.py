@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
 from app.services.hidrosur_service import hidrosur_service
+from app.services.guadalquivir_service import guadalquivir_service
 
 logger = logging.getLogger("rainloc-backend.saih_service")
 
@@ -203,7 +204,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando caudales de Hidrosur: {e}")
             hidro_caudales = []
-        return self._stations + hidro_caudales
+        try:
+            guadal_caudales = await guadalquivir_service.get_caudales()
+        except Exception as e:
+            logger.warning(f"Error cargando caudales de Guadalquivir: {e}")
+            guadal_caudales = []
+        return self._stations + hidro_caudales + guadal_caudales
 
     async def get_stations_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_stations = await self.get_stations(auto_sync=auto_sync)
@@ -220,7 +226,13 @@ class SAIHService:
 
     def get_station_by_id(self, id_variable: str) -> Optional[Dict[str, Any]]:
         key = str(id_variable).strip()
-        return self._stations_by_id.get(key) or hidrosur_service._aforos_by_id.get(key) or hidrosur_service._aforos_by_id.get(key.upper())
+        return (
+            self._stations_by_id.get(key)
+            or hidrosur_service._aforos_by_id.get(key)
+            or hidrosur_service._aforos_by_id.get(key.upper())
+            or guadalquivir_service._aforos_by_id.get(key)
+            or guadalquivir_service._aforos_by_id.get(key.upper())
+        )
 
     # ==========================================
     # EMBALSES
@@ -395,7 +407,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando embalses de Hidrosur: {e}")
             hidro_embalses = []
-        return self._embalses + hidro_embalses
+        try:
+            guadal_embalses = await guadalquivir_service.get_embalses()
+        except Exception as e:
+            logger.warning(f"Error cargando embalses de Guadalquivir: {e}")
+            guadal_embalses = []
+        return self._embalses + hidro_embalses + guadal_embalses
 
     async def get_embalses_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_embalses = await self.get_embalses(auto_sync=auto_sync)
@@ -417,6 +434,8 @@ class SAIHService:
             or self._embalses_by_id.get(str(id_or_code))
             or hidrosur_service._embalses_by_id.get(key)
             or hidrosur_service._embalses_by_id.get(str(id_or_code))
+            or guadalquivir_service._embalses_by_id.get(key)
+            or guadalquivir_service._embalses_by_id.get(str(id_or_code))
         )
 
     # ==========================================
@@ -581,32 +600,44 @@ class SAIHService:
     async def get_pluvios(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
             await self.ensure_fresh_pluvios_data()
-        return self._pluvios
+        try:
+            from app.services.hidrosur_pluvios_service import hidrosur_pluvios_service
+            hidro_pluvios = await hidrosur_pluvios_service.get_pluvios()
+        except Exception as e:
+            try:
+                hidro_pluvios = await hidrosur_service.get_pluvios()
+            except Exception:
+                hidro_pluvios = []
+        try:
+            guadal_pluvios = await guadalquivir_service.get_pluvios()
+        except Exception as e:
+            logger.warning(f"Error cargando pluviómetros de Guadalquivir: {e}")
+            guadal_pluvios = []
+        return self._pluvios + hidro_pluvios + guadal_pluvios
 
     async def get_pluvios_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
-        if auto_sync:
-            await self.ensure_fresh_pluvios_data()
-
-        if PLUVIOS_GEOJSON_FILE.exists():
-            try:
-                with open(PLUVIOS_GEOJSON_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error leyendo {PLUVIOS_GEOJSON_FILE}: {e}")
-
+        all_pluvios = await self.get_pluvios(auto_sync=auto_sync)
         features = [
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [p["lon"], p["lat"]]},
                 "properties": p,
             }
-            for p in self._pluvios
+            for p in all_pluvios
+            if p.get("lat") is not None and p.get("lon") is not None
         ]
         return {"type": "FeatureCollection", "features": features}
 
     def get_pluvio_by_id(self, id_or_code: str) -> Optional[Dict[str, Any]]:
         key = str(id_or_code).strip().upper()
-        return self._pluvios_by_id.get(key) or self._pluvios_by_id.get(str(id_or_code))
+        return (
+            self._pluvios_by_id.get(key)
+            or self._pluvios_by_id.get(str(id_or_code))
+            or hidrosur_service._pluvios_by_id.get(key)
+            or hidrosur_service._pluvios_by_id.get(str(id_or_code))
+            or guadalquivir_service._pluvios_by_id.get(key)
+            or guadalquivir_service._pluvios_by_id.get(str(id_or_code))
+        )
 
     # ==========================================
     # SERIES TEMPORALES
@@ -639,6 +670,42 @@ class SAIHService:
                 or "e01" in id_str.lower()
             )
             return await hidrosur_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+
+        if (
+            id_str.startswith("guadal_")
+            or id_str.startswith("GUADAL_")
+            or id_str in guadalquivir_service._aforos_by_id
+            or id_str in guadalquivir_service._embalses_by_id
+            or id_str.upper() in guadalquivir_service._aforos_by_id
+            or id_str.upper() in guadalquivir_service._embalses_by_id
+        ):
+            station_info = (
+                guadalquivir_service._aforos_by_id.get(id_str)
+                or guadalquivir_service._aforos_by_id.get(id_str.upper())
+                or guadalquivir_service._embalses_by_id.get(id_str)
+                or guadalquivir_service._embalses_by_id.get(id_str.upper())
+            )
+            now = datetime.now(MADRID_TZ)
+            series = []
+            if station_info:
+                val = station_info.get("volumen_actual") if "volumen_actual" in station_info else (station_info.get("caudal_actual") or station_info.get("nivel_actual"))
+                if val is not None:
+                    series = [{
+                        "fecha": now.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "valor": float(val),
+                        "estado": 1
+                    }]
+            return {
+                "id_variable": str(id_variable),
+                "estacion": station_info,
+                "rango": {
+                    "desde": (now - timedelta(hours=int(hours))).strftime("%Y-%m-%d %H:%M:%S"),
+                    "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
+                    "horas": hours,
+                },
+                "puntos_totales": len(series),
+                "serie": series,
+            }
 
         now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):

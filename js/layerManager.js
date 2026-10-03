@@ -4484,17 +4484,20 @@ export class LayerManager {
       alertBadge.style.borderColor = `${alertColor}66`;
     }
 
+    const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_')) || (props.codigo && String(props.codigo).startsWith('HIDRO_'));
+    const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_variable && String(props.id_variable).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
+
     if (subcuencaBadge) {
-      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
-      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ');
+      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'));
     }
 
     if (titleEl) titleEl.textContent = props.nombre || 'Estación de Caudal';
     if (subtitleEl) {
-      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
-      const netName = isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ';
-      const varDesc = isHidro ? (nivel !== null ? `Nivel: ${nivel.toFixed(2)} m · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Caudal en Río') : (props.variable || 'Caudal');
-      subtitleEl.textContent = `${varDesc} · ${props.poblacion || '--'} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
+      const netName = isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ');
+      const isMeters = isHidro || isGuadal || props.unidad_grafica === 'm';
+      const varDesc = isMeters ? (nivel !== null ? `Nivel: ${nivel.toFixed(2)} m · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Nivel y Caudal en Río') : (props.variable || 'Caudal');
+      const mun = props.poblacion || props.municipio || '--';
+      subtitleEl.textContent = `${varDesc} · ${mun} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
     }
 
     if (statCurrent) {
@@ -4527,8 +4530,10 @@ export class LayerManager {
     if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' ' + thUnit : '--'}`;
 
     if (saihLink) {
-      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
-      if (isHidro) {
+      if (isGuadal) {
+        saihLink.href = 'https://www.chguadalquivir.es/saih/AforosMapa.aspx';
+        saihLink.textContent = 'Ver en SAIH Guadalquivir ↗';
+      } else if (isHidro) {
         saihLink.href = 'https://www.redhidrosurmedioambiente.es/saih/resumen/rios';
         saihLink.textContent = 'Ver en SAIH Hidrosur ↗';
       } else {
@@ -5918,12 +5923,13 @@ export class LayerManager {
     const caudalIn = props.caudal_recibido !== null && props.caudal_recibido !== undefined ? Number(props.caudal_recibido) : null;
     const caudalOut = props.caudal_salida_rio !== null && props.caudal_salida_rio !== undefined ? Number(props.caudal_salida_rio) : (props.caudal_salida !== null && props.caudal_salida !== undefined ? Number(props.caudal_salida) : null);
 
-    const isHidro = props.red === 'HIDROSUR' || (props.id_estacion && String(props.id_estacion).startsWith('hidrosur_'));
+    const isHidro = props.red === 'HIDROSUR' || (props.id_estacion && String(props.id_estacion).startsWith('hidrosur_')) || (props.codigo && String(props.codigo).startsWith('HIDRO_'));
+    const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_estacion && String(props.id_estacion).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
 
-    if (title) title.textContent = props.nombre || (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ');
+    if (title) title.textContent = props.nombre || (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ'));
     if (subtitle) {
-      const locParts = [props.poblacion, props.provincia, props.subcuenca, props.codigo ? `Cód: ${props.codigo}` : null].filter(Boolean);
-      subtitle.textContent = locParts.join(' · ') || (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar');
+      const locParts = [props.poblacion || props.municipio, props.provincia, props.subcuenca, props.codigo ? `Cód: ${props.codigo}` : null].filter(Boolean);
+      subtitle.textContent = locParts.join(' · ') || (isGuadal ? 'Demarcación Hidrográfica del Guadalquivir' : (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar'));
     }
 
     if (badgePct) {
@@ -5968,7 +5974,7 @@ export class LayerManager {
     }
 
     if (badgeSub) {
-      badgeSub.textContent = props.subcuenca || (isHidro ? 'Cuencas Andaluzas' : 'CHJ');
+      badgeSub.textContent = props.subcuenca || (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ'));
     }
 
     if (statVol) statVol.textContent = vol !== null ? `${vol.toFixed(2)} hm³` : '-- hm³';
@@ -5990,7 +5996,7 @@ export class LayerManager {
       if (caudalLabel) caudalLabel.textContent = 'Caudales (Entrada / Aliviado)';
       if (statCaudalIn) statCaudalIn.textContent = caudalIn !== null ? `⬇ Entrada: ${caudalIn.toFixed(2)} m³/s` : '⬇ Entrada: -- m³/s';
       if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
-    } else if (varSem !== null || pluvAno !== null || isHidro) {
+    } else if (varSem !== null || pluvAno !== null || isHidro || isGuadal) {
       if (caudalLabel) caudalLabel.textContent = 'Dinámica y Aportación';
       if (statCaudalIn) {
         const sign = (varSem !== null && varSem > 0) ? '+' : '';
@@ -6007,7 +6013,10 @@ export class LayerManager {
     }
 
     if (saihLink) {
-      if (isHidro) {
+      if (isGuadal) {
+        saihLink.href = 'https://www.chguadalquivir.es/saih/EmbalMapa.aspx';
+        saihLink.textContent = 'Ver en SAIH Guadalquivir ↗';
+      } else if (isHidro) {
         saihLink.href = 'https://www.redhidrosurmedioambiente.es/saih/resumen/embalses';
         saihLink.textContent = 'Ver en SAIH Hidrosur ↗';
       } else {
