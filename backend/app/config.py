@@ -4,7 +4,12 @@ Configuración centralizada de la aplicación FastAPI para RainLoc
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        pass
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = Path(__file__).resolve().parent.parent
