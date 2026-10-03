@@ -112,7 +112,7 @@ class PlacesService:
         );
         """)
 
-        # Tabla de búsqueda FTS5 con soporte diacrítico
+        # Tabla de búsqueda FTS5 universalmente compatible
         cur.execute("""
         CREATE VIRTUAL TABLE places_fts USING fts5(
             name,
@@ -121,7 +121,7 @@ class PlacesService:
             category,
             province,
             community,
-            tokenize = 'unicode61 remove_diacritics 2'
+            tokenize = 'unicode61'
         );
         """)
 
