@@ -4474,11 +4474,16 @@ export class LayerManager {
     }
 
     if (subcuencaBadge) {
-      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : 'Demarcación CHJ';
+      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
+      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ');
     }
 
     if (titleEl) titleEl.textContent = props.nombre || 'Estación de Caudal';
-    if (subtitleEl) subtitleEl.textContent = `${props.variable || 'Caudal'} · ${props.poblacion || '--'} (${props.provincia || ''}) · Código SAIH: ${props.codigo || '--'}`;
+    if (subtitleEl) {
+      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
+      const netName = isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ';
+      subtitleEl.textContent = `${props.variable || 'Caudal'} · ${props.poblacion || '--'} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
+    }
 
     if (statCurrent) {
       statCurrent.textContent = caudal !== null ? `${caudal.toFixed(2)} m³/s` : '-- m³/s';
@@ -4503,7 +4508,14 @@ export class LayerManager {
     if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' m³/s' : '--'}`;
 
     if (saihLink) {
-      saihLink.href = `https://saih.chj.es/aforos/${props.id_variable}/chart`;
+      const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
+      if (isHidro) {
+        saihLink.href = 'https://www.redhidrosurmedioambiente.es/saih/resumen/rios';
+        saihLink.textContent = 'Ver en SAIH Hidrosur ↗';
+      } else {
+        saihLink.href = `https://saih.chj.es/aforos/${props.id_variable}/chart`;
+        saihLink.textContent = 'Ver en SAIH CHJ ↗';
+      }
     }
 
     // Configurar botones de rango temporal (12h, 24h, 48h, 7d)
@@ -5870,10 +5882,12 @@ export class LayerManager {
     const caudalIn = props.caudal_recibido !== null && props.caudal_recibido !== undefined ? Number(props.caudal_recibido) : null;
     const caudalOut = props.caudal_salida_rio !== null && props.caudal_salida_rio !== undefined ? Number(props.caudal_salida_rio) : (props.caudal_salida !== null && props.caudal_salida !== undefined ? Number(props.caudal_salida) : null);
 
-    if (title) title.textContent = props.nombre || 'Embalse CHJ';
+    const isHidro = props.red === 'HIDROSUR' || (props.id_estacion && String(props.id_estacion).startsWith('hidrosur_'));
+
+    if (title) title.textContent = props.nombre || (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ');
     if (subtitle) {
       const locParts = [props.poblacion, props.provincia, props.subcuenca, props.codigo ? `Cód: ${props.codigo}` : null].filter(Boolean);
-      subtitle.textContent = locParts.join(' · ') || 'Demarcación Hidrográfica del Júcar';
+      subtitle.textContent = locParts.join(' · ') || (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar');
     }
 
     if (badgePct) {
@@ -5907,7 +5921,7 @@ export class LayerManager {
     }
 
     if (badgeSub) {
-      badgeSub.textContent = props.subcuenca || 'CHJ';
+      badgeSub.textContent = props.subcuenca || (isHidro ? 'Cuencas Andaluzas' : 'CHJ');
     }
 
     if (statVol) statVol.textContent = vol !== null ? `${vol.toFixed(2)} hm³` : '-- hm³';
@@ -5924,7 +5938,13 @@ export class LayerManager {
     if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
 
     if (saihLink) {
-      saihLink.href = 'https://saih.chj.es/mapa-embalses';
+      if (isHidro) {
+        saihLink.href = 'https://www.redhidrosurmedioambiente.es/saih/resumen/embalses';
+        saihLink.textContent = 'Ver en SAIH Hidrosur ↗';
+      } else {
+        saihLink.href = 'https://saih.chj.es/mapa-embalses';
+        saihLink.textContent = 'Ver en SAIH CHJ ↗';
+      }
     }
 
     rangeButtons.forEach(btn => {

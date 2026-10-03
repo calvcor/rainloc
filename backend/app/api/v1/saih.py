@@ -147,7 +147,9 @@ async def get_embalse_history(
     """
     emb = saih_service.get_embalse_by_id(id_or_code)
     if not emb:
-        # Intentar consultar directamente como id_variable si es numérico
+        # Intentar consultar directamente como id_variable si es numérico o de Hidrosur
+        target_var_id = id_or_code
+    elif emb.get("red") == "HIDROSUR" or str(emb.get("id_estacion", "")).startswith("hidrosur_"):
         target_var_id = id_or_code
     else:
         if variable_type == "cota":

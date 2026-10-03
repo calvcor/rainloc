@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
+from app.services.hidrosur_service import hidrosur_service
 
 logger = logging.getLogger("rainloc-backend.saih_service")
 
@@ -197,31 +198,29 @@ class SAIHService:
     async def get_stations(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
             await self.ensure_fresh_data()
-        return self._stations
+        try:
+            hidro_caudales = await hidrosur_service.get_caudales()
+        except Exception as e:
+            logger.warning(f"Error cargando caudales de Hidrosur: {e}")
+            hidro_caudales = []
+        return self._stations + hidro_caudales
 
     async def get_stations_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
-        if auto_sync:
-            await self.ensure_fresh_data()
-
-        if GEOJSON_FILE.exists():
-            try:
-                with open(GEOJSON_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error leyendo {GEOJSON_FILE}: {e}")
-
+        all_stations = await self.get_stations(auto_sync=auto_sync)
         features = [
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [st["lon"], st["lat"]]},
                 "properties": st,
             }
-            for st in self._stations
+            for st in all_stations
+            if st.get("lat") is not None and st.get("lon") is not None
         ]
         return {"type": "FeatureCollection", "features": features}
 
     def get_station_by_id(self, id_variable: str) -> Optional[Dict[str, Any]]:
-        return self._stations_by_id.get(str(id_variable))
+        key = str(id_variable).strip()
+        return self._stations_by_id.get(key) or hidrosur_service._aforos_by_id.get(key) or hidrosur_service._aforos_by_id.get(key.upper())
 
     # ==========================================
     # EMBALSES
@@ -391,32 +390,34 @@ class SAIHService:
     async def get_embalses(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
             await self.ensure_fresh_embalses_data()
-        return self._embalses
+        try:
+            hidro_embalses = await hidrosur_service.get_embalses()
+        except Exception as e:
+            logger.warning(f"Error cargando embalses de Hidrosur: {e}")
+            hidro_embalses = []
+        return self._embalses + hidro_embalses
 
     async def get_embalses_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
-        if auto_sync:
-            await self.ensure_fresh_embalses_data()
-
-        if EMBALSES_GEOJSON_FILE.exists():
-            try:
-                with open(EMBALSES_GEOJSON_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error leyendo {EMBALSES_GEOJSON_FILE}: {e}")
-
+        all_embalses = await self.get_embalses(auto_sync=auto_sync)
         features = [
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [emb["lon"], emb["lat"]]},
                 "properties": emb,
             }
-            for emb in self._embalses
+            for emb in all_embalses
+            if emb.get("lat") is not None and emb.get("lon") is not None
         ]
         return {"type": "FeatureCollection", "features": features}
 
     def get_embalse_by_id(self, id_or_code: str) -> Optional[Dict[str, Any]]:
         key = str(id_or_code).strip().upper()
-        return self._embalses_by_id.get(key) or self._embalses_by_id.get(str(id_or_code))
+        return (
+            self._embalses_by_id.get(key)
+            or self._embalses_by_id.get(str(id_or_code))
+            or hidrosur_service._embalses_by_id.get(key)
+            or hidrosur_service._embalses_by_id.get(str(id_or_code))
+        )
 
     # ==========================================
     # LLUVIAS (PLUVIÓMETROS)
@@ -622,6 +623,23 @@ class SAIHService:
         Consulta la API temporal del SAIH para una variable dada.
         Formato fechas API: YYYY-MM-DD HH:mm:ss (en hora oficial de España / Europe/Madrid)
         """
+        id_str = str(id_variable).strip()
+        if (
+            id_str.startswith("hidrosur_")
+            or id_str.startswith("HIDRO_")
+            or id_str in hidrosur_service._aforos_by_id
+            or id_str in hidrosur_service._embalses_by_id
+            or id_str.upper() in hidrosur_service._aforos_by_id
+            or id_str.upper() in hidrosur_service._embalses_by_id
+        ):
+            is_emb = (
+                id_str in hidrosur_service._embalses_by_id
+                or id_str.upper() in hidrosur_service._embalses_by_id
+                or "emb" in id_str.lower()
+                or "e01" in id_str.lower()
+            )
+            return await hidrosur_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+
         now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):
             end_dt = now
