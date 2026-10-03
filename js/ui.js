@@ -782,7 +782,7 @@ export class UIManager {
               <!-- Sección Aforos y Embalses -->
               <div class="saih-sublayers-section">
                 <div class="saih-sublayers-header">
-                  <span class="saih-sublayers-header-title">Aforos y Embalses (CHJ)</span>
+                  <span class="saih-sublayers-header-title">Aforos y Embalses</span>
                 </div>
                 <div class="saih-sublayers-list">
                   ${hidroListHtml}
@@ -811,8 +811,8 @@ export class UIManager {
                   <span>Fuentes oficiales & Licencias de uso</span>
                 </div>
                 <div class="saih-sources-links">
-                  <a href="https://saih.chj.es" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Confederación Hidrográfica del Júcar - MITECO">
-                    <span class="source-dot" style="background:#0284c7;"></span> <strong>SAIH CHJ</strong>
+                  <a href="https://saih.chj.es" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Redes SAIH Hidrográficas (CHJ, CHE, CHG, Hidrosur)">
+                    <span class="source-dot" style="background:#0284c7;"></span> <strong>Redes SAIH</strong>
                   </a>
                   <a href="https://opendata.aemet.es" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Agencia Estatal de Meteorología - OpenData">
                     <span class="source-dot" style="background:#2563eb;"></span> <strong>AEMET</strong>
@@ -822,9 +822,6 @@ export class UIManager {
                   </a>
                   <a href="https://analisi.transparenciacatalunya.cat/d/nzvn-apee" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Servei Meteorològic de Catalunya - Dades Obertes Gencat">
                     <span class="source-dot" style="background:#d97706;"></span> <strong>METEOCAT</strong>
-                  </a>
-                  <a href="https://www.redhidrosurmedioambiente.es/saih/" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="S.A.I.H. Hidrosur - Junta de Andalucía (Cuencas Andaluzas)">
-                    <span class="source-dot" style="background:#0d9488;"></span> <strong>HIDROSUR</strong>
                   </a>
                 </div>
               </div>

@@ -157,8 +157,8 @@ export const CONFIG = {
       {
         id: 'saih_hidrologia',
         name: 'Red Hidrológica y Pluviometría',
-        subtitle: 'Aforos, Embalses y Pluviómetros (~2.330 est.)',
-        description: 'Monitorización integral en tiempo real: 117 aforos en ríos, 46 embalses y presas, y más de 2.290 pluviómetros oficiales (SAIH CHJ, AEMET OpenData, AVAMET, Meteocat y SAIH Hidrosur).',
+        subtitle: 'Aforos, Embalses y Pluviómetros (~3.500 est.)',
+        description: 'Monitorización integral en tiempo real: ~650 aforos en ríos, ~150 embalses y presas, y más de 2.700 pluviómetros oficiales (Redes SAIH, AEMET OpenData, AVAMET y Meteocat).',
         type: 'saih_group',
         defaultActive: false,
         defaultOpacity: 0.95,
