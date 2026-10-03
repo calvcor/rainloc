@@ -1265,6 +1265,8 @@ export class MultiLayerInspector {
             const capText = cap !== null ? `${cap.toFixed(2)} hm³` : "-- hm³";
             const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
             const horaText = closestEmbalse.ultima_hora ? `· ${String(closestEmbalse.ultima_hora).replace('T', ' ').substring(0, 16)}` : '';
+            const cotaText = cota !== null ? `Cota: ${cota.toFixed(2)} m` : '';
+            const metaLoc = `${closestEmbalse.poblacion || '--'} (${closestEmbalse.provincia || ''}) · ${closestEmbalse.subcuenca || ''}`;
             const varSem = closestEmbalse.variacion_semana !== undefined && closestEmbalse.variacion_semana !== null
               ? Number(closestEmbalse.variacion_semana)
               : (closestEmbalse.variacion_24h !== undefined && closestEmbalse.variacion_24h !== null ? Number(closestEmbalse.variacion_24h) : null);
