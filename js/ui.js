@@ -1694,6 +1694,7 @@ export class UIManager {
           if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
             this.predictionBannerExactTime.textContent = formatPredictionInstant(stepInfo.valid_time_iso);
           }
+          this.updatePredictionBanner();
         }
       };
 
