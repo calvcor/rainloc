@@ -222,31 +222,6 @@ class SeguraService:
                     lluvia_12h = _parse_num(attrs.get("LluviaUltimas12Horas")) or 0.0
                     lluvia_24h = _parse_num(attrs.get("LluviaUltimas24Horas")) or 0.0
 
-                    # Gestión del acumulado exacto de 4h:
-                    # 1) Registrar lectura de 1h / 5min en buffer rodante
-                    # 2) Sumar intervalo [T - 4h, T] si hay buffer; si no, interpolar entre 3h y 6h
-                    if cod_var not in self._pluvio_rolling_buffer:
-                        self._pluvio_rolling_buffer[cod_var] = []
-
-                    # Limpiar lecturas anteriores a 24h
-                    cutoff_time = now - timedelta(hours=24)
-                    self._pluvio_rolling_buffer[cod_var] = [
-                        (t, v) for (t, v) in self._pluvio_rolling_buffer[cod_var] if t >= cutoff_time
-                    ]
-
-                    # Si tenemos ventana en buffer de 4h
-                    cutoff_4h = now - timedelta(hours=4)
-                    buf_4h_vals = [v for (t, v) in self._pluvio_rolling_buffer[cod_var] if t >= cutoff_4h]
-
-                    if buf_4h_vals and len(buf_4h_vals) >= 12:
-                        lluvia_4h = round(sum(buf_4h_vals), 2)
-                    else:
-                        # Interpolación ponderada entre 3h y 6h: 3h + (6h - 3h)/3
-                        if lluvia_6h >= lluvia_3h:
-                            lluvia_4h = round(lluvia_3h + (lluvia_6h - lluvia_3h) * (1.0 / 3.0), 2)
-                        else:
-                            lluvia_4h = lluvia_3h
-
                     pluvio_obj = {
                         "id_estacion": f"segura_pluv_{cod_var.lower()}",
                         "id_variable": cod_var,
@@ -263,22 +238,23 @@ class SeguraService:
                         "provincia": "Murcia / Albacete / Alicante",
                         "subcuenca": "Segura",
                         "estado": True,
-                        "lluvia_1h": round(lluvia_1h, 2),
-                        "precipitacion_1h": round(lluvia_1h, 2),
+                        "lluvia_1h": lluvia_1h,
+                        "precipitacion_1h": lluvia_1h,
                         "fecha_1h": now_iso,
-                        "lluvia_3h": round(lluvia_3h, 2),
-                        "lluvia_4h": round(lluvia_4h, 2),
-                        "precipitacion_4h": round(lluvia_4h, 2),
+                        "lluvia_3h": lluvia_3h,
+                        "lluvia_4h": None,
+                        "precipitacion_4h": None,
                         "fecha_4h": now_iso,
-                        "lluvia_6h": round(lluvia_6h, 2),
-                        "lluvia_12h": round(lluvia_12h, 2),
-                        "precipitacion_12h": round(lluvia_12h, 2),
+                        "lluvia_6h": lluvia_6h,
+                        "lluvia_12h": lluvia_12h,
+                        "precipitacion_12h": lluvia_12h,
                         "fecha_12h": now_iso,
-                        "lluvia_24h": round(lluvia_24h, 2),
-                        "precipitacion_24h": round(lluvia_24h, 2),
+                        "lluvia_24h": lluvia_24h,
+                        "precipitacion_24h": lluvia_24h,
                         "fecha_24h": now_iso,
                         "ultima_hora": now_iso,
-                        "unidad": "mm",
+                        "fuente": "S.A.I.H. Segura (CHS / MITECO)",
+                        "unidad": "mm"
                     }
                     pluvios.append(pluvio_obj)
 
