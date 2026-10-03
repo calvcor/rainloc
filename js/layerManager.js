@@ -6,6 +6,64 @@
 import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatHarmonieTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
 import { StorageManager } from './storage.js';
 
+// Renderizado vectorial ultrarrápido acelerado por GPU sobre Canvas para rayos
+if (typeof L !== 'undefined' && L.Canvas && !L.Canvas.prototype._updateLightning) {
+  L.Canvas.prototype._updateLightning = function (layer) {
+    if (!this._drawing && layer._empty()) { return; }
+
+    const p = layer._point;
+    const ctx = this._ctx;
+    const size = layer.options.size || 14;
+    const scale = size / 24;
+    const offsetX = p.x - 12 * scale;
+    const offsetY = p.y - 12 * scale;
+
+    ctx.beginPath();
+    ctx.moveTo(offsetX + 13 * scale, offsetY + 2 * scale);
+    ctx.lineTo(offsetX + 3 * scale, offsetY + 14 * scale);
+    ctx.lineTo(offsetX + 12 * scale, offsetY + 14 * scale);
+    ctx.lineTo(offsetX + 11 * scale, offsetY + 22 * scale);
+    ctx.lineTo(offsetX + 21 * scale, offsetY + 10 * scale);
+    ctx.lineTo(offsetX + 12 * scale, offsetY + 10 * scale);
+    ctx.closePath();
+
+    if (layer.options.pulse) {
+      ctx.save();
+      ctx.shadowColor = layer.options.fillColor || '#ffff00';
+      ctx.shadowBlur = 4;
+      this._fillStroke(ctx, layer);
+      ctx.restore();
+    } else {
+      this._fillStroke(ctx, layer);
+    }
+  };
+}
+
+export const LightningMarker = (typeof L !== 'undefined' && L.CircleMarker) ? L.CircleMarker.extend({
+  options: {
+    size: 14,
+    pulse: false
+  },
+  _project: function () {
+    this._radius = (this.options.size || 14) / 2;
+    this._point = this._map.latLngToLayerPoint(this._latlng);
+    this._updateBounds();
+  },
+  _updatePath: function () {
+    if (this._renderer && this._renderer._updateLightning) {
+      this._renderer._updateLightning(this);
+    } else if (this._renderer && this._renderer._updateCircle) {
+      this._renderer._updateCircle(this);
+    }
+  },
+  setSize: function (size) {
+    this.options.size = size;
+    this.options.radius = size / 2;
+    this._radius = size / 2;
+    return this.redraw();
+  }
+}) : null;
+
 export class LayerManager {
   constructor(mapManager) {
     this.mapManager = mapManager;
@@ -3270,10 +3328,16 @@ export class LayerManager {
       if (item.tierId !== currentTier.id) {
         item.tierId = currentTier.id;
         if (item.marker) {
-          const newIcon = this._createStrikeIcon(currentTier, radarOpacity);
-          item.marker.setIcon(newIcon);
-          if (item.marker.setZIndexOffset) {
-            item.marker.setZIndexOffset(currentTier.pulse ? 500 : 200);
+          item.marker.options.pulse = !!currentTier.pulse;
+          item.marker.setStyle({
+            color: currentTier.color || '#000000',
+            weight: currentTier.weight || 1.2,
+            fillColor: currentTier.fillColor,
+            fillOpacity: Math.min(1.0, radarOpacity * (currentTier.fillOpacity !== undefined ? currentTier.fillOpacity : 1.0)),
+            opacity: radarOpacity
+          });
+          if (item.marker.setSize) {
+            item.marker.setSize(currentTier.size || 14);
           }
         }
         changed = true;
@@ -3373,43 +3437,23 @@ export class LayerManager {
   }
 
   /**
-   * Genera el icono L.divIcon con forma de pequeño rayo SVG
-   */
-  _createStrikeIcon(tier, opacity = 1.0) {
-    const size = tier.size || 14;
-    const pulseClass = tier.pulse ? 'lightning-pulse-active' : '';
-    const strokeWidth = tier.weight || 1.2;
-    const strokeColor = tier.color || '#000000';
-    const effectiveOpacity = Math.min(1.0, opacity * (tier.fillOpacity !== undefined ? tier.fillOpacity : 1.0));
-
-    return L.divIcon({
-      className: 'lightning-marker lightning-bolt-marker-container',
-      html: `
-        <div class="lightning-bolt-inner ${pulseClass}" style="width: ${size}px; height: ${size}px; opacity: ${effectiveOpacity};">
-          <svg viewBox="0 0 24 24" width="100%" height="100%" style="display: block; overflow: visible;">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
-                     fill="${tier.fillColor}"
-                     stroke="${strokeColor}"
-                     stroke-width="${strokeWidth}"
-                     stroke-linejoin="round"
-                     stroke-linecap="round"/>
-          </svg>
-        </div>
-      `,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
-    });
-  }
-
-  /**
-   * Genera un Marker con icono de rayo SVG para un impacto con escala cromática adaptada a la ventana
+   * Genera un LightningMarker acelerado por Canvas GPU para un impacto de rayo
    */
   _createStrikeMarker(strike, tier, opacity = 1.0) {
-    const icon = this._createStrikeIcon(tier, opacity);
-    const marker = L.marker([strike.lat, strike.lon], {
+    const size = tier.size || 14;
+    const MarkerClass = LightningMarker || L.CircleMarker;
+    const marker = new MarkerClass([strike.lat, strike.lon], {
       pane: 'lluviasPane',
-      icon: icon,
-      zIndexOffset: tier.pulse ? 500 : 200
+      renderer: this.lightningCanvasRenderer,
+      size: size,
+      radius: size / 2,
+      color: tier.color || '#000000',
+      weight: tier.weight || 1.2,
+      fillColor: tier.fillColor,
+      fillOpacity: Math.min(1.0, opacity * (tier.fillOpacity !== undefined ? tier.fillOpacity : 1.0)),
+      opacity: opacity,
+      pulse: !!tier.pulse,
+      className: 'lightning-marker'
     });
 
     const strikeDate = new Date(strike.time * 1000);
