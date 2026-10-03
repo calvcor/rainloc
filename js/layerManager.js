@@ -4575,9 +4575,9 @@ export class LayerManager {
     const chipY = document.getElementById('th-chip-yellow');
     const chipO = document.getElementById('th-chip-orange');
     const chipR = document.getElementById('th-chip-red');
-    if (chipY) chipY.textContent = `🟡 Amarillo: ${uAmarillo ? uAmarillo + ' ' + thUnit : '--'}`;
-    if (chipO) chipO.textContent = `🟠 Naranja: ${uNaranja ? uNaranja + ' ' + thUnit : '--'}`;
-    if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' ' + thUnit : '--'}`;
+    if (chipY) chipY.textContent = uAmarillo !== null ? `🟡 Amarillo: ${uAmarillo} ${thUnit}` : '🟡 Amarillo: Sin umbral oficial';
+    if (chipO) chipO.textContent = uNaranja !== null ? `🟠 Naranja: ${uNaranja} ${thUnit}` : '🟠 Naranja: Sin umbral oficial';
+    if (chipR) chipR.textContent = uRojo !== null ? `🔴 Rojo: ${uRojo} ${thUnit}` : '🔴 Rojo: Sin umbral oficial';
 
     if (saihLink) {
       if (isSegura) {
@@ -4725,12 +4725,14 @@ export class LayerManager {
           }
         }
 
-        // Actualizar el badge de estado SOLO si la serie histórica coincide con la variable del umbral
-        const isThresholdCompatible = (isNivelThreshold && (isLevelChart || isCota)) || (!isNivelThreshold && isFlowChart);
-        if (alertBadge && isThresholdCompatible) {
+        // Actualizar el badge de estado cuando llega la serie histórica
+        if (alertBadge) {
           let alertColor = '#10b981';
+          const hasUmbrales = uAmarillo !== null || uNaranja !== null || uRojo !== null;
           let alertText = isCota ? 'Cota Normal' : (isLevelChart ? 'Nivel Normal' : 'Caudal Normal');
-          if (uRojo !== null && latestVal >= uRojo) {
+          if (!hasUmbrales) {
+            alertText = isCota ? 'Cota Normal (Sin umbral)' : (isLevelChart ? 'Nivel Normal (Sin umbral)' : (isVolChart ? 'Volumen Normal' : 'Caudal Normal (Sin umbral)'));
+          } else if (uRojo !== null && latestVal >= uRojo) {
             alertColor = '#ef4444';
             alertText = '🔴 Umbral Rojo (Desbordamiento)';
           } else if (uNaranja !== null && latestVal >= uNaranja) {

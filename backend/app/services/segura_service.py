@@ -382,18 +382,22 @@ class SeguraService:
         except Exception as e:
             logger.warning(f"Error obteniendo metadatos de aforos nivel ArcGIS: {e}")
 
-        # 2. Descargar lecturas en tiempo real de cauces3.php
+        # 2. Descargar lecturas en tiempo real de cauces3.php (tipo=0 cauces, tipo=1 canales, tipo=2 acequias)
         try:
-            req_live = urllib.request.Request(SAIH_CAUCES_LIVE_URL, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_live, timeout=12) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-
-            # Patrón de extracción de filas en cauces3.php
-            # Regex busca enlaces a set_punto, graficar(nivel) y graficar(caudal)
-            rows = re.findall(
-                r"title='([^']+)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a>",
-                html,
-            )
+            rows = []
+            for t in [0, 1, 2]:
+                try:
+                    url_t = f"{SAIH_CAUCES_LIVE_URL}?tipo={t}"
+                    req_live = urllib.request.Request(url_t, headers={"User-Agent": USER_AGENT})
+                    with urllib.request.urlopen(req_live, timeout=10) as resp:
+                        html = resp.read().decode("utf-8", errors="ignore")
+                    parsed = re.findall(
+                        r"title='([^']+)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a>",
+                        html,
+                    )
+                    rows.extend(parsed)
+                except Exception as err:
+                    logger.warning(f"Error descargando cauces3.php?tipo={t}: {err}")
 
             aforos = []
             features = []
