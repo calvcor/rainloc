@@ -102,6 +102,8 @@ async def get_all_cuencas():
         }
     )
 
+from app.services.basin_hydrology import basin_hydrology_service
+
 @router.get("/ebro", summary="Obtener GeoJSON de cuencas y subcuencas de la CHE (Ebro)")
 async def get_ebro_cuencas():
     """
@@ -111,6 +113,10 @@ async def get_ebro_cuencas():
     """
     try:
         data = await ebro_service.get_cuencas_geojson()
+        try:
+            basin_hydrology_service.ingest_feature_collection(data, default_demarcation="Demarcación Hidrográfica del Ebro (CHE)")
+        except Exception:
+            pass
         return Response(
             content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
             media_type="application/geo+json",
@@ -131,6 +137,10 @@ async def get_segura_cuencas():
     """
     try:
         data = await segura_service.get_cuencas_geojson()
+        try:
+            basin_hydrology_service.ingest_feature_collection(data, default_demarcation="Demarcación Hidrográfica del Segura (CHS)")
+        except Exception:
+            pass
         return Response(
             content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
             media_type="application/geo+json",

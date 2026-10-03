@@ -6,6 +6,7 @@ y puntos máximos para cualquier cuenca o subsistema hidrográfico de la CHJ sob
 import io
 import json
 import logging
+import unicodedata
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -33,6 +34,14 @@ Y_MERC_GRID = np.linspace(Y_MERC_MAX, Y_MERC_MIN, GRID_H)
 SPAIN_GRID_LATS = np.degrees(2 * np.arctan(np.exp(Y_MERC_GRID / R_EARTH)) - np.pi / 2)
 
 
+def _normalize_str(s: str) -> str:
+    """Elimina acentos y pasa a minúsculas para comparaciones tolerantes."""
+    if not s:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).lower().strip()
+
+
 class BasinHydrologyService:
     """Servicio de cálculo hidrológico espacial sobre modelos de predicción numérica (NWP)."""
     _instance: Optional["BasinHydrologyService"] = None
@@ -57,92 +66,176 @@ class BasinHydrologyService:
         row = (Y_MERC_MAX - y_m) / (Y_MERC_MAX - Y_MERC_MIN) * (GRID_H - 1)
         return (col, row)
 
+    def ingest_feature_collection(self, fc: Dict[str, Any], default_demarcation: str = "Cuenca Hidrográfica"):
+        """Rasteriza y añade todas las entidades de una FeatureCollection al catálogo hidrológico."""
+        if not fc or not isinstance(fc, dict):
+            return
+        features = fc.get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            basin_id = str(feat.get("id") or props.get("id") or props.get("cod_subse") or props.get("cod_sisexp") or props.get("codigo_saih") or "").strip()
+            if not basin_id:
+                continue
+
+            basin_name = props.get("Subsistema") or props.get("NomSistExp") or props.get("Sistema") or props.get("NOMBRE") or props.get("name") or f"Cuenca {basin_id}"
+            sist_name = props.get("NomSistExp") or props.get("Sistema") or props.get("Demarcacion") or default_demarcation
+            demarcacion = props.get("Demarcacion") or props.get("demarcacion") or default_demarcation
+
+            superf_km2 = 0.0
+            for area_key in ("Superf km2", "Area km2", "superf_km2", "area_km2", "SUPERFICIE", "superficie"):
+                if area_key in props and props[area_key]:
+                    try:
+                        superf_km2 = float(props[area_key])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+            geom = feat.get("geometry", {})
+            g_type = geom.get("type")
+            coords = geom.get("coordinates", [])
+
+            img = Image.new("1", (GRID_W, GRID_H), 0)
+            draw = ImageDraw.Draw(img)
+
+            if g_type == "Polygon":
+                for ring in coords:
+                    pts = [self._lonlat_to_grid_xy(p[0], p[1]) for p in ring]
+                    if len(pts) >= 3:
+                        draw.polygon(pts, fill=1)
+            elif g_type == "MultiPolygon":
+                for poly in coords:
+                    for ring in poly:
+                        pts = [self._lonlat_to_grid_xy(p[0], p[1]) for p in ring]
+                        if len(pts) >= 3:
+                            draw.polygon(pts, fill=1)
+
+            mask = np.array(img, dtype=bool)
+            rows, cols = np.where(mask)
+            if len(rows) == 0:
+                continue
+
+            raw_weights = self.row_areas_m2[rows]
+            raw_sum_m2 = float(np.sum(raw_weights))
+            official_area_m2 = (superf_km2 * 1e6) if superf_km2 > 0 else raw_sum_m2
+
+            # Normalizar pesos para coincidencia perfecta con el área oficial
+            scale_factor = official_area_m2 / max(1.0, raw_sum_m2)
+            norm_weights = raw_weights * scale_factor
+
+            calc_area_km2 = superf_km2 or round(raw_sum_m2 / 1e6, 2)
+
+            raw_aliases = [
+                str(feat.get("id") or ""),
+                str(props.get("id") or ""),
+                str(props.get("cod_subse") or ""),
+                str(props.get("cod_sisexp") or ""),
+                str(props.get("codigo_saih") or ""),
+                str(props.get("cod_demar") or ""),
+                basin_name,
+                sist_name,
+            ]
+            aliases = set()
+            for a in raw_aliases:
+                if a:
+                    norm = _normalize_str(a)
+                    if norm:
+                        aliases.add(norm)
+                        if norm.startswith("chs_"):
+                            aliases.add(norm[4:])
+                        if norm.startswith("es091se"):
+                            aliases.add(norm[7:])
+                            aliases.add("se" + norm[7:])
+
+            self.basins[basin_id] = {
+                "id": basin_id,
+                "name": basin_name,
+                "system": sist_name,
+                "demarcation": demarcacion,
+                "area_km2": calc_area_km2,
+                "area_m2": official_area_m2,
+                "rows": rows,
+                "cols": cols,
+                "weights": norm_weights.astype(np.float32),
+                "pixel_count": len(rows),
+                "aliases": list(aliases)
+            }
+
     def _precompute_basin_masks(self):
         """Carga y rasteriza todos los subsistemas hidrográficos para consultas ultra-rápidas O(1)."""
         # Calcular pesos de área por fila considerando curvatura esférica
         dx_merc = (R_EARTH * np.radians(SPAIN_BBOX["lon_max"] - SPAIN_BBOX["lon_min"])) / GRID_W
         dy_merc = (Y_MERC_MAX - Y_MERC_MIN) / GRID_H
-        row_areas_m2 = (np.cos(np.radians(SPAIN_GRID_LATS)) ** 2) * dx_merc * dy_merc
+        self.row_areas_m2 = (np.cos(np.radians(SPAIN_GRID_LATS)) ** 2) * dx_merc * dy_merc
 
-        # Localizar archivo GeoJSON
-        geojson_candidates = [
+        # 1. CHJ: Subsistemas hidrográficos
+        chj_candidates = [
             getattr(settings, "SUBSISTEMAS_OPTIMIZED_FILE", None),
             getattr(settings, "SUBSISTEMAS_FILE", None),
             BASE_DIR / "subsistemas.optimized.geojson",
             BASE_DIR / "subsistemas.geojson",
             BASE_DIR / "backend" / "subsistemas.optimized.geojson",
-            BASE_DIR / "backend" / "subsistemas.geojson"
+            BASE_DIR / "backend" / "subsistemas.geojson",
+            getattr(settings, "DATA_DIR", BASE_DIR / "backend" / "data") / "subsistemas.optimized.geojson",
+            getattr(settings, "DATA_DIR", BASE_DIR / "backend" / "data") / "subsistemas.geojson",
         ]
-
-        geojson_path = None
-        for p in geojson_candidates:
+        for p in chj_candidates:
             if p and p.exists():
-                geojson_path = p
-                break
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation="Demarcación Hidrográfica del Júcar (CHJ)")
+                    break
+                except Exception as e:
+                    logger.warning(f"BasinHydrology: Error leyendo GeoJSON CHJ ({p}): {e}")
 
-        if not geojson_path:
-            logger.warning("BasinHydrology: No se encontró archivo GeoJSON de subsistemas.")
-            return
+        # 2. CHEbro: Subcuencas
+        data_dir = getattr(settings, "DATA_DIR", BASE_DIR / "backend" / "data")
+        ebro_candidates = [
+            data_dir / "ebro_subcuencas.geojson",
+            BASE_DIR / "backend" / "data" / "ebro_subcuencas.geojson",
+            BASE_DIR / "ebro_subcuencas.geojson",
+        ]
+        for p in ebro_candidates:
+            if p and p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation="Demarcación Hidrográfica del Ebro (CHE)")
+                    break
+                except Exception as e:
+                    logger.warning(f"BasinHydrology: Error leyendo GeoJSON Ebro ({p}): {e}")
 
+        # 3. CHSegura: Subcuencas
+        segura_candidates = [
+            data_dir / "segura_subcuencas.geojson",
+            BASE_DIR / "backend" / "data" / "segura_subcuencas.geojson",
+            BASE_DIR / "segura_subcuencas.geojson",
+        ]
+        for p in segura_candidates:
+            if p and p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation="Demarcación Hidrográfica del Segura (CHS)")
+                    break
+                except Exception as e:
+                    logger.warning(f"BasinHydrology: Error leyendo GeoJSON Segura ({p}): {e}")
+
+        # 4. Cualquier otro archivo *cuencas*.geojson en data_dir
         try:
-            with open(geojson_path, "r", encoding="utf-8") as f:
-                fc = json.load(f)
-
-            features = fc.get("features", [])
-            for feat in features:
-                props = feat.get("properties", {})
-                basin_id = str(feat.get("id") or props.get("id") or "")
-                basin_name = props.get("Subsistema") or props.get("name") or f"Cuenca {basin_id}"
-                sist_name = props.get("NomSistExp") or "Sistema CHJ"
-                superf_km2 = float(props.get("Superf km2") or props.get("Area km2") or 0.0)
-
-                geom = feat.get("geometry", {})
-                g_type = geom.get("type")
-                coords = geom.get("coordinates", [])
-
-                img = Image.new("1", (GRID_W, GRID_H), 0)
-                draw = ImageDraw.Draw(img)
-
-                if g_type == "Polygon":
-                    for ring in coords:
-                        pts = [self._lonlat_to_grid_xy(p[0], p[1]) for p in ring]
-                        if len(pts) >= 3:
-                            draw.polygon(pts, fill=1)
-                elif g_type == "MultiPolygon":
-                    for poly in coords:
-                        for ring in poly:
-                            pts = [self._lonlat_to_grid_xy(p[0], p[1]) for p in ring]
-                            if len(pts) >= 3:
-                                draw.polygon(pts, fill=1)
-
-                mask = np.array(img, dtype=bool)
-                rows, cols = np.where(mask)
-                if len(rows) == 0:
+            for p in data_dir.glob("*cuencas*.geojson"):
+                if "ebro" in p.name or "segura" in p.name:
                     continue
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation=p.stem.replace("_", " ").title())
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-                raw_weights = row_areas_m2[rows]
-                raw_sum_m2 = float(np.sum(raw_weights))
-                official_area_m2 = (superf_km2 * 1e6) if superf_km2 > 0 else raw_sum_m2
-
-                # Normalizar pesos para coincidencia perfecta con el área oficial
-                scale_factor = official_area_m2 / max(1.0, raw_sum_m2)
-                norm_weights = raw_weights * scale_factor
-
-                self.basins[basin_id] = {
-                    "id": basin_id,
-                    "name": basin_name,
-                    "system": sist_name,
-                    "area_km2": superf_km2 or round(raw_sum_m2 / 1e6, 2),
-                    "area_m2": official_area_m2,
-                    "rows": rows,
-                    "cols": cols,
-                    "weights": norm_weights.astype(np.float32),
-                    "pixel_count": len(rows)
-                }
-
-            logger.info(f"BasinHydrology: {len(self.basins)} cuencas/subsistemas precalculados y listos para inferencia.")
-        except Exception as e:
-            logger.error(f"BasinHydrology: Error inicializando máscaras de cuencas: {e}")
+        logger.info(f"BasinHydrology: {len(self.basins)} cuencas/subsistemas precalculados y listos para inferencia.")
 
     def list_basins(self) -> List[Dict[str, Any]]:
         """Devuelve el catálogo de cuencas/subsistemas disponibles con sus nombres y áreas."""
@@ -152,34 +245,62 @@ class BasinHydrologyService:
                 "id": b_id,
                 "name": b_info["name"],
                 "system": b_info["system"],
+                "demarcation": b_info.get("demarcation", ""),
                 "area_km2": b_info["area_km2"],
                 "pixel_count": b_info["pixel_count"]
             })
-        result.sort(key=lambda x: (x["system"], x["name"]))
+        result.sort(key=lambda x: (x.get("demarcation", ""), x["system"], x["name"]))
         return result
 
     def get_basin_info(self, basin_id: str) -> Optional[Dict[str, Any]]:
-        """Busca una cuenca por ID exacto, ID numérico ('1' -> '1-0'), nombre exacto o nombre parcial."""
+        """Busca una cuenca por ID exacto, alias, ID numérico, nombre exacto o normalizado."""
         if not basin_id:
             return None
         basin_str = str(basin_id).strip()
         if basin_str in self.basins:
             return self.basins[basin_str]
 
-        clean_id = basin_str.lower()
-        # 1. Coincidencia directa por id o nombre completo
+        clean_id = _normalize_str(basin_str)
+
+        # 1. Búsqueda exacta en aliases de todas las cuencas
         for b_id, b_info in self.basins.items():
-            if b_id.lower() == clean_id or b_info["name"].lower() == clean_id:
+            if _normalize_str(b_id) == clean_id:
+                return b_info
+            if clean_id in b_info.get("aliases", []):
                 return b_info
 
-        # 2. Coincidencia por ID numérico (ej: "1" coincide con "1-0" o "1")
+        # 2. Coincidencia por ID numérico o código corto
         for b_id, b_info in self.basins.items():
-            if b_id.split("-")[0].lower() == clean_id:
+            b_norm = _normalize_str(b_id)
+            if b_norm.split("-")[0] == clean_id or b_norm.split("_")[-1] == clean_id:
                 return b_info
 
-        # 3. Coincidencia por subcadena en el nombre del subsistema
+        # 3. Coincidencia por subcadena normalizada en el nombre o sistema
         for b_id, b_info in self.basins.items():
-            if clean_id in b_info["name"].lower():
+            if clean_id in _normalize_str(b_info["name"]) or clean_id in _normalize_str(b_info["system"]):
+                return b_info
+
+        # 4. Lazy refresh: Si no se encuentra, verificar si se han añadido nuevos archivos GeoJSON a data_dir
+        data_dir = getattr(settings, "DATA_DIR", BASE_DIR / "backend" / "data")
+        for p in [data_dir / "ebro_subcuencas.geojson", data_dir / "segura_subcuencas.geojson"]:
+            if p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc)
+                except Exception:
+                    pass
+
+        # Re-intentar después del lazy refresh
+        if basin_str in self.basins:
+            return self.basins[basin_str]
+
+        for b_id, b_info in self.basins.items():
+            if _normalize_str(b_id) == clean_id or clean_id in b_info.get("aliases", []):
+                return b_info
+
+        for b_id, b_info in self.basins.items():
+            if clean_id in _normalize_str(b_info["name"]):
                 return b_info
 
         return None
@@ -292,6 +413,7 @@ class BasinHydrologyService:
             "basin_id": basin["id"],
             "basin_name": basin["name"],
             "system_name": basin["system"],
+            "demarcation": basin.get("demarcation", ""),
             "area_km2": basin["area_km2"],
             "model_key": model_clean,
             "model_name": model_name,

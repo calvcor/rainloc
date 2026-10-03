@@ -7004,16 +7004,18 @@ export class LayerManager {
     const closeBtn = document.getElementById('basin-hydro-modal-close');
     const modelTabs = document.querySelectorAll('#basin-hydro-model-tabs .btn-range');
 
-    const subsistema = basinProps.Subsistema || basinProps.name || `Cuenca ${basinId}`;
-    const sistema = basinProps.NomSistExp || basinProps.system || 'Demarcación CHJ';
+    const subsistema = basinProps.Subsistema || basinProps.NomSistExp || basinProps.name || basinProps.NOMBRE || `Cuenca ${basinId}`;
+    const demarcacion = basinProps.Demarcacion || basinProps.demarcacion || '';
+    const sistema = basinProps.NomSistExp || basinProps.Sistema || basinProps.system || demarcacion || 'Demarcación Hidrográfica';
     const superf = basinProps['Superf km2'] || basinProps['Area km2'] || basinProps.area_km2 || null;
     const superfText = superf ? `${Number(superf).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²` : '';
 
     if (title) title.textContent = subsistema;
     if (subtitle) {
-      subtitle.textContent = `Sistema ${sistema}${superfText ? ` · Superficie: ${superfText}` : ''}`;
+      const prefix = (sistema.toLowerCase().startsWith('sistema') || sistema.toLowerCase().startsWith('demarcación')) ? sistema : `Sistema ${sistema}`;
+      subtitle.textContent = `${prefix}${superfText ? ` · Superficie: ${superfText}` : ''}`;
     }
-    if (badgeSub) badgeSub.textContent = sistema;
+    if (badgeSub) badgeSub.textContent = demarcacion || sistema;
 
     // Configurar pestañas de modelo
     modelTabs.forEach(btn => {
