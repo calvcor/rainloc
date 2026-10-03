@@ -241,7 +241,6 @@ class BackgroundScheduler:
             self._running = True
             self._aemet_task = asyncio.create_task(self._aemet_loop())
             self._radar_task = asyncio.create_task(self._radar_loop())
-            self._saih_task = asyncio.create_task(self._saih_loop())
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
             self._arome_task = asyncio.create_task(self._arome_loop())
@@ -252,7 +251,7 @@ class BackgroundScheduler:
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + SAIH + Rayos + ECMWF IFS + NOAA GFS + AROME + AEMET HARMONIE + DWD ICON-EU + MSC GEM-GDPS).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + Modelos NWP; Pluviómetros SAIH y AEMET operan bajo demanda).")
 
     def stop(self):
         if self._running:
@@ -261,8 +260,6 @@ class BackgroundScheduler:
                 self._aemet_task.cancel()
             if self._radar_task and not self._radar_task.done():
                 self._radar_task.cancel()
-            if self._saih_task and not self._saih_task.done():
-                self._saih_task.cancel()
             if self._ecmwf_task and not self._ecmwf_task.done():
                 self._ecmwf_task.cancel()
             if self._gfs_task and not self._gfs_task.done():

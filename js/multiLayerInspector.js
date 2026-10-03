@@ -1290,111 +1290,143 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar)
-      if (this.layerManager.isLayerOnMap("saih_lluvias")) {
-        const lluviasGroup = this.layerManager.layers["saih_lluvias"];
-        if (lluviasGroup) {
-          let closestPluvio = null;
-          let minPixDist = this._isTouchDevice() ? 28 : 18; // Tolerancia fina para pluviómetros
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar y AEMET OpenData)
+      const pluvioLayerDefs = [
+        { id: "saih_lluvias", defaultSource: "SAIH CHJ", headerColor: "#0284c7" },
+        { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" }
+      ];
 
-          lluviasGroup.eachLayer((child) => {
-            const checkLayer = (l) => {
-              if (l.getLatLng && l.feature && l.feature.properties) {
-                const ptPix = this.map.latLngToContainerPoint(l.getLatLng());
-                const mousePix = this.map.latLngToContainerPoint(latlng);
-                const pixDist = Math.hypot(ptPix.x - mousePix.x, ptPix.y - mousePix.y);
-                if (pixDist <= minPixDist) {
-                  minPixDist = pixDist;
-                  closestPluvio = l.feature.properties;
+      for (const pluvioDef of pluvioLayerDefs) {
+        if (this.layerManager.isLayerOnMap(pluvioDef.id)) {
+          const lluviasGroup = this.layerManager.layers[pluvioDef.id];
+          if (lluviasGroup) {
+            let closestPluvio = null;
+            let minPixDist = this._isTouchDevice() ? 28 : 18; // Tolerancia fina para pluviómetros
+
+            lluviasGroup.eachLayer((child) => {
+              const checkLayer = (l) => {
+                if (l.getLatLng && l.feature && l.feature.properties) {
+                  const ptPix = this.map.latLngToContainerPoint(l.getLatLng());
+                  const mousePix = this.map.latLngToContainerPoint(latlng);
+                  const pixDist = Math.hypot(ptPix.x - mousePix.x, ptPix.y - mousePix.y);
+                  if (pixDist <= minPixDist) {
+                    minPixDist = pixDist;
+                    closestPluvio = l.feature.properties;
+                  }
+                }
+              };
+
+              if (child.eachLayer) {
+                child.eachLayer(checkLayer);
+              } else {
+                checkLayer(child);
+              }
+            });
+
+            if (closestPluvio) {
+              const r1h = closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null
+                ? Number(closestPluvio.lluvia_1h)
+                : (closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0);
+              const r4h = closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null
+                ? Number(closestPluvio.lluvia_4h)
+                : (closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0);
+              const r12h = closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null
+                ? Number(closestPluvio.lluvia_12h)
+                : (closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0);
+              const r24h = closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null
+                ? Number(closestPluvio.lluvia_24h)
+                : (closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0);
+
+              let badgeBg = "#38bdf8";
+              let badgeText = `${r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : (r1h > 0 ? `${r1h.toFixed(1)} mm (1h)` : '0.0 mm')}`;
+              if (r24h >= 100 || r1h >= 20) {
+                badgeBg = "#ef4444";
+                badgeText = `🔴 ${r24h >= 100 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+              } else if (r24h >= 60 || r1h >= 10) {
+                badgeBg = "#f97316";
+                badgeText = `🟠 ${r24h >= 60 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+              } else if (r24h >= 30 || r1h >= 5) {
+                badgeBg = "#f59e0b";
+                badgeText = `🟡 ${r24h >= 30 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
+              } else if (r24h >= 10) {
+                badgeBg = "#0284c7";
+                badgeText = `🔵 ${r24h.toFixed(1)} mm (24h)`;
+              } else if (r24h > 0 || r1h > 0) {
+                badgeBg = "#38bdf8";
+              } else {
+                badgeBg = "#64748b";
+                badgeText = "0.0 mm";
+              }
+
+              const isAemet = closestPluvio.red === 'AEMET' || pluvioDef.id === 'aemet_lluvias';
+              const networkLabel = isAemet ? 'AEMET' : 'SAIH CHJ';
+              const sectionHeaderColor = isAemet ? '#2563eb' : '#0284c7';
+
+              const locParts = [];
+              if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
+              if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
+              if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
+              const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
+              const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
+              const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
+
+              // Métricas adicionales para estaciones meteorológicas de AEMET
+              let extraMeteoHtml = '';
+              if (isAemet && (closestPluvio.temperatura !== undefined || closestPluvio.viento_vel !== undefined)) {
+                const parts = [];
+                if (closestPluvio.temperatura !== null && closestPluvio.temperatura !== undefined) {
+                  parts.push(`🌡️ ${closestPluvio.temperatura}°C`);
+                }
+                if (closestPluvio.humedad !== null && closestPluvio.humedad !== undefined) {
+                  parts.push(`💧 ${closestPluvio.humedad}%`);
+                }
+                if (closestPluvio.racha_max !== null && closestPluvio.racha_max !== undefined) {
+                  parts.push(`💨 ${(Number(closestPluvio.racha_max) * 3.6).toFixed(0)} km/h`);
+                } else if (closestPluvio.viento_vel !== null && closestPluvio.viento_vel !== undefined) {
+                  parts.push(`💨 ${(Number(closestPluvio.viento_vel) * 3.6).toFixed(0)} km/h`);
+                }
+                if (parts.length > 0) {
+                  extraMeteoHtml = `<div style="font-size:0.68rem; color:#94a3b8; margin-top:3px; display:flex; gap:8px; justify-content:center;">${parts.join(' · ')}</div>`;
                 }
               }
-            };
 
-            if (child.eachLayer) {
-              child.eachLayer(checkLayer);
-            } else {
-              checkLayer(child);
-            }
-          });
-
-          if (closestPluvio) {
-            const r1h = closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null
-              ? Number(closestPluvio.lluvia_1h)
-              : (closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0);
-            const r4h = closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null
-              ? Number(closestPluvio.lluvia_4h)
-              : (closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0);
-            const r12h = closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null
-              ? Number(closestPluvio.lluvia_12h)
-              : (closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0);
-            const r24h = closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null
-              ? Number(closestPluvio.lluvia_24h)
-              : (closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0);
-
-            let badgeBg = "#38bdf8";
-            let badgeText = `${r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : (r1h > 0 ? `${r1h.toFixed(1)} mm (1h)` : '0.0 mm')}`;
-            if (r24h >= 100 || r1h >= 20) {
-              badgeBg = "#ef4444";
-              badgeText = `🔴 ${r24h >= 100 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-            } else if (r24h >= 60 || r1h >= 10) {
-              badgeBg = "#f97316";
-              badgeText = `🟠 ${r24h >= 60 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-            } else if (r24h >= 30 || r1h >= 5) {
-              badgeBg = "#f59e0b";
-              badgeText = `🟡 ${r24h >= 30 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-            } else if (r24h >= 10) {
-              badgeBg = "#0284c7";
-              badgeText = `🔵 ${r24h.toFixed(1)} mm (24h)`;
-            } else if (r24h > 0 || r1h > 0) {
-              badgeBg = "#38bdf8";
-            } else {
-              badgeBg = "#64748b";
-              badgeText = "0.0 mm";
-            }
-
-            const locParts = [];
-            if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
-            if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
-            if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
-            const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
-            const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
-            const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
-
-            sections.push({
-              type: "lluvia",
-              title: "Pluviómetro (SAIH)",
-              headerColor: "#0284c7",
-              icon: "🌧️",
-              name: `${closestPluvio.nombre}`,
-              badge: badgeText,
-              badgeBg: badgeBg,
-              badgeColor: "#ffffff",
-              station: closestPluvio,
-              details: `
-                <div class="unified-lluvia-block">
-                  <div style="font-size:0.72rem; color:#cbd5e1; margin-bottom:2px;">Lluvia acumulada:</div>
-                  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 6px; border-radius: 6px; text-align: center;">
-                    <div>
-                      <div style="font-size:0.65rem; color:#94a3b8;">1 hora</div>
-                      <div style="font-size:0.80rem; font-weight:700; color:${r1h > 0 ? '#38bdf8' : '#e2e8f0'};">${r1h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+              sections.push({
+                type: "lluvia",
+                title: `Pluviómetro (${networkLabel})`,
+                headerColor: sectionHeaderColor,
+                icon: "🌧️",
+                name: `${closestPluvio.nombre}`,
+                badge: badgeText,
+                badgeBg: badgeBg,
+                badgeColor: "#ffffff",
+                station: closestPluvio,
+                details: `
+                  <div class="unified-lluvia-block">
+                    <div style="font-size:0.72rem; color:#cbd5e1; margin-bottom:2px;">Lluvia acumulada:</div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 6px; border-radius: 6px; text-align: center;">
+                      <div>
+                        <div style="font-size:0.65rem; color:#94a3b8;">1 hora</div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r1h > 0 ? '#38bdf8' : '#e2e8f0'};">${r1h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                      </div>
+                      <div>
+                        <div style="font-size:0.65rem; color:#94a3b8;">4 horas</div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r4h > 0 ? '#38bdf8' : '#e2e8f0'};">${r4h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                      </div>
+                      <div>
+                        <div style="font-size:0.65rem; color:#94a3b8;">12 horas</div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r12h > 0 ? '#38bdf8' : '#e2e8f0'};">${r12h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                      </div>
+                      <div>
+                        <div style="font-size:0.65rem; color:#94a3b8;">24 horas</div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r24h > 0 ? '#38bdf8' : '#e2e8f0'};">${r24h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                      </div>
                     </div>
-                    <div>
-                      <div style="font-size:0.65rem; color:#94a3b8;">4 horas</div>
-                      <div style="font-size:0.80rem; font-weight:700; color:${r4h > 0 ? '#38bdf8' : '#e2e8f0'};">${r4h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
-                    </div>
-                    <div>
-                      <div style="font-size:0.65rem; color:#94a3b8;">12 horas</div>
-                      <div style="font-size:0.80rem; font-weight:700; color:${r12h > 0 ? '#38bdf8' : '#e2e8f0'};">${r12h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
-                    </div>
-                    <div>
-                      <div style="font-size:0.65rem; color:#94a3b8;">24 horas</div>
-                      <div style="font-size:0.80rem; font-weight:700; color:${r24h > 0 ? '#38bdf8' : '#e2e8f0'};">${r24h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
-                    </div>
+                    ${extraMeteoHtml}
+                    <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'} · Red: <strong style="color:${isAemet ? '#60a5fa' : '#38bdf8'};">${networkLabel}</strong> ${horaText}</div>
                   </div>
-                  <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'} ${horaText}</div>
-                </div>
-              `
-            });
+                `
+              });
+            }
           }
         }
       }

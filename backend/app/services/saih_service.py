@@ -499,6 +499,7 @@ class SAIHService:
                         "codigo": codigo,
                         "nombre": nombre,
                         "tipo": "Pluviómetro",
+                        "red": "CHJ",
                         "lat": round(lat, 6),
                         "lon": round(lon, 6),
                         "poblacion": poblacion,
