@@ -5023,9 +5023,17 @@ export class LayerManager {
     }
 
     // Configurar botones de rango temporal (12h, 24h, 48h, 7d)
+    const effectiveInitialHours = (isHidro && initialHours > 48) ? 48 : initialHours;
+    this._currentModalHours = effectiveInitialHours;
+
     rangeButtons.forEach(btn => {
       const h = Number(btn.getAttribute('data-hours'));
-      btn.classList.toggle('active', h === initialHours);
+      if (h > 48 && isHidro) {
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = '';
+      }
+      btn.classList.toggle('active', h === effectiveInitialHours);
       btn.onclick = (ev) => {
         ev.stopPropagation();
         rangeButtons.forEach(b => b.classList.remove('active'));
@@ -5061,7 +5069,7 @@ export class LayerManager {
     backdrop.style.display = 'flex';
     backdrop.setAttribute('aria-hidden', 'false');
 
-    await this.loadCaudalHistoryForModal(props.id_variable || props.codigo, initialHours, umbrales);
+    await this.loadCaudalHistoryForModal(props.id_variable || props.codigo, effectiveInitialHours, umbrales);
   }
 
   /**
@@ -6647,9 +6655,18 @@ export class LayerManager {
       }
     }
 
+    // Configurar botones de rango temporal (12h, 24h, 48h, 7d)
+    const effectiveInitialHours = (isHidro && initialHours > 48) ? 48 : initialHours;
+    this._currentModalEmbalseHours = effectiveInitialHours;
+
     rangeButtons.forEach(btn => {
       const h = Number(btn.getAttribute('data-hours'));
-      btn.classList.toggle('active', h === initialHours);
+      if (h > 48 && isHidro) {
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = '';
+      }
+      btn.classList.toggle('active', h === effectiveInitialHours);
       btn.onclick = (ev) => {
         ev.stopPropagation();
         rangeButtons.forEach(b => b.classList.remove('active'));
@@ -6683,7 +6700,7 @@ export class LayerManager {
     backdrop.style.display = 'flex';
     backdrop.setAttribute('aria-hidden', 'false');
 
-    await this.loadEmbalseHistoryForModal(props.codigo || props.id_estacion || props.id_volumen, initialHours, cap);
+    await this.loadEmbalseHistoryForModal(props.codigo || props.id_estacion || props.id_volumen, effectiveInitialHours, cap);
   }
 
   /**
