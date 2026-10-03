@@ -171,24 +171,24 @@ export const CONFIG = {
             id: 'saih_caudales',
             group: 'hidro',
             name: 'Caudales y Niveles en Ríos',
-            subtitle: '~760 aforos en directo (CHJ, Segura, Ebro, Guadalquivir e Hidrosur)',
+            subtitle: '~850 aforos en directo (CHJ, Segura, Ebro, Guadalquivir, Hidrosur y ACA)',
             icon: '🌊',
             badge: 'Aforos',
             badgeClass: 'badge-caudal',
             defaultActive: true,
-            sourceName: 'Redes SAIH (CHJ, CHS, CHE, CHG e Hidrosur)',
+            sourceName: 'Redes SAIH y ACA (CHJ, CHS, CHE, CHG, Hidrosur y ACA)',
             sourceUrl: 'https://saih.chj.es'
           },
           {
             id: 'saih_embalses',
             group: 'hidro',
             name: 'Embalses y Presas',
-            subtitle: '~175 embalses y presas (CHJ, Segura, Ebro, Guadalquivir e Hidrosur)',
+            subtitle: '~190 embalses y presas (CHJ, Segura, Ebro, Guadalquivir, Hidrosur y ACA)',
             icon: '🏞️',
             badge: 'Embalses',
             badgeClass: 'badge-embalse',
             defaultActive: true,
-            sourceName: 'Redes SAIH (CHJ, CHS, CHE, CHG e Hidrosur)',
+            sourceName: 'Redes SAIH y ACA (CHJ, CHS, CHE, CHG, Hidrosur y ACA)',
             sourceUrl: 'https://saih.chj.es'
           },
           {

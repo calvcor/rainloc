@@ -1196,13 +1196,14 @@ export class MultiLayerInspector {
             const isGuadalC = netRawC === 'GUADALQUIVIR' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('guadal_'));
             const isEbroC = netRawC === 'EBRO' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('ebro_'));
             const isSeguraC = netRawC === 'CHS' || netRawC === 'SEGURA' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('segura_'));
-            const netNameC = isHidroC ? 'SAIH HIDROSUR' : (isGuadalC ? 'SAIH GUADALQUIVIR' : (isEbroC ? 'SAIH EBRO' : (isSeguraC ? 'SAIH SEGURA' : 'SAIH JÚCAR')));
-            const netColorC = isHidroC ? '#5eead4' : (isGuadalC ? '#818cf8' : (isEbroC ? '#22d3ee' : (isSeguraC ? '#5eead4' : '#38bdf8')));
+            const isAcaC = netRawC === 'ACA' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('aca_'));
+            const netNameC = isAcaC ? 'SAIH ACA' : (isHidroC ? 'SAIH HIDROSUR' : (isGuadalC ? 'SAIH GUADALQUIVIR' : (isEbroC ? 'SAIH EBRO' : (isSeguraC ? 'SAIH SEGURA' : 'SAIH JÚCAR'))));
+            const netColorC = isAcaC ? '#0d9488' : (isHidroC ? '#5eead4' : (isGuadalC ? '#818cf8' : (isEbroC ? '#22d3ee' : (isSeguraC ? '#5eead4' : '#38bdf8'))));
 
             sections.push({
               type: "caudal",
               title: sectionTitle,
-              headerColor: "#0284c7",
+              headerColor: isAcaC ? "#0d9488" : "#0284c7",
               icon: isCota ? "📏" : "💧",
               name: `${closestStation.nombre}`,
               badge: `${alertLevel}`,
@@ -1222,7 +1223,7 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.4 Embalses y Presas (SAIH Júcar, Segura, Ebro, Guadalquivir, Hidrosur)
+      // 2.4 Embalses y Presas (SAIH Júcar, Segura, Ebro, Guadalquivir, Hidrosur, ACA)
       if (this.layerManager.isLayerOnMap("saih_embalses")) {
         const embalsesGroup = this.layerManager.layers["saih_embalses"];
         if (embalsesGroup) {
@@ -1304,8 +1305,9 @@ export class MultiLayerInspector {
             const isGuadalE = netRawE === 'GUADALQUIVIR' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('guadal_'));
             const isEbroE = netRawE === 'EBRO' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('ebro_'));
             const isSeguraE = netRawE === 'CHS' || netRawE === 'SEGURA' || closestEmbalse.cuenca === 'Segura' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('segura_'));
-            const netNameE = isHidroE ? 'SAIH HIDROSUR' : (isGuadalE ? 'SAIH GUADALQUIVIR' : (isEbroE ? 'SAIH EBRO' : (isSeguraE ? 'SAIH SEGURA' : 'SAIH JÚCAR')));
-            const netColorE = isHidroE ? '#5eead4' : (isGuadalE ? '#818cf8' : (isEbroE ? '#22d3ee' : (isSeguraE ? '#5eead4' : '#38bdf8')));
+            const isAcaE = netRawE === 'ACA' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('aca_'));
+            const netNameE = isAcaE ? 'SAIH ACA' : (isHidroE ? 'SAIH HIDROSUR' : (isGuadalE ? 'SAIH GUADALQUIVIR' : (isEbroE ? 'SAIH EBRO' : (isSeguraE ? 'SAIH SEGURA' : 'SAIH JÚCAR'))));
+            const netColorE = isAcaE ? '#0d9488' : (isHidroE ? '#5eead4' : (isGuadalE ? '#818cf8' : (isEbroE ? '#22d3ee' : (isSeguraE ? '#5eead4' : '#38bdf8'))));
 
             sections.push({
               type: "embalse",

@@ -4798,9 +4798,10 @@ export class LayerManager {
     const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_variable && String(props.id_variable).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
     const isEbro = props.red === 'EBRO' || (props.id_variable && String(props.id_variable).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
     const isSegura = props.red === 'CHS' || props.cuenca === 'Segura' || (props.id_variable && String(props.id_variable).startsWith('segura_')) || (props.codigo && String(props.codigo).startsWith('SEGURA_'));
+    const isAca = props.red === 'ACA' || props.cuenca === 'Conques Internes de Catalunya' || (props.id_variable && String(props.id_variable).startsWith('aca_')) || (props.codigo && String(props.codigo).startsWith('ACA_'));
 
     if (subcuencaBadge) {
-      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isSegura ? 'Cuenca del Segura' : (isEbro ? 'Cuenca del Ebro' : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'))));
+      subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isAca ? 'Cuencas Internas de Cataluña' : (isSegura ? 'Cuenca del Segura' : (isEbro ? 'Cuenca del Ebro' : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ')))));
     }
 
     const isCota = caudal === null && nivel !== null && nivel >= 20;
@@ -4809,7 +4810,7 @@ export class LayerManager {
 
     if (titleEl) titleEl.textContent = props.nombre || (isCota ? 'Estación de Cota' : (caudal !== null ? 'Estación de Caudal' : 'Estación de Nivel'));
     if (subtitleEl) {
-      const netName = isSegura ? 'SAIH Segura' : (isEbro ? 'SAIH Ebro' : (isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ')));
+      const netName = isAca ? 'SAIH ACA' : (isSegura ? 'SAIH Segura' : (isEbro ? 'SAIH Ebro' : (isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ'))));
       const varDesc = (caudal !== null && nivel !== null)
         ? `Caudal: ${caudal.toFixed(2)} m³/s · Nivel: ${nivel.toFixed(2)} m`
         : (caudal !== null ? `Caudal: ${caudal.toFixed(2)} m³/s` : (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit}` : 'Nivel en Río'));
@@ -4827,7 +4828,9 @@ export class LayerManager {
       controlsTitle.textContent = isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (shouldShowLevelAsPrimary ? 'Evolución temporal del nivel (m):' : 'Evolución temporal del caudal (m³/s):');
     }
     if (sourceTag) {
-      if (isSegura) {
+      if (isAca) {
+        sourceTag.innerHTML = 'Fuente: Agència Catalana de l\'Aigua (ACA) &bull; Datos cada 5 min';
+      } else if (isSegura) {
         sourceTag.innerHTML = 'Fuente: SAIH Confederación Hidrográfica del Segura (CHS) &bull; Datos cada 5 min';
       } else if (isEbro) {
         sourceTag.innerHTML = 'Fuente: SAIH Confederación Hidrográfica del Ebro (CHE) &bull; Datos cada 15 min';
@@ -4872,7 +4875,10 @@ export class LayerManager {
     if (chipR) chipR.textContent = uRojo !== null ? `🔴 Rojo: ${uRojo} ${thUnit}` : '🔴 Rojo: Sin umbral oficial';
 
     if (saihLink) {
-      if (isSegura) {
+      if (isAca) {
+        saihLink.href = 'https://aplicacions.aca.gencat.cat/aetr/vishid/';
+        saihLink.textContent = 'Ver en ACA AETR ↗';
+      } else if (isSegura) {
         saihLink.href = 'http://saihweb.chsegura.es/apps/ivisor/cauces1.php';
         saihLink.textContent = 'Ver en SAIH Segura ↗';
       } else if (isEbro) {
@@ -6402,11 +6408,12 @@ export class LayerManager {
     const isGuadal = props.red === 'GUADALQUIVIR' || (props.id_estacion && String(props.id_estacion).startsWith('guadal_')) || (props.codigo && String(props.codigo).startsWith('GUADAL_'));
     const isEbro = props.red === 'EBRO' || (props.id_estacion && String(props.id_estacion).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
     const isSegura = props.red === 'CHS' || props.cuenca === 'Segura' || (props.id_estacion && String(props.id_estacion).startsWith('segura_')) || (props.codigo && String(props.codigo).startsWith('SEGURA_'));
+    const isAca = props.red === 'ACA' || props.cuenca === 'Conques Internes de Catalunya' || (props.id_estacion && String(props.id_estacion).startsWith('aca_')) || (props.codigo && String(props.codigo).startsWith('ACA_'));
 
-    if (title) title.textContent = props.nombre || (isSegura ? 'Embalse Segura' : (isEbro ? 'Embalse Ebro' : (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ'))));
+    if (title) title.textContent = props.nombre || (isAca ? 'Embalse ACA' : (isSegura ? 'Embalse Segura' : (isEbro ? 'Embalse Ebro' : (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ')))));
     if (subtitle) {
       const locParts = [props.poblacion || props.municipio, props.provincia, props.subcuenca, props.codigo ? `Cód: ${props.codigo}` : null].filter(Boolean);
-      subtitle.textContent = locParts.join(' · ') || (isSegura ? 'Demarcación Hidrográfica del Segura' : (isEbro ? 'Demarcación Hidrográfica del Ebro' : (isGuadal ? 'Demarcación Hidrográfica del Guadalquivir' : (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar'))));
+      subtitle.textContent = locParts.join(' · ') || (isAca ? 'Cuencas Internas de Cataluña' : (isSegura ? 'Demarcación Hidrográfica del Segura' : (isEbro ? 'Demarcación Hidrográfica del Ebro' : (isGuadal ? 'Demarcación Hidrográfica del Guadalquivir' : (isHidro ? 'Cuencas Intracomunitarias de Andalucía' : 'Demarcación Hidrográfica del Júcar')))));
     }
 
     if (badgePct) {
@@ -6451,7 +6458,7 @@ export class LayerManager {
     }
 
     if (badgeSub) {
-      badgeSub.textContent = props.subcuenca || (isSegura ? 'Segura' : (isEbro ? 'Ebro' : (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ'))));
+      badgeSub.textContent = props.subcuenca || (isAca ? 'Cuencas Internas' : (isSegura ? 'Segura' : (isEbro ? 'Ebro' : (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ')))));
     }
 
     if (statVol) statVol.textContent = vol !== null ? `${vol.toFixed(2)} hm³` : '-- hm³';
@@ -6473,7 +6480,7 @@ export class LayerManager {
       if (caudalLabel) caudalLabel.textContent = 'Caudales (Entrada / Aliviado)';
       if (statCaudalIn) statCaudalIn.textContent = caudalIn !== null ? `⬇ Entrada: ${caudalIn.toFixed(2)} m³/s` : '⬇ Entrada: -- m³/s';
       if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
-    } else if (varSem !== null || pluvAno !== null || isHidro || isGuadal || isEbro || isSegura) {
+    } else if (varSem !== null || pluvAno !== null || isHidro || isGuadal || isEbro || isSegura || isAca) {
       if (caudalLabel) caudalLabel.textContent = 'Dinámica y Aportación';
       if (statCaudalIn) {
         const sign = (varSem !== null && varSem > 0) ? '+' : '';
@@ -6490,7 +6497,10 @@ export class LayerManager {
     }
 
     if (saihLink) {
-      if (isSegura) {
+      if (isAca) {
+        saihLink.href = 'https://aplicacions.aca.gencat.cat/aetr/vishid/';
+        saihLink.textContent = 'Ver en ACA AETR ↗';
+      } else if (isSegura) {
         saihLink.href = 'http://saihweb.chsegura.es/apps/ivisor/embalses1.php';
         saihLink.textContent = 'Ver en SAIH Segura ↗';
       } else if (isEbro) {
