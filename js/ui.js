@@ -587,7 +587,7 @@ export class UIManager {
   }
 
   /**
-   * Actualiza el contador de subcapas activas y el estado visual del selector agrupado SAIH
+   * Actualiza el contador de subcapas activas y el estado visual del selector agrupado SAIH y de pluviometría
    */
   updateSaihGroupUI() {
     const prefs = StorageManager.load();
@@ -625,6 +625,29 @@ export class UIManager {
     if (countEl) {
       countEl.textContent = `${activeCount}/${subLayers.length} activos`;
       countEl.classList.toggle('none-active', isMasterActive && activeCount === 0);
+    }
+
+    // Actualizar estado del toggle general de pluviometría
+    const pluvioSubLayers = subLayers.filter(s => s.group === 'pluvio' || s.id.includes('lluvias'));
+    if (pluvioSubLayers.length > 0) {
+      const activePluvioCount = pluvioSubLayers.filter(sub => {
+        const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
+          ? Boolean(this.layerManager.layerStates[sub.id].active)
+          : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : true);
+        return isMasterActive && isSubActive;
+      }).length;
+
+      const pluvioMasterCheckbox = document.getElementById('pluvio-master-toggle');
+      const pluvioCountEl = document.getElementById('pluvio-active-count');
+
+      if (pluvioMasterCheckbox) {
+        pluvioMasterCheckbox.checked = isMasterActive && activePluvioCount === pluvioSubLayers.length;
+        pluvioMasterCheckbox.indeterminate = isMasterActive && activePluvioCount > 0 && activePluvioCount < pluvioSubLayers.length;
+      }
+      if (pluvioCountEl) {
+        pluvioCountEl.textContent = `${activePluvioCount}/${pluvioSubLayers.length}`;
+        pluvioCountEl.classList.toggle('none-active', isMasterActive && activePluvioCount === 0);
+      }
     }
 
     const masterCheckbox = document.querySelector(`.layer-toggle-input[data-layer-id="saih_hidrologia"]`);
@@ -676,7 +699,7 @@ export class UIManager {
     const activeLayers = prefs.activeLayers || {};
     const refreshSec = prefs.autoRefreshInterval !== undefined ? prefs.autoRefreshInterval : 180;
 
-    // Tarjeta especial agrupada para la Red Hidrológica SAIH (CHJ)
+    // Tarjeta especial agrupada para la Red Hidrológica y Pluviometría
     if (layer.type === 'saih_group') {
       const subLayers = layer.subLayers || [];
       const activeCount = subLayers.filter(sub => {
@@ -686,7 +709,7 @@ export class UIManager {
         return isActive && isSubActive;
       }).length;
 
-      const sublayersListHtml = subLayers.map(sub => {
+      const renderSublayerItem = (sub) => {
         const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
           ? Boolean(this.layerManager.layerStates[sub.id].active)
           : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : (sub.defaultActive !== undefined ? sub.defaultActive : true));
@@ -705,9 +728,28 @@ export class UIManager {
                 <span class="saih-sublayer-subtitle">${escapeHtml(sub.subtitle)}</span>
               </div>
             </label>
+            ${sub.sourceUrl ? `
+              <a href="${sub.sourceUrl}" target="_blank" rel="noopener noreferrer" class="sublayer-source-link" title="Abrir fuente oficial: ${escapeHtml(sub.sourceName || sub.name)}" onclick="event.stopPropagation();">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              </a>
+            ` : ''}
           </div>
         `;
-      }).join('');
+      };
+
+      const hidroSubLayers = subLayers.filter(s => s.group === 'hidro' || s.id === 'saih_caudales' || s.id === 'saih_embalses');
+      const pluvioSubLayers = subLayers.filter(s => s.group === 'pluvio' || s.id.includes('lluvias'));
+
+      const hidroListHtml = hidroSubLayers.map(renderSublayerItem).join('');
+      const pluvioListHtml = pluvioSubLayers.map(renderSublayerItem).join('');
+
+      const activePluvioCount = pluvioSubLayers.filter(sub => {
+        const isSubActive = (this.layerManager && this.layerManager.layerStates[sub.id]?.active !== undefined)
+          ? Boolean(this.layerManager.layerStates[sub.id].active)
+          : (activeLayers[sub.id] !== undefined ? Boolean(activeLayers[sub.id]) : true);
+        return isActive && isSubActive;
+      }).length;
+      const isAllPluvioActive = isActive && activePluvioCount === pluvioSubLayers.length;
 
       return `
         <div class="layer-card saih-group-card ${isActive ? 'active' : ''}" data-layer-id="${layer.id}">
@@ -737,11 +779,51 @@ export class UIManager {
             <input type="range" class="slider-glass layer-slider" min="10" max="100" value="${opacityPct}" step="5" data-layer-id="${layer.id}">
             
             <div class="saih-sublayers-container">
-              <div class="saih-sublayers-header">
-                <span class="saih-sublayers-header-title">Marcadores visibles</span>
+              <!-- Sección Aforos y Embalses -->
+              <div class="saih-sublayers-section">
+                <div class="saih-sublayers-header">
+                  <span class="saih-sublayers-header-title">Aforos y Embalses (CHJ)</span>
+                </div>
+                <div class="saih-sublayers-list">
+                  ${hidroListHtml}
+                </div>
               </div>
-              <div class="saih-sublayers-list">
-                ${sublayersListHtml}
+
+              <!-- Sección Red Pluviométrica con Toggle General -->
+              <div class="saih-sublayers-section pluvio-sublayers-section">
+                <div class="saih-sublayers-header pluvio-header-row">
+                  <span class="saih-sublayers-header-title">Red de Pluviometría</span>
+                  <label class="pluvio-master-toggle-label" title="Activar o desactivar todos los pluviómetros de todas las redes">
+                    <input type="checkbox" class="pluvio-master-checkbox" id="pluvio-master-toggle" ${isAllPluvioActive ? 'checked' : ''}>
+                    <span class="pluvio-master-toggle-text">Todas las redes</span>
+                    <span class="pluvio-master-count-badge" id="pluvio-active-count">${activePluvioCount}/${pluvioSubLayers.length}</span>
+                  </label>
+                </div>
+                <div class="saih-sublayers-list">
+                  ${pluvioListHtml}
+                </div>
+              </div>
+
+              <!-- Bloque de Atribución Legal y Licencias de Reutilización -->
+              <div class="saih-sources-legal-block">
+                <div class="saih-sources-legal-header">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  <span>Fuentes oficiales & Licencias de uso</span>
+                </div>
+                <div class="saih-sources-links">
+                  <a href="https://saih.chj.es" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Confederación Hidrográfica del Júcar - MITECO">
+                    <span class="source-dot" style="background:#0284c7;"></span> <strong>SAIH CHJ</strong>
+                  </a>
+                  <a href="https://opendata.aemet.es" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Agencia Estatal de Meteorología - OpenData">
+                    <span class="source-dot" style="background:#2563eb;"></span> <strong>AEMET</strong>
+                  </a>
+                  <a href="https://www.avamet.org" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Associació Valenciana de Meteorologia - MeteoXarxa Online">
+                    <span class="source-dot" style="background:#059669;"></span> <strong>AVAMET</strong>
+                  </a>
+                  <a href="https://analisi.transparenciacatalunya.cat/d/nzvn-apee" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Servei Meteorològic de Catalunya - Dades Obertes Gencat">
+                    <span class="source-dot" style="background:#d97706;"></span> <strong>METEOCAT</strong>
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -941,6 +1023,7 @@ export class UIManager {
       case 'saih_lluvias':
       case 'aemet_lluvias':
       case 'avamet_lluvias':
+      case 'meteocat_lluvias':
         return `Actualizado: <strong>${nowFormatted}</strong>`;
       case 'arome_precip':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+6h)</strong>`;
@@ -1077,7 +1160,7 @@ export class UIManager {
       });
     });
 
-    // Sub-switches de la Red SAIH (CHJ)
+    // Sub-switches de la Red SAIH (CHJ) y Pluviometría
     document.querySelectorAll('.saih-sublayer-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', (e) => {
         const sublayerId = e.target.getAttribute('data-sublayer-id');
@@ -1087,6 +1170,17 @@ export class UIManager {
         }
       });
     });
+
+    // Toggle General de la Red Pluviométrica (Todas las redes)
+    const pluvioMasterCheckbox = document.getElementById('pluvio-master-toggle');
+    if (pluvioMasterCheckbox) {
+      pluvioMasterCheckbox.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        if (this.layerManager && this.layerManager.togglePluvioGroup) {
+          this.layerManager.togglePluvioGroup(isChecked);
+        }
+      });
+    }
 
     // Sliders de opacidad individual
     document.querySelectorAll('.layer-slider').forEach(slider => {

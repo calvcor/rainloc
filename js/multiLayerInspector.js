@@ -1290,11 +1290,12 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData y AVAMET)
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData, AVAMET y Meteocat)
       const pluvioLayerDefs = [
         { id: "saih_lluvias", defaultSource: "SAIH CHJ", headerColor: "#0284c7" },
         { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" },
-        { id: "avamet_lluvias", defaultSource: "AVAMET", headerColor: "#059669" }
+        { id: "avamet_lluvias", defaultSource: "AVAMET", headerColor: "#059669" },
+        { id: "meteocat_lluvias", defaultSource: "METEOCAT", headerColor: "#d97706" }
       ];
 
       for (const pluvioDef of pluvioLayerDefs) {
@@ -1362,20 +1363,22 @@ export class MultiLayerInspector {
               const network = closestPluvio.red || pluvioDef.defaultSource;
               const isAemet = network === 'AEMET';
               const isAvamet = network === 'AVAMET';
-              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : 'SAIH CHJ');
-              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : '#0284c7');
-              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : '#38bdf8');
+              const isMeteocat = network === 'METEOCAT';
+              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : 'SAIH CHJ'));
+              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : '#0284c7'));
+              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : '#38bdf8'));
 
               const locParts = [];
               if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
-              if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
+              if (closestPluvio.municipio && closestPluvio.municipio !== closestPluvio.poblacion) locParts.push(`(${closestPluvio.municipio})`);
+              else if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
               if (closestPluvio.comarca) locParts.push(`· ${closestPluvio.comarca}`);
               if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
               const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
               const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
               const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
 
-              // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET
+              // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET / Meteocat
               let extraMeteoHtml = '';
               const parts = [];
               if (closestPluvio.temperatura !== null && closestPluvio.temperatura !== undefined && String(closestPluvio.temperatura).trim() !== '') {
@@ -1391,7 +1394,7 @@ export class MultiLayerInspector {
                 const vVal = Number(String(closestPluvio.viento_vel).replace(',', '.'));
                 if (!isNaN(vVal)) parts.push(`💨 ${isAemet ? (vVal * 3.6).toFixed(0) : vVal.toFixed(0)} km/h`);
               }
-              if (isAvamet && closestPluvio.lluvia_hoy !== undefined && closestPluvio.lluvia_hoy !== null) {
+              if ((isAvamet || isMeteocat) && closestPluvio.lluvia_hoy !== undefined && closestPluvio.lluvia_hoy !== null) {
                 parts.push(`📅 Hoy: <strong>${closestPluvio.lluvia_hoy} mm</strong>`);
               }
               if (parts.length > 0) {

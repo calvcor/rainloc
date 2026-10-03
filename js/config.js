@@ -156,73 +156,90 @@ export const CONFIG = {
       },
       {
         id: 'saih_hidrologia',
-        name: 'Red Hidrológica SAIH (CHJ)',
-        subtitle: 'Aforos en Ríos, Embalses y Pluviómetros',
-        description: 'Monitorización integral en tiempo real: 79 aforos de ríos, 25 embalses y presas, y 182 pluviómetros de la CHJ.',
+        name: 'Red Hidrológica y Pluviometría',
+        subtitle: 'Aforos, Embalses y Pluviómetros (~2.145 est.)',
+        description: 'Monitorización integral en tiempo real: 79 aforos en ríos, 25 embalses y presas, y más de 2.140 pluviómetros oficiales (SAIH CHJ, AEMET OpenData, AVAMET y Meteocat).',
         type: 'saih_group',
         defaultActive: false,
         defaultOpacity: 0.95,
-        badge: 'SAIH CHJ',
+        badge: 'En vivo',
         badgeType: 'info',
         color: '#0284c7',
         icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>`,
         subLayers: [
           {
             id: 'saih_caudales',
+            group: 'hidro',
             name: 'Caudales en Ríos',
             subtitle: '79 aforos en directo (m³/s y alertas)',
             icon: '🌊',
             badge: 'Aforos',
             badgeClass: 'badge-caudal',
-            defaultActive: true
+            defaultActive: true,
+            sourceName: 'SAIH CHJ',
+            sourceUrl: 'https://saih.chj.es'
           },
           {
             id: 'saih_embalses',
+            group: 'hidro',
             name: 'Embalses y Presas',
             subtitle: '25 embalses (volumen, cota y %)',
             icon: '🏞️',
             badge: 'Embalses',
             badgeClass: 'badge-embalse',
-            defaultActive: true
+            defaultActive: true,
+            sourceName: 'SAIH CHJ',
+            sourceUrl: 'https://saih.chj.es'
           },
           {
             id: 'saih_lluvias',
+            group: 'pluvio',
             name: 'Pluviómetros SAIH (CHJ)',
             subtitle: '182 pluviómetros cuenca Júcar (1h, 4h, 12h, 24h)',
             icon: '🌧️',
             badge: 'CHJ',
             badgeClass: 'badge-lluvia',
-            defaultActive: true
+            defaultActive: true,
+            sourceName: 'Confederación Hidrográfica del Júcar (MITECO)',
+            sourceUrl: 'https://saih.chj.es'
+          },
+          {
+            id: 'aemet_lluvias',
+            group: 'pluvio',
+            name: 'Pluviómetros AEMET OpenData',
+            subtitle: '~850 estaciones automáticas (1h, 4h, 12h, 24h)',
+            icon: '🌧️',
+            badge: 'AEMET',
+            badgeClass: 'badge-aemet',
+            defaultActive: true,
+            sourceName: 'Agencia Estatal de Meteorología (AEMET OpenData)',
+            sourceUrl: 'https://opendata.aemet.es'
+          },
+          {
+            id: 'avamet_lluvias',
+            group: 'pluvio',
+            name: 'Pluviómetros AVAMET (MeteoXarxa)',
+            subtitle: '~860 estaciones Comunitat Valenciana (1h, 4h, 12h, 24h)',
+            icon: '🌧️',
+            badge: 'AVAMET',
+            badgeClass: 'badge-avamet',
+            defaultActive: true,
+            sourceName: 'Associació Valenciana de Meteorologia (AVAMET MXO)',
+            sourceUrl: 'https://www.avamet.org'
+          },
+          {
+            id: 'meteocat_lluvias',
+            group: 'pluvio',
+            name: 'Pluviómetros Meteocat (XEMA)',
+            subtitle: '~245 estaciones Catalunya (1h, 4h, 12h, 24h)',
+            icon: '🌧️',
+            badge: 'METEOCAT',
+            badgeClass: 'badge-meteocat',
+            defaultActive: true,
+            sourceName: 'Servei Meteorològic de Catalunya (Dades Obertes Gencat)',
+            sourceUrl: 'https://analisi.transparenciacatalunya.cat/d/nzvn-apee'
           }
         ]
-      },
-      {
-        id: 'aemet_lluvias',
-        name: 'Pluviómetros AEMET OpenData',
-        subtitle: '~850 estaciones automáticas (1h, 4h, 12h, 24h)',
-        description: 'Red nacional de Estaciones Meteorológicas Automáticas (EMA) de AEMET con precipitación acumulada en 1h, 4h, 12h y 24h.',
-        type: 'points',
-        defaultActive: false,
-        defaultOpacity: 0.95,
-        badge: 'AEMET',
-        badgeType: 'live',
-        badgeClass: 'badge-aemet',
-        color: '#2563eb',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"></path><path d="M8 19v2"></path><path d="M8 13v2"></path><path d="M16 19v2"></path><path d="M16 13v2"></path><path d="M12 21v2"></path><path d="M12 15v2"></path></svg>`
-      },
-      {
-        id: 'avamet_lluvias',
-        name: 'Pluviómetros AVAMET (MeteoXarxa)',
-        subtitle: '~860 estaciones Comunitat Valenciana (1h, 4h, 12h, 24h)',
-        description: 'Red de estaciones meteorológicas de la Associació Valenciana de Meteorologia (AVAMET) con precipitación acumulada en 1h, 4h, 12h y 24h.',
-        type: 'points',
-        defaultActive: false,
-        defaultOpacity: 0.95,
-        badge: 'AVAMET',
-        badgeType: 'live',
-        badgeClass: 'badge-avamet',
-        color: '#059669',
-        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>`
       }
     ],
     prediction: [

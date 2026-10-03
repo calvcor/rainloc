@@ -1,11 +1,12 @@
 """
-Endpoints de la API para consulta de pluviómetros de AEMET OpenData, AVAMET y unificados.
+Endpoints de la API para consulta de pluviómetros de AEMET OpenData, AVAMET, Meteocat (XEMA) y unificados.
 """
 from typing import Literal, Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.aemet_pluvios_service import aemet_pluvios_service
 from app.services.avamet_pluvios_service import avamet_pluvios_service
+from app.services.meteocat_pluvios_service import meteocat_pluvios_service
 from app.services.saih_service import saih_service
 
 router = APIRouter(tags=["Pluviómetros"])
@@ -112,26 +113,77 @@ async def sync_avamet_lluvias():
 
 
 # ==========================================
+# METEOCAT (XEMA - DADES OBERTES GENCAT)
+# ==========================================
+
+@router.get("/meteocat/lluvias", summary="Obtener pluviómetros de la red de Meteocat (XEMA)")
+@router.get("/meteocat/pluvios", include_in_schema=False)
+async def get_meteocat_lluvias(
+    format: Literal["geojson", "json"] = Query(
+        "geojson",
+        description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
+    )
+):
+    """
+    Devuelve las ~245 estaciones meteorológicas automáticas (XEMA) de Meteocat con lluvia acumulada
+    en 1h, 4h, 12h y 24h (mm) obtenidas bajo demanda desde el portal oficial de Dades Obertes.
+    """
+    if format == "geojson":
+        return await meteocat_pluvios_service.get_pluvios_geojson()
+    return await meteocat_pluvios_service.get_pluvios()
+
+
+@router.get("/meteocat/lluvias/{id_or_code}", summary="Obtener datos de una estación Meteocat específica")
+@router.get("/meteocat/pluvios/{id_or_code}", include_in_schema=False)
+async def get_meteocat_pluvio_by_id(id_or_code: str):
+    """
+    Devuelve los datos de una estación Meteocat según su código (ej. 'VC').
+    """
+    await meteocat_pluvios_service.ensure_fresh_data()
+    pluvio = meteocat_pluvios_service.get_pluvio_by_id(id_or_code)
+    if not pluvio:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Estación Meteocat con código '{id_or_code}' no encontrada.",
+        )
+    return pluvio
+
+
+@router.post("/meteocat/lluvias/sync", summary="Forzar sincronización de pluviómetros Meteocat")
+async def sync_meteocat_lluvias():
+    """
+    Fuerza la descarga y actualización de pluviómetros de Meteocat.
+    """
+    pluvios = meteocat_pluvios_service.sync_pluvios_metadata()
+    return {
+        "status": "success",
+        "message": f"Sincronizados {len(pluvios)} pluviómetros de Meteocat correctamente.",
+        "total": len(pluvios),
+    }
+
+
+# ==========================================
 # CATÁLOGO UNIFICADO
 # ==========================================
 
-@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET)")
+@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET + METEOCAT)")
 async def get_all_pluvios(
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
     ),
-    source: Literal["all", "chj", "aemet", "avamet"] = Query(
+    source: Literal["all", "chj", "aemet", "avamet", "meteocat"] = Query(
         "all",
-        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET) o 'avamet' (AVAMET)",
+        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET), 'avamet' (AVAMET) o 'meteocat' (Meteocat)",
     )
 ):
     """
-    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET y/o AVAMET en idéntico formato.
+    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET, AVAMET y/o Meteocat en idéntico formato.
     """
     chj_list = []
     aemet_list = []
     avamet_list = []
+    meteocat_list = []
 
     if source in ("all", "chj"):
         chj_list = await saih_service.get_pluvios()
@@ -139,8 +191,10 @@ async def get_all_pluvios(
         aemet_list = await aemet_pluvios_service.get_pluvios()
     if source in ("all", "avamet"):
         avamet_list = await avamet_pluvios_service.get_pluvios()
+    if source in ("all", "meteocat"):
+        meteocat_list = await meteocat_pluvios_service.get_pluvios()
 
-    combined = chj_list + aemet_list + avamet_list
+    combined = chj_list + aemet_list + avamet_list + meteocat_list
 
     if format == "json":
         return combined

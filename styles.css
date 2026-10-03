@@ -936,6 +936,12 @@ body {
   border-top: 1px dashed rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+.saih-sublayers-section {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
@@ -954,17 +960,115 @@ body {
   color: var(--text-muted);
 }
 
+.pluvio-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pluvio-master-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 2px 7px;
+  border-radius: 12px;
+  transition: all 0.15s ease;
+}
+
+.pluvio-master-toggle-label:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.pluvio-master-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.pluvio-master-checkbox:checked {
+  background: #38bdf8;
+  border-color: #38bdf8;
+}
+
+.pluvio-master-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 3px;
+  height: 6px;
+  border: solid #0f172a;
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg);
+}
+
+.pluvio-master-checkbox:indeterminate {
+  background: #0284c7;
+  border-color: #38bdf8;
+}
+
+.pluvio-master-checkbox:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 6px;
+  height: 2px;
+  background: #ffffff;
+}
+
+.pluvio-master-toggle-text {
+  line-height: 1;
+}
+
+.pluvio-master-count-badge {
+  font-size: 0.60rem;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  padding: 0.5px 4px;
+  border-radius: 8px;
+}
+
+.pluvio-master-count-badge.none-active {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+}
+
 .saih-sublayers-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .saih-sublayer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  padding: 5px 8px;
   transition: all 0.15s ease;
 }
 
@@ -984,8 +1088,27 @@ body {
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   margin: 0;
+}
+
+.sublayer-source-link {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sublayer-source-link:hover {
+  opacity: 1;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
 }
 
 .saih-sublayer-checkbox {
@@ -1095,6 +1218,64 @@ body {
   background: rgba(16, 185, 129, 0.18);
   color: #6ee7b7;
   border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-meteocat {
+  background: rgba(217, 119, 6, 0.18);
+  color: #fcd34d;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+/* Bloque Legal de Fuentes y Licencias de Reutilización */
+.saih-sources-legal-block {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.saih-sources-legal-header {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.saih-sources-links {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.source-legal-link {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.25;
+  transition: all 0.15s ease;
+}
+
+.source-legal-link:hover {
+  color: #e2e8f0;
+  text-decoration: underline;
+}
+
+.source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 /* -------------------------------------------------------------
