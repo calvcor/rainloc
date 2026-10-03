@@ -50,14 +50,23 @@ class MeteocatPluviosService:
         if METEOCAT_METADATA_FILE.exists():
             try:
                 with open(METEOCAT_METADATA_FILE, "r", encoding="utf-8") as f:
-                    self._metadata_by_id = json.load(f)
+                    raw_meta = json.load(f)
+                    self._metadata_by_id = {
+                        str(k): v for k, v in raw_meta.items()
+                        if str(v.get("codi_estat_ema")) == "2" or str(v.get("nom_estat_ema", "")).lower() == "operativa"
+                    }
             except Exception as e:
                 logger.error(f"Error al leer {METEOCAT_METADATA_FILE}: {e}")
 
         if STATIC_METEOCAT_PLUVIOS_FILE.exists():
             try:
                 with open(STATIC_METEOCAT_PLUVIOS_FILE, "r", encoding="utf-8") as f:
-                    self._pluvios = json.load(f)
+                    raw_pluvios = json.load(f)
+                    # Descartar estaciones desmanteladas guardadas en caché antigua de disco
+                    self._pluvios = [
+                        p for p in raw_pluvios
+                        if p.get("codigo") not in ("Y9",) and p.get("id_estacion") not in ("Y9",)
+                    ]
                     self._pluvios_by_id = {str(p["id_estacion"]): p for p in self._pluvios if "id_estacion" in p}
                     mtime = datetime.fromtimestamp(STATIC_METEOCAT_PLUVIOS_FILE.stat().st_mtime)
                     self._last_sync_time = mtime
