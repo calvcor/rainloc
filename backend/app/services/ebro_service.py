@@ -178,6 +178,103 @@ class EbroService:
         self._embalses_by_id = idx
 
     # ==========================================
+    # 0. METADATOS Y COORDENADAS (Auto-descarga si no existen)
+    # ==========================================
+
+    def sync_all_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """Descarga e indexa automáticamente el catálogo de metadatos y coordenadas de la CHE."""
+        logger.info("Descargando catálogo de metadatos y coordenadas de SAIH Ebro...")
+        from concurrent.futures import ThreadPoolExecutor
+        from pyproj import Transformer
+
+        ctx = self._get_ssl_context()
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        trans30 = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+
+        all_codes = set()
+        try:
+            req = urllib.request.Request(f"{EBRO_BASE_URL}/api/datos-historicos/getEstaciones?tipoConsolidado=quinceminutal", headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+                est_list = json.loads(resp.read().decode("utf-8"))
+            for e in est_list:
+                all_codes.add(e.get("id"))
+        except Exception as err:
+            logger.warning(f"Error obteniendo lista de estaciones de Ebro: {err}")
+
+        # Añadir subcuencas aforos
+        try:
+            req2 = urllib.request.Request(f"{EBRO_BASE_URL}/api/pluviometrias/getTablaPluviometrias", headers=headers)
+            with urllib.request.urlopen(req2, context=ctx, timeout=10) as resp:
+                pluvs = json.loads(resp.read().decode("utf-8"))
+            for p in pluvs:
+                all_codes.add(p.get("codigo"))
+        except Exception:
+            pass
+
+        meta_result = {}
+
+        def _fetch_one(code):
+            if not code:
+                return code, None
+            try:
+                url = f"{EBRO_BASE_URL}/api/ficha/procesarTablaInfoGeneral?estacion={code}"
+                req_f = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req_f, context=ctx, timeout=10) as resp_f:
+                    data = json.loads(resp_f.read().decode("utf-8"))
+                html_info = data.get("INFO_GENERAL", "")
+                lat_m = re.search(r"data-lat=[\"']([^\"']+)[\"']", html_info)
+                lng_m = re.search(r"data-lng=[\"']([^\"']+)[\"']", html_info)
+                desc_m = re.search(r"<td>Descripci(?:ó|o)n</td>\s*<td>(.*?)</td>", html_info)
+                rio_m = re.search(r"<td>R(?:í|i)o</td>\s*<td>(.*?)</td>", html_info)
+                pob_m = re.search(r"<td>Poblaci(?:ó|o)n</td>\s*<td>(.*?)</td>", html_info)
+                prov_m = re.search(r"<td>Provincia</td>\s*<td>(.*?)</td>", html_info)
+                ca_m = re.search(r"<td>Comunidad Aut(?:ó|o)noma</td>\s*<td>(.*?)</td>", html_info)
+                vol_tot_m = re.search(r"<td>Volumen total</td>\s*<td>(.*?)</td>", html_info)
+                cota_m_m = re.search(r"<td>Cota m(?:í|i)nima</td>\s*<td>(.*?)</td>", html_info)
+                cota_cor_m = re.search(r"<td>Cota coronaci(?:ó|o)n</td>\s*<td>(.*?)</td>", html_info)
+                cota_nmn_m = re.search(r"<td>Cota N\.M\.N\.</td>\s*<td>(.*?)</td>", html_info)
+
+                lat = float(lat_m.group(1)) if lat_m else None
+                lng = float(lng_m.group(1)) if lng_m else None
+                vol_tot = _parse_num(vol_tot_m.group(1)) if vol_tot_m else None
+
+                return code, {
+                    "code": code,
+                    "nombre": desc_m.group(1).strip() if desc_m else code,
+                    "rio": rio_m.group(1).strip() if rio_m else "",
+                    "poblacion": pob_m.group(1).strip() if pob_m else "",
+                    "provincia": prov_m.group(1).strip() if prov_m else "",
+                    "comunidad_autonoma": ca_m.group(1).strip() if ca_m else "",
+                    "lat": lat,
+                    "lon": lng,
+                    "capacidad_total": vol_tot,
+                    "cota_minima": _parse_num(cota_m_m.group(1)) if cota_m_m else None,
+                    "cota_coronacion": _parse_num(cota_cor_m.group(1)) if cota_cor_m else None,
+                    "cota_nmn": _parse_num(cota_nmn_m.group(1)) if cota_nmn_m else None,
+                }
+            except Exception:
+                return code, None
+
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            results = ex.map(_fetch_one, list(all_codes))
+            for code, meta in results:
+                if meta and meta.get("lat") is not None and meta.get("lon") is not None:
+                    meta_result[code] = meta
+
+        if meta_result:
+            self._metadata_by_code = meta_result
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            with open(EBRO_META_FILE, "w", encoding="utf-8") as f:
+                json.dump(self._metadata_by_code, f, ensure_ascii=False, indent=2)
+            logger.info(f"Guardados metadatos de {len(meta_result)} estaciones de SAIH Ebro.")
+
+        return self._metadata_by_code
+
+    # ==========================================
     # 1. PLUVIÓMETROS (1 petición a la CHE)
     # ==========================================
 
@@ -186,6 +283,9 @@ class EbroService:
         Descarga la tabla completa de pluviometrías del SAIH Ebro (331 estaciones).
         Requiere exactamente 1 sola petición HTTP.
         """
+        if not self._metadata_by_code:
+            self.sync_all_metadata()
+
         url = f"{EBRO_BASE_URL}/api/pluviometrias/getTablaPluviometrias"
         req = urllib.request.Request(
             url,
@@ -327,6 +427,9 @@ class EbroService:
         Descarga los volúmenes embalsados de toda la cuenca del Ebro (61 embalses).
         Requiere exactamente 1 sola petición HTTP.
         """
+        if not self._metadata_by_code:
+            self.sync_all_metadata()
+
         url = f"{EBRO_BASE_URL}/api/principal/getVolumenesEmbalsados"
         req = urllib.request.Request(
             url,
@@ -471,6 +574,9 @@ class EbroService:
         - Si hay EBRO_API_KEY configurada: Hace 2 consultas masivas Open Data (QRIO y NRIO) para los 270 aforos.
         - Si no hay API Key: Hace 1 sola petición al mapa de aforos principales de toda la cuenca (HG).
         """
+        if not self._metadata_by_code:
+            self.sync_all_metadata()
+
         now_madrid = datetime.now(MADRID_TZ)
         now_iso = now_madrid.strftime("%Y-%m-%d %H:%M:%S")
         today_str = now_madrid.strftime("%Y-%m-%d")

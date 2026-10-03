@@ -22,9 +22,11 @@ htmlcov/
 # Datos dinámicos y cachés generados en tiempo de ejecución (SAIH, radar, weather_state)
 backend/data/*
 !backend/data/.gitkeep
+!backend/data/*_metadata.json
 data/*
 !data/.gitkeep
 !data/ccaa.geojson
+!data/*_metadata.json
 *.log
 saih_aforos.geojson
 
