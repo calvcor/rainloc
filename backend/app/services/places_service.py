@@ -95,13 +95,13 @@ class PlacesService:
         return total_mtime
 
     def _ensure_initialized(self):
-        """Verifica si la base de datos existe y tiene datos; si no, la construye. Si existe, sincroniza entidades locales."""
+        """Verifica si la base de datos existe; si no, la construye. Si ya existe, sincroniza las estaciones locales al iniciar."""
         if not self.db_path.exists() or os.path.getsize(self.db_path) < 10000:
             logger.info("Base de datos de lugares no encontrada o incompleta. Construyendo base de datos...")
             self.build_database()
         else:
-            # Sincronizar entidades locales si hay archivos nuevos o modificados
-            self.sync_local_entities(force=False)
+            # Sincronizar automáticamente estaciones, aforos y embalses locales en cada reinicio
+            self.sync_local_entities(force=True)
 
     def build_database(self):
         """Construye la base de datos SQLite consolidando GeoNames, Cuencas, Embalses y Estaciones."""
@@ -643,9 +643,6 @@ class PlacesService:
         raw_query = query.strip()
         if not raw_query or len(raw_query) < min_chars:
             return []
-
-        # Auto-sincronizar si se han añadido nuevos archivos GeoJSON de estaciones/aforos
-        self.check_auto_sync()
 
         clean_q = normalize_text(raw_query)
         words = clean_q.split()
