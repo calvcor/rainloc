@@ -1254,9 +1254,14 @@ export class MultiLayerInspector {
             const qIn = closestEmbalse.caudal_recibido !== undefined && closestEmbalse.caudal_recibido !== null ? Number(closestEmbalse.caudal_recibido) : null;
             const qOut = closestEmbalse.caudal_salida !== undefined && closestEmbalse.caudal_salida !== null ? Number(closestEmbalse.caudal_salida) : null;
 
+            const var24 = closestEmbalse.variacion_24h !== undefined && closestEmbalse.variacion_24h !== null ? Number(closestEmbalse.variacion_24h) : null;
+            const varSemVal = closestEmbalse.variacion_semana !== undefined && closestEmbalse.variacion_semana !== null ? Number(closestEmbalse.variacion_semana) : null;
+            const isSurging = (var24 !== null && var24 > 0.5) || (varSemVal !== null && varSemVal > 1.5);
+
             let pctColor = "#10b981";
             if (pct !== null) {
-              if (pct >= 70) pctColor = "#ef4444";
+              if (pct >= 70 && isSurging) pctColor = "#ef4444";
+              else if (pct >= 70) pctColor = "#0ea5e9";
               else if (pct >= 35) pctColor = "#f59e0b";
               else pctColor = "#10b981";
             }

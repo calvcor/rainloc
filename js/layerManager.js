@@ -5019,20 +5019,30 @@ export class LayerManager {
         const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : null;
         const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : null;
         const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (vol !== null && cap ? (vol / cap * 100) : null);
+        const var24 = props.variacion_24h !== undefined && props.variacion_24h !== null ? Number(props.variacion_24h) : null;
+        const varSem = props.variacion_semana !== undefined && props.variacion_semana !== null ? Number(props.variacion_semana) : null;
+        const isSurging = (var24 !== null && var24 > 0.5) || (varSem !== null && varSem > 1.5);
 
-        // Color según peligrosidad de desbordamiento: verde <35%, amarillo 35-70%, rojo >=70%
-        let color = '#10b981'; // Verde (<35%) - Desbordamiento improbable
+        // Color según estado de llenado y dinámica:
+        // Si pct >= 70% y en rápido ascenso -> Rojo (Riesgo Desbordamiento)
+        // Si pct >= 70% y estable/descenso -> Azul / Cian (Reserva Alta)
+        // Si 35% <= pct < 70% -> Ámbar (Reserva Media)
+        // Si pct < 35% -> Verde (Reserva Baja)
+        let color = '#10b981';
         let alertClass = 'embalse-status-low';
 
         if (pct !== null) {
-          if (pct >= 70) {
-            color = '#ef4444'; // Rojo (>=70%) - Alto riesgo / Desbordamiento
+          if (pct >= 70 && isSurging) {
+            color = '#ef4444'; // Rojo (>=70% y en rápido ascenso)
             alertClass = 'embalse-status-critical caudal-pulse';
+          } else if (pct >= 70) {
+            color = '#0ea5e9'; // Azul / Cian (>=70% y estable)
+            alertClass = 'embalse-status-high';
           } else if (pct >= 35) {
-            color = '#f59e0b'; // Amarillo (35-70%) - Riesgo moderado
+            color = '#f59e0b'; // Ámbar (35-70%)
             alertClass = 'embalse-status-medium';
           } else {
-            color = '#10b981'; // Verde (<35%) - Riesgo bajo
+            color = '#10b981'; // Verde (<35%)
             alertClass = 'embalse-status-low';
           }
         } else {
@@ -5918,26 +5928,37 @@ export class LayerManager {
 
     if (badgePct) {
       const pctStr = pct !== null ? `${pct.toFixed(1)}%` : '--%';
+      const var24 = props.variacion_24h !== undefined && props.variacion_24h !== null ? Number(props.variacion_24h) : null;
+      const varSem = props.variacion_semana !== undefined && props.variacion_semana !== null ? Number(props.variacion_semana) : null;
+      const isSurging = (var24 !== null && var24 > 0.5) || (varSem !== null && varSem > 1.5);
+
       let bg = 'rgba(16, 185, 129, 0.2)';
       let col = '#10b981';
       let border = 'rgba(16, 185, 129, 0.4)';
-      let riskLabel = 'Riesgo Bajo';
+      let riskLabel = 'Reserva Baja';
       if (pct !== null) {
         if (pct >= 70) {
-          bg = 'rgba(239, 68, 68, 0.25)';
-          col = '#ef4444';
-          border = 'rgba(239, 68, 68, 0.5)';
-          riskLabel = '🔴 Alto Riesgo Desbordamiento';
+          if (isSurging) {
+            bg = 'rgba(239, 68, 68, 0.25)';
+            col = '#ef4444';
+            border = 'rgba(239, 68, 68, 0.5)';
+            riskLabel = '🔴 Alto Riesgo Desbordamiento';
+          } else {
+            bg = 'rgba(14, 165, 233, 0.2)';
+            col = '#38bdf8';
+            border = 'rgba(56, 189, 248, 0.4)';
+            riskLabel = '🔵 Reserva Alta';
+          }
         } else if (pct >= 35) {
           bg = 'rgba(245, 158, 11, 0.25)';
           col = '#f59e0b';
           border = 'rgba(245, 158, 11, 0.5)';
-          riskLabel = '🟡 Riesgo Moderado';
+          riskLabel = '🟡 Reserva Media';
         } else {
           bg = 'rgba(16, 185, 129, 0.2)';
           col = '#10b981';
           border = 'rgba(16, 185, 129, 0.4)';
-          riskLabel = '🟢 Riesgo Bajo';
+          riskLabel = '🟢 Reserva Baja';
         }
       }
       badgePct.textContent = `${pctStr} Lleno · ${riskLabel}`;
@@ -6065,13 +6086,55 @@ export class LayerManager {
         return;
       }
 
-      // Sincronizar lectura del instante actual en la cabecera del modal
+      // Sincronizar lectura del instante actual y tendencia en la cabecera del modal
+      const firstPoint = validPoints[0];
       const latestPoint = validPoints[validPoints.length - 1];
       const statVol = document.getElementById('embalse-stat-vol');
       const statTime = document.getElementById('embalse-stat-time');
+      const statPctSub = document.getElementById('embalse-stat-pct-sub');
+      const badgePct = document.getElementById('embalse-modal-pct-badge');
+
       if (latestPoint && statVol) {
         const latestVal = Number(latestPoint.valor);
+        const firstVal = Number(firstPoint.valor);
+        const deltaVol = latestVal - firstVal;
+        const cap = capNMN ? Number(capNMN) : null;
+        const latestPct = cap && cap > 0 ? (latestVal / cap * 100) : null;
+        const deltaPct = cap && cap > 0 ? (deltaVol / cap * 100) : null;
+
         statVol.textContent = `${latestVal.toFixed(2)} hm³`;
+        if (statPctSub) {
+          statPctSub.textContent = latestPct !== null ? `Reserva: ${latestPct.toFixed(1)}%` : 'Reserva: --%';
+        }
+
+        if (badgePct && latestPct !== null) {
+          const pctStr = `${latestPct.toFixed(1)}%`;
+          // Solo alertar de riesgo de desbordamiento si pct >= 70% y el nivel ha subido sustancialmente en este periodo
+          const isRapidRise = deltaVol >= 0.4 || (deltaPct !== null && deltaPct >= 1.5);
+
+          if (latestPct >= 70 && isRapidRise) {
+            badgePct.textContent = `${pctStr} Lleno · 🔴 Riesgo Desbordamiento (+${deltaVol.toFixed(2)} hm³)`;
+            badgePct.style.background = 'rgba(239, 68, 68, 0.25)';
+            badgePct.style.color = '#ef4444';
+            badgePct.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+          } else if (latestPct >= 70) {
+            const trendTxt = deltaVol < -0.1 ? 'En descenso' : (deltaVol > 0.05 ? 'Ligero ascenso' : 'Estable');
+            badgePct.textContent = `${pctStr} Lleno · 🔵 Reserva Alta (${trendTxt})`;
+            badgePct.style.background = 'rgba(14, 165, 233, 0.2)';
+            badgePct.style.color = '#38bdf8';
+            badgePct.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+          } else if (latestPct >= 35) {
+            badgePct.textContent = `${pctStr} Lleno · 🟡 Reserva Media`;
+            badgePct.style.background = 'rgba(245, 158, 11, 0.25)';
+            badgePct.style.color = '#f59e0b';
+            badgePct.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+          } else {
+            badgePct.textContent = `${pctStr} Lleno · 🟢 Reserva Baja`;
+            badgePct.style.background = 'rgba(16, 185, 129, 0.2)';
+            badgePct.style.color = '#10b981';
+            badgePct.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+          }
+        }
       }
       if (latestPoint && latestPoint.fecha && statTime) {
         statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(latestPoint.fecha))}`;
@@ -6291,14 +6354,14 @@ export class LayerManager {
 
       if (pct !== null) {
         if (pct >= 70) {
-          pointColor = '#ef4444';
-          statusText = `🔴 ${pct.toFixed(1)}% (Riesgo Alto)`;
-          bgBadge = 'rgba(239, 68, 68, 0.25)';
-          textBadge = '#fca5a5';
+          pointColor = '#38bdf8';
+          statusText = `🔵 ${pct.toFixed(1)}% (Reserva Alta)`;
+          bgBadge = 'rgba(14, 165, 233, 0.25)';
+          textBadge = '#38bdf8';
           isWarning = true;
         } else if (pct >= 35) {
           pointColor = '#f59e0b';
-          statusText = `🟡 ${pct.toFixed(1)}% (Riesgo Moderado)`;
+          statusText = `🟡 ${pct.toFixed(1)}% (Reserva Media)`;
           bgBadge = 'rgba(245, 158, 11, 0.25)';
           textBadge = '#fde68a';
           isWarning = true;
