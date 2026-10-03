@@ -1321,6 +1321,64 @@ export class MultiLayerInspector {
         }
       }
 
+      // 2.4 Malla Suave de Acumulados de Lluvia (Interpolación Dinámica en Navegador)
+      if (this.layerManager && this.layerManager.pluvioRenderMode === 'mesh') {
+        const isSaihActive = Boolean(this.layerManager.layerStates['saih_hidrologia'] && this.layerManager.layerStates['saih_hidrologia'].active);
+        if (isSaihActive && this.layerManager.getPluvioMeshValueAt) {
+          const meshData = this.layerManager.getPluvioMeshValueAt(latlng.lat, latlng.lng);
+          if (meshData && meshData.value !== null) {
+            const val = meshData.value;
+            const period = (meshData.period || '24h').toUpperCase();
+            const periodLabel = `Acumulado ${period}`;
+
+            let badgeBg = "#38bdf8";
+            let badgeText = `${val.toFixed(1)} mm`;
+            if (val >= 100) {
+              badgeBg = "#ef4444";
+              badgeText = `🔴 ${val.toFixed(1)} mm`;
+            } else if (val >= 60) {
+              badgeBg = "#f97316";
+              badgeText = `🟠 ${val.toFixed(1)} mm`;
+            } else if (val >= 30) {
+              badgeBg = "#f59e0b";
+              badgeText = `🟡 ${val.toFixed(1)} mm`;
+            } else if (val >= 10) {
+              badgeBg = "#0284c7";
+              badgeText = `🔵 ${val.toFixed(1)} mm`;
+            } else if (val >= 0.5) {
+              badgeBg = "#38bdf8";
+              badgeText = `${val.toFixed(1)} mm`;
+            } else {
+              badgeBg = "#64748b";
+              badgeText = "0.0 mm";
+            }
+
+            const nearest = meshData.nearestStation;
+            const nearestInfo = nearest ? `📍 Estación más próxima: <strong>${nearest.name || 'Estación'}</strong> (${nearest.red || 'Red'}) · ${meshData.nearestDistanceKm.toFixed(1)} km` : '';
+
+            sections.push({
+              id: 'pluvio_mesh',
+              priority: 45,
+              icon: '🌧️',
+              title: `Mapa Suave de Lluvia (${period})`,
+              headerColor: '#0284c7',
+              badge: badgeText,
+              badgeBg: badgeBg,
+              badgeColor: '#ffffff',
+              details: `
+                <div class="unified-pluvio-mesh-block">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                    <div>${periodLabel}: <strong style="color:#ffffff; font-size:1.1em;">${val.toFixed(1)} mm</strong></div>
+                    <span style="font-size:0.68rem; color:#38bdf8; background:rgba(2,132,199,0.2); padding:1px 6px; border-radius:10px; border:1px solid rgba(56,189,248,0.3);">Malla suave</span>
+                  </div>
+                  ${nearestInfo ? `<div style="font-size:0.70rem; color:#94a3b8; margin-top:3px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">${nearestInfo}</div>` : ''}
+                </div>
+              `
+            });
+          }
+        }
+      }
+
       // 2.5 Pluviómetros / Lluvia Acumulada (SAIH, AEMET OpenData, AVAMET, Meteocat)
       const pluvioLayerDefs = [
         { id: "saih_lluvias", defaultSource: "SAIH", headerColor: "#0284c7" },

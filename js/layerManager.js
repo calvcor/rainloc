@@ -96,7 +96,7 @@ export class LayerManager {
     // Estado del Mapa Suave de Acumulados de Lluvia (Interpolación en Navegador)
     this.pluvioRenderMode = prefs.pluvioRenderMode || 'points'; // 'points' | 'mesh'
     this.pluvioMeshPeriod = prefs.pluvioMeshPeriod || '24h'; // '1h' | '4h' | '12h' | '24h'
-    this.pluvioMeshLabels = (prefs.pluvioMeshLabels !== undefined) ? Boolean(prefs.pluvioMeshLabels) : true;
+    this.pluvioMeshLabels = (prefs.pluvioMeshLabels !== undefined) ? Boolean(prefs.pluvioMeshLabels) : false;
     this.pluvioMeshOpacity = prefs.pluvioMeshOpacity !== undefined ? parseFloat(prefs.pluvioMeshOpacity) : 0.85;
     this.pluvioMeshOverlay = null;
     this.pluvioLabelsGroup = L.layerGroup();
@@ -4362,6 +4362,46 @@ export class LayerManager {
     }
 
     return allFeatures;
+  }
+
+  /**
+   * Consulta el valor interpolado de precipitación en una coordenada (lat, lon)
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {Object|null} { value, period, nearestStation, nearestDistanceKm }
+   */
+  getPluvioMeshValueAt(lat, lon) {
+    if (this.pluvioRenderMode !== 'mesh') return null;
+    const allFeatures = this.getAllActivePluvioFeatures();
+    if (!allFeatures || allFeatures.length === 0) return null;
+
+    const points = rainInterpolator.extractStationPoints(allFeatures, this.pluvioMeshPeriod);
+    if (!points || points.length === 0) return null;
+
+    const val = rainInterpolator.sampleValueAt(lat, lon, points);
+    if (val === null) return null;
+
+    let nearestStation = null;
+    let minDistanceKm = 9999;
+    const cosLat = Math.cos(lat * (Math.PI / 180));
+
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const dLat = (lat - p.lat) * 111.32;
+      const dLon = (lon - p.lon) * 111.32 * cosLat;
+      const distKm = Math.hypot(dLat, dLon);
+      if (distKm < minDistanceKm) {
+        minDistanceKm = distKm;
+        nearestStation = p;
+      }
+    }
+
+    return {
+      value: val,
+      period: this.pluvioMeshPeriod,
+      nearestStation: nearestStation,
+      nearestDistanceKm: minDistanceKm
+    };
   }
 
   /**

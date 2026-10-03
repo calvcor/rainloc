@@ -298,6 +298,69 @@ export class RainInterpolator {
   }
 
   /**
+   * Obtiene el valor interpolado de precipitación en una coordenada exacta (lat, lon)
+   * @param {number} lat
+   * @param {number} lon
+   * @param {Array} points Lista de puntos { lat, lon, val }
+   * @returns {number|null}
+   */
+  sampleValueAt(lat, lon, points) {
+    if (!points || points.length === 0) return null;
+
+    const maxInfluenceRadiusDeg = 0.55; // ~55 km radio de influencia
+    const maxRadiusSq = maxInfluenceRadiusDeg * maxInfluenceRadiusDeg;
+    const fadeRadiusDeg = 0.28;
+    const smoothRadiusDeg = 0.32;
+    const power = 1.85;
+
+    const cosLat = Math.cos(lat * (Math.PI / 180));
+
+    let sumWeights = 0;
+    let sumWeightedVal = 0;
+    let minDistSq = 999999;
+    let exactVal = null;
+
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      const dLat = lat - pt.lat;
+      const dLon = (lon - pt.lon) * cosLat;
+      const distSq = dLat * dLat + dLon * dLon;
+
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+      }
+
+      if (distSq > maxRadiusSq) continue;
+
+      const dist = Math.sqrt(distSq);
+      if (dist < 0.002) {
+        exactVal = pt.val;
+        break;
+      }
+
+      const gauss = Math.exp(- (dist / smoothRadiusDeg) * (dist / smoothRadiusDeg));
+      const idw = 1.0 / Math.pow(dist + 0.015, power);
+      const w = gauss * idw;
+
+      sumWeights += w;
+      sumWeightedVal += w * pt.val;
+    }
+
+    if (exactVal !== null) return exactVal;
+
+    const minDist = Math.sqrt(minDistSq);
+    if (sumWeights === 0 || minDist > maxInfluenceRadiusDeg) return null;
+
+    let val = sumWeightedVal / sumWeights;
+    if (minDist > fadeRadiusDeg) {
+      const fadeFactor = Math.max(0, 1 - ((minDist - fadeRadiusDeg) / (maxInfluenceRadiusDeg - fadeRadiusDeg)));
+      val *= (fadeFactor * fadeFactor);
+    }
+
+    return val >= 0.05 ? val : 0;
+  }
+
+  /**
    * Mapea un valor continuo de precipitación (mm) a color RGBA interpolado de la rampa AVAMET
    */
   getColorForValue(val) {

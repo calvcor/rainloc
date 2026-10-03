@@ -69,7 +69,7 @@ export class StorageManager {
       aemetPeriod: 'now', // 'now' | 'today' | 'tomorrow' | 'after_tomorrow'
       pluvioRenderMode: 'points', // 'points' | 'mesh'
       pluvioMeshPeriod: '24h', // '1h' | '4h' | '12h' | '24h'
-      pluvioMeshLabels: true, // Mostrar etiquetas de valor numérico sobre la malla
+      pluvioMeshLabels: false, // Mostrar etiquetas de valor numérico sobre la malla (por defecto desactivado para visualización limpia en hover)
       pluvioMeshOpacity: 0.85
     };
   }
