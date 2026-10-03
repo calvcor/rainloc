@@ -4491,11 +4491,15 @@ export class LayerManager {
       subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'));
     }
 
+    const isCota = (nivel !== null && nivel > 20) || (props.cota_actual !== undefined && props.cota_actual !== null);
+    const meterUnit = isCota ? 'm.s.n.m.' : 'm';
+    const meterType = isCota ? 'Cota' : 'Nivel';
+
     if (titleEl) titleEl.textContent = props.nombre || 'Estación de Caudal';
     if (subtitleEl) {
       const netName = isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ');
       const isMeters = isHidro || isGuadal || props.unidad_grafica === 'm';
-      const varDesc = isMeters ? (nivel !== null ? `Nivel: ${nivel.toFixed(2)} m · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Nivel y Caudal en Río') : (props.variable || 'Caudal');
+      const varDesc = isMeters ? (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit} · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Nivel y Caudal en Río') : (props.variable || 'Caudal');
       const mun = props.poblacion || props.municipio || '--';
       subtitleEl.textContent = `${varDesc} · ${mun} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
     }
@@ -4504,10 +4508,10 @@ export class LayerManager {
     const controlsTitle = document.getElementById('caudal-chart-controls-title');
     const sourceTag = document.getElementById('caudal-modal-source-tag');
     if (statCurrentLabel) {
-      statCurrentLabel.textContent = (isNivelThreshold || caudal === null) ? 'Nivel Actual' : 'Caudal Actual';
+      statCurrentLabel.textContent = (isNivelThreshold || caudal === null) ? (isCota ? 'Cota s.n.m. (Altitud)' : 'Nivel Actual') : 'Caudal Actual';
     }
     if (controlsTitle) {
-      controlsTitle.textContent = (isNivelThreshold || caudal === null) ? 'Evolución temporal del nivel:' : 'Evolución temporal del caudal:';
+      controlsTitle.textContent = (isNivelThreshold || caudal === null) ? (isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : 'Evolución temporal del nivel:') : 'Evolución temporal del caudal:';
     }
     if (sourceTag) {
       if (isGuadal) {
@@ -4523,7 +4527,7 @@ export class LayerManager {
       if (caudal !== null) {
         statCurrent.textContent = `${caudal.toFixed(2)} m³/s`;
       } else if (nivel !== null) {
-        statCurrent.textContent = `${nivel.toFixed(2)} m`;
+        statCurrent.textContent = `${nivel.toFixed(2)} ${meterUnit}`;
       } else {
         statCurrent.textContent = '-- m³/s';
       }
@@ -4800,6 +4804,9 @@ export class LayerManager {
     const baseY = (pad.top + innerH).toFixed(1);
     const areaPointsStr = `${chartCoords[0].x.toFixed(1)},${baseY} ${polyPointsStr} ${chartCoords[chartCoords.length - 1].x.toFixed(1)},${baseY}`;
 
+    const isCotaScale = rawMin > 20 && unit === 'm';
+    const displayUnit = isCotaScale ? 'm.s.n.m.' : unit;
+
     // Líneas Horizontales de Umbrales / Avisos de Caudal
     const thresholdLines = [];
     const makeThresholdLine = (val, color, name) => {
@@ -4812,9 +4819,9 @@ export class LayerManager {
           <line x1="${pad.left}" y1="${yF}" x2="${pad.left + innerW}" y2="${yF}"
                 stroke="${color}" stroke-dasharray="5,4" stroke-width="1.6" opacity="0.9"/>
           <!-- Etiqueta sobre la línea -->
-          <rect x="${pad.left + 8}" y="${(y - 14).toFixed(1)}" width="140" height="15" rx="3" fill="rgba(15,23,42,0.85)" stroke="${color}" stroke-width="0.8"/>
+          <rect x="${pad.left + 8}" y="${(y - 14).toFixed(1)}" width="145" height="15" rx="3" fill="rgba(15,23,42,0.85)" stroke="${color}" stroke-width="0.8"/>
           <text x="${pad.left + 14}" y="${(y - 3).toFixed(1)}" fill="${color}" font-size="10" font-weight="700">
-            ${name}: ${val} ${unit}
+            ${name}: ${val} ${displayUnit}
           </text>
         </g>
       `;
@@ -4873,7 +4880,7 @@ export class LayerManager {
 
           <!-- Eje Y etiquetas -->
           ${yLabels.join('')}
-          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">${unit}</text>
+          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">${displayUnit}</text>
 
           <!-- Eje X etiquetas -->
           ${xLabels.join('')}
@@ -4911,7 +4918,7 @@ export class LayerManager {
             <span id="caudal-tt-time">--:--</span>
           </div>
           <div class="caudal-chart-tooltip-val-row">
-            <span id="caudal-tt-val" class="caudal-chart-tooltip-val" style="color: #38bdf8;">-- ${unit}</span>
+            <span id="caudal-tt-val" class="caudal-chart-tooltip-val" style="color: #38bdf8;">-- ${displayUnit}</span>
             <span id="caudal-tt-badge" class="caudal-chart-tooltip-badge" style="display: none;"></span>
           </div>
         </div>
@@ -4996,7 +5003,7 @@ export class LayerManager {
 
       // Actualizar contenido del tooltip con color de aviso en el número
       ttTime.textContent = formatMadridDateTime(fecha);
-      ttVal.textContent = `${val.toFixed(2)} ${unit}`;
+      ttVal.textContent = `${val.toFixed(2)} ${displayUnit}`;
       ttVal.style.color = pointColor;
 
       // Si está en umbral de aviso mostrar el badge correspondiente, si es normal no mostrar ningún badge

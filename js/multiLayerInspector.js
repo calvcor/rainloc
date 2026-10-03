@@ -1166,14 +1166,17 @@ export class MultiLayerInspector {
               alertLevel = "Sin dato";
             }
 
+            const isCota = (nivel !== null && nivel > 20) || (closestStation.cota_actual !== undefined && closestStation.cota_actual !== null);
+            const nivelUnit = isCota ? 'm.s.n.m.' : 'm';
+            const nivelLabel = isCota ? 'Cota' : 'Nivel';
             const caudalText = caudal !== null ? `${caudal.toFixed(2)} m³/s` : "-- m³/s";
-            const nivelText = nivel !== null ? `${nivel.toFixed(2)} m` : '';
+            const nivelText = nivel !== null ? `${nivelLabel}: ${nivel.toFixed(2)} ${nivelUnit}` : '';
             const horaText = closestStation.ultima_hora ? `· ${closestStation.ultima_hora}` : '';
             const thList = [];
             if (uAmarillo) thList.push(`🟡 ${uAmarillo}`);
             if (uNaranja) thList.push(`🟠 ${uNaranja}`);
             if (uRojo) thList.push(`🔴 ${uRojo}`);
-            const thUnit = isNivelThreshold ? 'm' : 'm³/s';
+            const thUnit = isNivelThreshold ? nivelUnit : 'm³/s';
             const thText = thList.length > 0 ? thList.join(' · ') + ' ' + thUnit : 'En estudio';
             const metaLoc = `${closestStation.poblacion || '--'} (${closestStation.provincia || ''}) · ${closestStation.subcuenca || ''}`;
 
