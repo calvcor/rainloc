@@ -320,12 +320,17 @@ class EbroService:
             if lat is None or lon is None:
                 continue
 
-            r1h = _parse_num(item.get("col1")) or 0.0
-            rhoy = _parse_num(item.get("col2")) or 0.0
-            r24h = _parse_num(item.get("col3")) or 0.0
-            rayer = _parse_num(item.get("col4")) or 0.0
-            rmes = _parse_num(item.get("col5")) or 0.0
-            rano = _parse_num(item.get("col6")) or 0.0
+            r1h = round(_parse_num(item.get("col1")) or 0.0, 1)
+            rhoy = round(_parse_num(item.get("col2")) or 0.0, 1)
+            r24h = round(_parse_num(item.get("col3")) or 0.0, 1)
+            rayer = round(_parse_num(item.get("col4")) or 0.0, 1)
+            rmes = round(_parse_num(item.get("col5")) or 0.0, 1)
+            rano = round(_parse_num(item.get("col6")) or 0.0, 1)
+
+            # Valores reales medidos por la CHE (sin inventar proporciones ficticias)
+            eff_24h = r24h
+            eff_12h = None
+            eff_4h = None
 
             clean_name = meta.get("nombre") or item.get("nombre") or item.get("nombreCorto") or code
             provincia = meta.get("provincia") or item.get("provincia") or ""
@@ -346,14 +351,14 @@ class EbroService:
                 "lluvia_1h": r1h,
                 "precipitacion_1h": r1h,
                 "fecha_1h": now_iso,
-                "lluvia_4h": r24h,
-                "precipitacion_4h": r24h,
+                "lluvia_4h": eff_4h,
+                "precipitacion_4h": eff_4h,
                 "fecha_4h": now_iso,
-                "lluvia_12h": r24h,
-                "precipitacion_12h": r24h,
+                "lluvia_12h": eff_12h,
+                "precipitacion_12h": eff_12h,
                 "fecha_12h": now_iso,
-                "lluvia_24h": r24h,
-                "precipitacion_24h": r24h,
+                "lluvia_24h": eff_24h,
+                "precipitacion_24h": eff_24h,
                 "fecha_24h": now_iso,
                 "lluvia_hoy": rhoy,
                 "lluvia_ayer": rayer,

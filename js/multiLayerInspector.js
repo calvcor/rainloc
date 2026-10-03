@@ -1417,34 +1417,35 @@ export class MultiLayerInspector {
             });
 
             if (closestPluvio) {
-              const r1h = closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null
+              const r1h = (closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null)
                 ? Number(closestPluvio.lluvia_1h)
-                : (closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null ? Number(closestPluvio.precipitacion_1h) : 0);
-              const r4h = closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null
+                : ((closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null) ? Number(closestPluvio.precipitacion_1h) : null);
+              const r4h = (closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null)
                 ? Number(closestPluvio.lluvia_4h)
-                : (closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null ? Number(closestPluvio.precipitacion_4h) : 0);
-              const r12h = closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null
+                : ((closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null) ? Number(closestPluvio.precipitacion_4h) : null);
+              const r12h = (closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null)
                 ? Number(closestPluvio.lluvia_12h)
-                : (closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null ? Number(closestPluvio.precipitacion_12h) : 0);
-              const r24h = closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null
+                : ((closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null) ? Number(closestPluvio.precipitacion_12h) : null);
+              const r24h = (closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null)
                 ? Number(closestPluvio.lluvia_24h)
-                : (closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null ? Number(closestPluvio.precipitacion_24h) : 0);
+                : ((closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null) ? Number(closestPluvio.precipitacion_24h) : null);
 
+              const maxRef = Math.max(r24h ?? 0, r12h ?? 0, r4h ?? 0, r1h ?? 0);
               let badgeBg = "#38bdf8";
-              let badgeText = `${r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : (r1h > 0 ? `${r1h.toFixed(1)} mm (1h)` : '0.0 mm')}`;
-              if (r24h >= 100 || r1h >= 20) {
+              let badgeText = `${r24h !== null && r24h > 0 ? `${r24h.toFixed(1)} mm (24h)` : (r1h !== null && r1h > 0 ? `${r1h.toFixed(1)} mm (1h)` : `${maxRef.toFixed(1)} mm`)}`;
+              if (maxRef >= 100 || (r1h !== null && r1h >= 20)) {
                 badgeBg = "#ef4444";
-                badgeText = `🔴 ${r24h >= 100 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-              } else if (r24h >= 60 || r1h >= 10) {
+                badgeText = `🔴 ${r24h !== null && r24h >= 100 ? `${r24h.toFixed(1)} mm (24h)` : `${maxRef.toFixed(1)} mm`}`;
+              } else if (maxRef >= 60 || (r1h !== null && r1h >= 10)) {
                 badgeBg = "#f97316";
-                badgeText = `🟠 ${r24h >= 60 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-              } else if (r24h >= 30 || r1h >= 5) {
+                badgeText = `🟠 ${r24h !== null && r24h >= 60 ? `${r24h.toFixed(1)} mm (24h)` : `${maxRef.toFixed(1)} mm`}`;
+              } else if (maxRef >= 30 || (r1h !== null && r1h >= 5)) {
                 badgeBg = "#f59e0b";
-                badgeText = `🟡 ${r24h >= 30 ? `${r24h.toFixed(1)} mm (24h)` : `${r1h.toFixed(1)} mm (1h)`}`;
-              } else if (r24h >= 10) {
+                badgeText = `🟡 ${r24h !== null && r24h >= 30 ? `${r24h.toFixed(1)} mm (24h)` : `${maxRef.toFixed(1)} mm`}`;
+              } else if (maxRef >= 10) {
                 badgeBg = "#0284c7";
-                badgeText = `🔵 ${r24h.toFixed(1)} mm (24h)`;
-              } else if (r24h > 0 || r1h > 0) {
+                badgeText = `🔵 ${r24h !== null && r24h >= 10 ? `${r24h.toFixed(1)} mm (24h)` : `${maxRef.toFixed(1)} mm`}`;
+              } else if (maxRef > 0) {
                 badgeBg = "#38bdf8";
               } else {
                 badgeBg = "#64748b";
@@ -1519,19 +1520,19 @@ export class MultiLayerInspector {
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 6px; border-radius: 6px; text-align: center;">
                       <div>
                         <div style="font-size:0.65rem; color:#94a3b8;">1 hora</div>
-                        <div style="font-size:0.80rem; font-weight:700; color:${r1h > 0 ? '#38bdf8' : '#e2e8f0'};">${r1h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r1h !== null && r1h > 0 ? '#38bdf8' : '#e2e8f0'};">${r1h !== null ? `${r1h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span>` : '<span style="color:#64748b; font-weight:400;">--</span>'}</div>
                       </div>
                       <div>
                         <div style="font-size:0.65rem; color:#94a3b8;">4 horas</div>
-                        <div style="font-size:0.80rem; font-weight:700; color:${r4h > 0 ? '#38bdf8' : '#e2e8f0'};">${r4h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r4h !== null && r4h > 0 ? '#38bdf8' : '#e2e8f0'};">${r4h !== null ? `${r4h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span>` : '<span style="color:#64748b; font-weight:400;">--</span>'}</div>
                       </div>
                       <div>
                         <div style="font-size:0.65rem; color:#94a3b8;">12 horas</div>
-                        <div style="font-size:0.80rem; font-weight:700; color:${r12h > 0 ? '#38bdf8' : '#e2e8f0'};">${r12h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r12h !== null && r12h > 0 ? '#38bdf8' : '#e2e8f0'};">${r12h !== null ? `${r12h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span>` : '<span style="color:#64748b; font-weight:400;">--</span>'}</div>
                       </div>
                       <div>
                         <div style="font-size:0.65rem; color:#94a3b8;">24 horas</div>
-                        <div style="font-size:0.80rem; font-weight:700; color:${r24h > 0 ? '#38bdf8' : '#e2e8f0'};">${r24h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span></div>
+                        <div style="font-size:0.80rem; font-weight:700; color:${r24h !== null && r24h > 0 ? '#38bdf8' : '#e2e8f0'};">${r24h !== null ? `${r24h.toFixed(1)}<span style="font-size:0.62rem; font-weight:400; color:#94a3b8;"> mm</span>` : '<span style="color:#64748b; font-weight:400;">--</span>'}</div>
                       </div>
                     </div>
                     ${extraMeteoHtml}

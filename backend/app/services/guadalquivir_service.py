@@ -265,6 +265,10 @@ class GuadalquivirService:
                 rhoy = _parse_num(cols[5]) or 0.0
                 rayer = _parse_num(cols[6]) or 0.0
 
+                # Registro y cálculo riguroso de ventanas temporales reales (sin inventar proporciones lineales)
+                r4h = round(r1h + r_prev, 1)  # Acumulado real conocido de las 2 últimas horas
+                r24h = round(max(r12h, rhoy), 1)  # Cota física mínima conocida sin asumir repartos homogéneos de ayer
+
                 # Obtener coordenadas de metadatos
                 meta = metadata.get(code, {})
                 lat = meta.get("lat")
@@ -299,14 +303,14 @@ class GuadalquivirService:
                     "lluvia_1h": r1h,
                     "precipitacion_1h": r1h,
                     "fecha_1h": now_iso,
-                    "lluvia_4h": r12h,  # Usamos 12h como referencia multi-hora
-                    "precipitacion_4h": r12h,
+                    "lluvia_4h": r4h,
+                    "precipitacion_4h": r4h,
                     "fecha_4h": now_iso,
                     "lluvia_12h": r12h,
                     "precipitacion_12h": r12h,
                     "fecha_12h": now_iso,
-                    "lluvia_24h": rhoy,
-                    "precipitacion_24h": rhoy,
+                    "lluvia_24h": r24h,
+                    "precipitacion_24h": r24h,
                     "fecha_24h": now_iso,
                     "lluvia_hoy": rhoy,
                     "lluvia_ayer": rayer,
