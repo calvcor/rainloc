@@ -3270,21 +3270,10 @@ export class LayerManager {
       if (item.tierId !== currentTier.id) {
         item.tierId = currentTier.id;
         if (item.marker) {
-          item.marker.setStyle({
-            color: currentTier.color,
-            weight: currentTier.weight,
-            fillColor: currentTier.fillColor,
-            fillOpacity: Math.min(1.0, radarOpacity * currentTier.fillOpacity)
-          });
-          item.marker.setRadius(currentTier.radius);
-
-          const el = item.marker.getElement ? item.marker.getElement() : null;
-          if (el) {
-            if (currentTier.pulse) {
-              el.classList.add('lightning-pulse-active');
-            } else {
-              el.classList.remove('lightning-pulse-active');
-            }
+          const newIcon = this._createStrikeIcon(currentTier, radarOpacity);
+          item.marker.setIcon(newIcon);
+          if (item.marker.setZIndexOffset) {
+            item.marker.setZIndexOffset(currentTier.pulse ? 500 : 200);
           }
         }
         changed = true;
@@ -3384,18 +3373,43 @@ export class LayerManager {
   }
 
   /**
-   * Genera un CircleMarker para un impacto de rayo con escala cromática adaptada a la ventana
+   * Genera el icono L.divIcon con forma de pequeño rayo SVG
+   */
+  _createStrikeIcon(tier, opacity = 1.0) {
+    const size = tier.size || 14;
+    const pulseClass = tier.pulse ? 'lightning-pulse-active' : '';
+    const strokeWidth = tier.weight || 1.2;
+    const strokeColor = tier.color || '#000000';
+    const effectiveOpacity = Math.min(1.0, opacity * (tier.fillOpacity !== undefined ? tier.fillOpacity : 1.0));
+
+    return L.divIcon({
+      className: 'lightning-marker lightning-bolt-marker-container',
+      html: `
+        <div class="lightning-bolt-inner ${pulseClass}" style="width: ${size}px; height: ${size}px; opacity: ${effectiveOpacity};">
+          <svg viewBox="0 0 24 24" width="100%" height="100%" style="display: block; overflow: visible;">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
+                     fill="${tier.fillColor}"
+                     stroke="${strokeColor}"
+                     stroke-width="${strokeWidth}"
+                     stroke-linejoin="round"
+                     stroke-linecap="round"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2]
+    });
+  }
+
+  /**
+   * Genera un Marker con icono de rayo SVG para un impacto con escala cromática adaptada a la ventana
    */
   _createStrikeMarker(strike, tier, opacity = 1.0) {
-    const marker = L.circleMarker([strike.lat, strike.lon], {
+    const icon = this._createStrikeIcon(tier, opacity);
+    const marker = L.marker([strike.lat, strike.lon], {
       pane: 'lluviasPane',
-      renderer: this.lightningCanvasRenderer,
-      radius: tier.radius,
-      color: tier.color,
-      weight: tier.weight,
-      fillColor: tier.fillColor,
-      fillOpacity: Math.min(1.0, opacity * tier.fillOpacity),
-      className: tier.pulse ? 'lightning-marker lightning-pulse-active' : 'lightning-marker'
+      icon: icon,
+      zIndexOffset: tier.pulse ? 500 : 200
     });
 
     const strikeDate = new Date(strike.time * 1000);

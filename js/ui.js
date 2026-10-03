@@ -895,7 +895,7 @@ export class UIManager {
               <div class="lightning-age-legend">
                 <span class="age-legend-title">Antigüedad del impacto:</span>
                 <div class="age-pills-row">
-                  ${getLightningAgeTiers(prefs.lightningWindow || 15).tiers.map(t => `<span class="age-pill"><span class="dot" style="background:${t.fillColor}; ${t.pulse ? `box-shadow: 0 0 6px ${t.fillColor};` : ''}"></span> ${t.label}</span>`).join('')}
+                  ${getLightningAgeTiers(prefs.lightningWindow || 15).tiers.map(t => `<span class="age-pill"><svg viewBox="0 0 24 24" class="legend-bolt-icon" style="width: 10px; height: 10px; flex-shrink: 0; ${t.pulse ? `filter: drop-shadow(0 0 3px ${t.fillColor});` : ''}"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="${t.fillColor}" stroke="#000000" stroke-width="1.5" stroke-linejoin="round"/></svg> ${t.label}</span>`).join('')}
                 </div>
               </div>
             </div>
@@ -1130,8 +1130,8 @@ export class UIManager {
     if (!pillsRow) return;
     const tierConfig = getLightningAgeTiers(windowMinutes);
     pillsRow.innerHTML = tierConfig.tiers.map(t => {
-      const shadow = t.pulse ? `box-shadow: 0 0 6px ${t.fillColor};` : '';
-      return `<span class="age-pill"><span class="dot" style="background:${t.fillColor}; ${shadow}"></span> ${t.label}</span>`;
+      const shadow = t.pulse ? `filter: drop-shadow(0 0 3px ${t.fillColor});` : '';
+      return `<span class="age-pill"><svg viewBox="0 0 24 24" class="legend-bolt-icon" style="width: 10px; height: 10px; flex-shrink: 0; ${shadow}"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="${t.fillColor}" stroke="#000000" stroke-width="1.5" stroke-linejoin="round"/></svg> ${t.label}</span>`;
     }).join('');
   }
 
