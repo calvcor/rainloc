@@ -67,6 +67,8 @@ def normalize_text(text: str) -> str:
 class PlacesService:
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
+        self._last_files_check_time = 0
+        self._last_files_mtime = 0
         self._ensure_initialized()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -77,11 +79,29 @@ class PlacesService:
         conn.execute("PRAGMA synchronous = NORMAL;")
         return conn
 
+    def _get_local_files_mtime_sum(self) -> float:
+        """Calcula la suma de fechas de modificación de todos los datasets locales de RainLoc."""
+        total_mtime = 0.0
+        try:
+            subsistemas_path = DATA_DIR.parent / "subsistemas.geojson"
+            if subsistemas_path.exists():
+                total_mtime += subsistemas_path.stat().st_mtime
+
+            for pattern in ("*_embalses.geojson", "*_aforos.geojson", "*_lluvias.geojson"):
+                for p in DATA_DIR.glob(pattern):
+                    total_mtime += p.stat().st_mtime
+        except Exception:
+            pass
+        return total_mtime
+
     def _ensure_initialized(self):
-        """Verifica si la base de datos existe y tiene datos; si no, la construye."""
+        """Verifica si la base de datos existe y tiene datos; si no, la construye. Si existe, sincroniza entidades locales."""
         if not self.db_path.exists() or os.path.getsize(self.db_path) < 10000:
             logger.info("Base de datos de lugares no encontrada o incompleta. Construyendo base de datos...")
             self.build_database()
+        else:
+            # Sincronizar entidades locales si hay archivos nuevos o modificados
+            self.sync_local_entities(force=False)
 
     def build_database(self):
         """Construye la base de datos SQLite consolidando GeoNames, Cuencas, Embalses y Estaciones."""
@@ -345,9 +365,58 @@ class PlacesService:
             ))
             fts_to_insert.append((nom_v, nom_c, norm, 'region', prov, 'Comunitat Valenciana'))
 
-        # 3. Incorporar Cuencas y Subsistemas Hidrográficos (subsistemas.geojson)
-        subsistemas_path = DATA_DIR.parent / "subsistemas.geojson"
-        if subsistemas_path.exists():
+        # 3. Incorporar datasets locales (Cuencas, Embalses, Aforos, Estaciones)
+        loc_places, loc_fts = self._extract_local_entities(inserted_ids)
+        places_to_insert.extend(loc_places)
+        fts_to_insert.extend(loc_fts)
+
+        # Insertar todo en bloques
+        cur.executemany("""
+        INSERT OR REPLACE INTO places (
+            id, name, alt_name, name_norm, category, subcategory,
+            province, community, lat, lon, zoom, importance, extra_info
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, places_to_insert)
+
+        cur.executemany("""
+        INSERT INTO places_fts (name, alt_name, name_norm, category, province, community)
+        VALUES (?, ?, ?, ?, ?, ?);
+        """, fts_to_insert)
+
+        # Crear índices para velocidad instantánea
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_category ON places(category);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_importance ON places(importance DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_name_norm ON places(name_norm);")
+
+        conn.commit()
+        conn.close()
+
+        # Reemplazo atómico del archivo DB
+        if self.db_path.exists():
+            self.db_path.unlink()
+        temp_db.rename(self.db_path)
+        self._last_files_mtime = self._get_local_files_mtime_sum()
+        logger.info(f"¡Base de datos de lugares compilada con éxito! Total lugares: {len(places_to_insert)}")
+
+    def _extract_local_entities(self, inserted_ids: Optional[set] = None):
+        """Extrae todas las entidades locales de RainLoc: Cuencas, Embalses, Aforos y Estaciones de Lluvia."""
+        if inserted_ids is None:
+            inserted_ids = set()
+
+        places_to_insert = []
+        fts_to_insert = []
+
+        # 1. Cuencas y Subsistemas Hidrográficos (subsistemas.geojson)
+        subsistemas_candidates = [
+            DATA_DIR.parent.parent / "subsistemas.geojson",
+            DATA_DIR.parent.parent / "subsistemas.optimized.geojson",
+            DATA_DIR.parent / "subsistemas.geojson",
+            DATA_DIR / "subsistemas.geojson",
+            Path("/app/subsistemas.geojson"),
+            Path("/app/subsistemas.optimized.geojson")
+        ]
+        subsistemas_path = next((p for p in subsistemas_candidates if p.exists()), None)
+        if subsistemas_path:
             try:
                 with open(subsistemas_path, 'r', encoding='utf-8') as f:
                     sub_data = json.load(f)
@@ -358,7 +427,6 @@ class PlacesService:
                     if not subsistema:
                         continue
 
-                    # Calcular centroide aproximado de la geometría
                     geom = feat.get("geometry", {})
                     coords = geom.get("coordinates", [])
                     lat, lon = self._calculate_centroid(coords, geom.get("type"))
@@ -380,11 +448,10 @@ class PlacesService:
                         json.dumps({"sistema": nom_sis, "area_km2": props.get("Superf km2")})
                     ))
                     fts_to_insert.append((full_name, alt or "", norm, 'cuenca', 'CHJ', 'Comunitat Valenciana'))
-                logger.info("Subsistemas y Cuencas integradas.")
             except Exception as e:
                 logger.error(f"Error procesando subsistemas.geojson: {e}")
 
-        # 4. Incorporar Embalses locales (saih_embalses, ebro_embalses, etc.)
+        # 2. Embalses locales (saih_embalses, ebro_embalses, etc.)
         embalse_files = list(DATA_DIR.glob("*_embalses.geojson"))
         for emb_file in embalse_files:
             try:
@@ -417,7 +484,7 @@ class PlacesService:
             except Exception as e:
                 logger.error(f"Error leyendo {emb_file.name}: {e}")
 
-        # 5. Incorporar Aforos y Ríos locales
+        # 3. Aforos y Ríos locales
         aforo_files = list(DATA_DIR.glob("*_aforos.geojson"))
         for afo_file in aforo_files:
             try:
@@ -451,7 +518,7 @@ class PlacesService:
             except Exception as e:
                 logger.error(f"Error leyendo {afo_file.name}: {e}")
 
-        # 6. Incorporar Estaciones de Lluvia de RainLoc (AVAMET, AEMET, SAIH, Meteocat...)
+        # 4. Estaciones de Lluvia de RainLoc (AVAMET, AEMET, SAIH, Meteocat...)
         pluvio_files = list(DATA_DIR.glob("*_lluvias.geojson"))
         for pluv_file in pluvio_files:
             network = pluv_file.stem.split('_')[0].upper()
@@ -485,32 +552,64 @@ class PlacesService:
             except Exception as e:
                 logger.error(f"Error leyendo {pluv_file.name}: {e}")
 
-        # Insertar todo en bloques
-        cur.executemany("""
-        INSERT OR REPLACE INTO places (
-            id, name, alt_name, name_norm, category, subcategory,
-            province, community, lat, lon, zoom, importance, extra_info
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """, places_to_insert)
+        return places_to_insert, fts_to_insert
 
-        cur.executemany("""
-        INSERT INTO places_fts (name, alt_name, name_norm, category, province, community)
-        VALUES (?, ?, ?, ?, ?, ?);
-        """, fts_to_insert)
+    def sync_local_entities(self, force: bool = False) -> int:
+        """
+        Sincroniza dinámicamente cualquier cambio en los archivos GeoJSON locales de RainLoc
+        (nuevas estaciones de lluvia, nuevos aforos de caudal, nuevos embalses, cuencas).
+        """
+        if not self.db_path.exists():
+            return 0
 
-        # Crear índices para velocidad instantánea
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_category ON places(category);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_importance ON places(importance DESC);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_places_name_norm ON places(name_norm);")
+        current_mtime = self._get_local_files_mtime_sum()
+        if not force and current_mtime <= self._last_files_mtime and self._last_files_mtime > 0:
+            return 0
 
-        conn.commit()
-        conn.close()
+        logger.info("Detectados cambios o nueva sincronización en datasets locales de RainLoc...")
+        places_to_insert, _ = self._extract_local_entities()
+        if not places_to_insert:
+            return 0
 
-        # Reemplazo atómico del archivo DB
-        if self.db_path.exists():
-            self.db_path.unlink()
-        temp_db.rename(self.db_path)
-        logger.info(f"¡Base de datos de lugares compilada con éxito! Total lugares: {len(places_to_insert)}")
+        conn = sqlite3.connect(str(self.db_path))
+        cur = conn.cursor()
+        try:
+            # Eliminar entidades locales dinámicas anteriores
+            cur.execute("DELETE FROM places WHERE id LIKE 'cuenca_%' OR id LIKE 'emb_%' OR id LIKE 'afo_%' OR id LIKE 'st_%';")
+
+            # Reinsertar actualizadas
+            cur.executemany("""
+            INSERT OR REPLACE INTO places (
+                id, name, alt_name, name_norm, category, subcategory,
+                province, community, lat, lon, zoom, importance, extra_info
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, places_to_insert)
+
+            # Reconstruir tabla FTS5 para sincronizar índices
+            cur.execute("DELETE FROM places_fts;")
+            cur.execute("""
+            INSERT INTO places_fts (rowid, name, alt_name, name_norm, category, province, community)
+            SELECT rowid, name, coalesce(alt_name, ''), name_norm, category, coalesce(province, ''), coalesce(community, '')
+            FROM places;
+            """)
+
+            conn.commit()
+            self._last_files_mtime = current_mtime
+            logger.info(f"✅ Sincronizados {len(places_to_insert)} lugares locales (estaciones, aforos, embalses, cuencas).")
+            return len(places_to_insert)
+        except Exception as e:
+            logger.error(f"Error sincronizando entidades locales: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def check_auto_sync(self):
+        """Comprueba periódicamente si hay nuevos datos locales para sincronizar."""
+        import time
+        now = time.time()
+        if now - self._last_files_check_time > 45:
+            self._last_files_check_time = now
+            self.sync_local_entities(force=False)
 
     def _calculate_centroid(self, coords: Any, geom_type: str):
         """Calcula el centroide aproximado de geometrías GeoJSON."""
@@ -544,6 +643,9 @@ class PlacesService:
         raw_query = query.strip()
         if not raw_query or len(raw_query) < min_chars:
             return []
+
+        # Auto-sincronizar si se han añadido nuevos archivos GeoJSON de estaciones/aforos
+        self.check_auto_sync()
 
         clean_q = normalize_text(raw_query)
         words = clean_q.split()
