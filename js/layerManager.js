@@ -4491,15 +4491,15 @@ export class LayerManager {
       subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'));
     }
 
-    const isCota = (nivel !== null && nivel > 20) || (props.cota_actual !== undefined && props.cota_actual !== null);
+    const isCota = caudal === null && nivel !== null && nivel >= 20;
     const meterUnit = isCota ? 'm.s.n.m.' : 'm';
     const meterType = isCota ? 'Cota' : 'Nivel';
 
-    if (titleEl) titleEl.textContent = props.nombre || 'Estación de Caudal';
+    if (titleEl) titleEl.textContent = props.nombre || (isCota ? 'Estación de Cota' : (caudal !== null ? 'Estación de Caudal' : 'Estación de Nivel'));
     if (subtitleEl) {
       const netName = isGuadal ? 'SAIH Guadalquivir' : (isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ');
       const isMeters = isHidro || isGuadal || props.unidad_grafica === 'm';
-      const varDesc = isMeters ? (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit} · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Nivel y Caudal en Río') : (props.variable || 'Caudal');
+      const varDesc = isMeters ? (caudal !== null ? `Caudal: ${caudal.toFixed(2)} m³/s · Nivel: ${nivel !== null ? nivel.toFixed(2) + ' m' : '--'}` : (nivel !== null ? `${meterType}: ${nivel.toFixed(2)} ${meterUnit}` : 'Nivel en Río')) : (props.variable || 'Caudal');
       const mun = props.poblacion || props.municipio || '--';
       subtitleEl.textContent = `${varDesc} · ${mun} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
     }
@@ -4508,10 +4508,10 @@ export class LayerManager {
     const controlsTitle = document.getElementById('caudal-chart-controls-title');
     const sourceTag = document.getElementById('caudal-modal-source-tag');
     if (statCurrentLabel) {
-      statCurrentLabel.textContent = (isNivelThreshold || caudal === null) ? (isCota ? 'Cota s.n.m. (Altitud)' : 'Nivel Actual') : 'Caudal Actual';
+      statCurrentLabel.textContent = isCota ? 'Cota s.n.m. (Altitud)' : (caudal !== null ? 'Caudal Actual' : 'Nivel Actual');
     }
     if (controlsTitle) {
-      controlsTitle.textContent = (isNivelThreshold || caudal === null) ? (isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : 'Evolución temporal del nivel:') : 'Evolución temporal del caudal:';
+      controlsTitle.textContent = isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (caudal !== null ? 'Evolución temporal del caudal:' : 'Evolución temporal del nivel:');
     }
     if (sourceTag) {
       if (isGuadal) {
@@ -4544,7 +4544,7 @@ export class LayerManager {
     }
 
     // Chips de umbrales
-    const thUnit = isNivelThreshold ? 'm' : 'm³/s';
+    const thUnit = isNivelThreshold ? (isCota ? 'm.s.n.m.' : 'm') : 'm³/s';
     const chipY = document.getElementById('th-chip-yellow');
     const chipO = document.getElementById('th-chip-orange');
     const chipR = document.getElementById('th-chip-red');
@@ -4649,6 +4649,9 @@ export class LayerManager {
       const isLevelChart = chartUnit === 'm';
 
       const values = validPoints.map(s => Number(s.valor));
+      const hasCaudalProp = this._currentModalStationProps && this._currentModalStationProps.caudal !== undefined && this._currentModalStationProps.caudal !== null;
+      const isCota = !hasCaudalProp && isLevelChart && (values.length > 0 && Math.min(...values) >= 20);
+      const effectiveUnit = isCota ? 'm.s.n.m.' : chartUnit;
 
       // Sincronizar lectura del instante actual y estadísticas
       const latestPoint = validPoints[validPoints.length - 1];
@@ -4659,10 +4662,10 @@ export class LayerManager {
       const controlsTitle = document.getElementById('caudal-chart-controls-title');
 
       if (statCurrentLabel) {
-        statCurrentLabel.textContent = isLevelChart ? 'Nivel Actual' : 'Caudal Actual';
+        statCurrentLabel.textContent = !hasCaudalProp && isLevelChart ? (isCota ? 'Cota s.n.m. (Altitud)' : 'Nivel Actual') : 'Caudal Actual';
       }
       if (controlsTitle) {
-        controlsTitle.textContent = isLevelChart ? 'Evolución temporal del nivel:' : 'Evolución temporal del caudal:';
+        controlsTitle.textContent = !hasCaudalProp && isLevelChart ? (isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : 'Evolución temporal del nivel:') : 'Evolución temporal del caudal:';
       }
 
       const uAmarillo = (umbrales && umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales && umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
@@ -4672,17 +4675,17 @@ export class LayerManager {
       if (latestPoint) {
         const latestVal = Number(latestPoint.valor);
         if (statCurrent) {
-          if (this._currentModalStationProps && this._currentModalStationProps.caudal !== undefined && this._currentModalStationProps.caudal !== null && isLevelChart) {
+          if (hasCaudalProp && isLevelChart) {
             statCurrent.textContent = `${Number(this._currentModalStationProps.caudal).toFixed(2)} m³/s`;
           } else {
-            statCurrent.textContent = `${latestVal.toFixed(2)} ${chartUnit}`;
+            statCurrent.textContent = `${latestVal.toFixed(2)} ${effectiveUnit}`;
           }
         }
 
         // Actualizar el badge de estado si la serie histórica contiene la lectura más reciente
         if (alertBadge) {
           let alertColor = '#10b981';
-          let alertText = isLevelChart ? 'Nivel Normal' : 'Caudal Normal';
+          let alertText = isCota ? 'Cota Normal' : (isLevelChart ? 'Nivel Normal' : 'Caudal Normal');
           if (uRojo !== null && latestVal >= uRojo) {
             alertColor = '#ef4444';
             alertText = '🔴 Umbral Rojo (Desbordamiento)';
@@ -4713,14 +4716,14 @@ export class LayerManager {
         const maxPoint = validPoints.find(p => Number(p.valor) === maxVal);
         const maxTimeStr = maxPoint && maxPoint.fecha ? formatMadridDateTime(new Date(maxPoint.fecha)) : '';
 
-        if (statMax) statMax.textContent = `${maxVal.toFixed(2)} ${chartUnit}`;
+        if (statMax) statMax.textContent = `${maxVal.toFixed(2)} ${effectiveUnit}`;
         if (statMaxTime) statMaxTime.textContent = maxTimeStr ? `Registrado: ${maxTimeStr}` : 'Pico del periodo';
-        if (statMin) statMin.textContent = `${minVal.toFixed(2)} ${chartUnit}`;
-        if (statAvg) statAvg.textContent = `Media: ${avgVal.toFixed(2)} ${chartUnit}`;
+        if (statMin) statMin.textContent = `${minVal.toFixed(2)} ${effectiveUnit}`;
+        if (statAvg) statAvg.textContent = `Media: ${avgVal.toFixed(2)} ${effectiveUnit}`;
       }
 
       // Renderizar gráfica SVG de alta resolución con líneas de aviso horizontales
-      this._renderCaudalSvgChart(validPoints, umbrales, container, chartUnit);
+      this._renderCaudalSvgChart(validPoints, umbrales, container, effectiveUnit);
 
     } catch (err) {
       console.warn('Error al obtener histórico de caudal:', err);
@@ -4769,7 +4772,7 @@ export class LayerManager {
 
     // Margen inferior
     const bottomMargin = Math.max(dataSpan * 0.2, 0.1);
-    if (rawMin > 10) {
+    if (rawMin >= 20) {
       // Para cotas elevadas (ej: 170m), conservar el piso justo bajo rawMin para que la dinámica sea visible y no una línea plana
       minY = Math.max(0, rawMin - bottomMargin);
     } else {
@@ -4804,7 +4807,7 @@ export class LayerManager {
     const baseY = (pad.top + innerH).toFixed(1);
     const areaPointsStr = `${chartCoords[0].x.toFixed(1)},${baseY} ${polyPointsStr} ${chartCoords[chartCoords.length - 1].x.toFixed(1)},${baseY}`;
 
-    const isCotaScale = rawMin > 20 && unit === 'm';
+    const isCotaScale = rawMin >= 20 && (unit === 'm' || unit === 'm.s.n.m.');
     const displayUnit = isCotaScale ? 'm.s.n.m.' : unit;
 
     // Líneas Horizontales de Umbrales / Avisos de Caudal
