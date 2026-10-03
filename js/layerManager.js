@@ -505,11 +505,37 @@ export class LayerManager {
     }
   }
 
-  isStepCached(modelKey, step, type = 'total') {
+  isStepCached(modelKey, step, type = 'total', expectedUrl = null) {
     if (!this._modelImageStore) return false;
     const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
     const key = cleanModel === 'radar' ? `radar_radar_${step}` : `${cleanModel}_${type}_${step}`;
-    return this._modelImageStore.has(key);
+    if (!this._modelImageStore.has(key)) return false;
+    if (expectedUrl) {
+      const item = this._modelImageStore.get(key);
+      return Boolean(item && item.imgUrl === expectedUrl);
+    }
+    return true;
+  }
+
+  _clearModelImageCache(modelKey) {
+    if (!this._modelImageStore) return;
+    const cleanModel = (modelKey || '').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    const prefix = cleanModel === 'radar' ? 'radar_' : `${cleanModel}_`;
+    for (const [key, item] of this._modelImageStore.entries()) {
+      if (key.startsWith(prefix)) {
+        if (item && item.objectUrl && !this._isObjectUrlInUse(item.objectUrl)) {
+          URL.revokeObjectURL(item.objectUrl);
+        }
+        this._modelImageStore.delete(key);
+      }
+    }
+    if (this._modelMaxStore) {
+      for (const key of this._modelMaxStore.keys()) {
+        if (key.startsWith(prefix)) {
+          this._modelMaxStore.delete(key);
+        }
+      }
+    }
   }
 
   _isObjectUrlInUse(url) {
@@ -527,7 +553,15 @@ export class LayerManager {
 
   async _fetchModelImage(imgUrl, signal, cacheKey = null) {
     if (cacheKey && this._modelImageStore && this._modelImageStore.has(cacheKey)) {
-      return this._modelImageStore.get(cacheKey);
+      const cached = this._modelImageStore.get(cacheKey);
+      if (cached && cached.imgUrl === imgUrl) {
+        return cached;
+      }
+      // Si la URL ha cambiado (nueva pasada, fin de fallback, etc.), revocar y refrescar
+      if (cached && cached.objectUrl && !this._isObjectUrlInUse(cached.objectUrl)) {
+        URL.revokeObjectURL(cached.objectUrl);
+      }
+      this._modelImageStore.delete(cacheKey);
     }
 
     const response = await fetch(imgUrl, { signal });
@@ -1576,6 +1610,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.radarMetadata = metadata;
         this.radarTimeline = metadata.timeline || [];
+        if (forceMetaFetch) this._clearModelImageCache('radar');
       }
 
       const metadata = this.radarMetadata;
@@ -1619,7 +1654,7 @@ export class LayerManager {
       const cacheKey = `radar_radar_${currentStep}`;
       const signal = this._getModelAbortSignal('radar');
 
-      const isCached = this.isStepCached('radar', currentStep);
+      const isCached = this.isStepCached('radar', currentStep, 'radar', imgUrl);
       if (!isCached && !this.isRadarPlaying) {
         this._showMapLoading('Radar Meteorológico', '', timeText);
       }
@@ -1789,6 +1824,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.ecmwfMetadata = metadata;
         if (this._ecmwfPreloadSet) this._ecmwfPreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('ecmwf');
       }
 
       const metadata = this.ecmwfMetadata;
@@ -1829,7 +1865,7 @@ export class LayerManager {
       const cacheKey = `ecmwf_${type}_${step}`;
       const signal = this._getModelAbortSignal('ecmwf');
 
-      const isCached = this.isStepCached('ecmwf', step, type);
+      const isCached = this.isStepCached('ecmwf', step, type, imgUrl);
       if (!isCached && !this.isEcmwfPlaying) {
         this._showMapLoading('ECMWF IFS', `+${step}h`, timeLabel);
       }
@@ -1989,6 +2025,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.gfsMetadata = metadata;
         if (this._gfsPreloadSet) this._gfsPreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('gfs');
       }
 
       const metadata = this.gfsMetadata;
@@ -2029,7 +2066,7 @@ export class LayerManager {
       const cacheKey = `gfs_${type}_${step}`;
       const signal = this._getModelAbortSignal('gfs');
 
-      const isCached = this.isStepCached('gfs', step, type);
+      const isCached = this.isStepCached('gfs', step, type, imgUrl);
       if (!isCached && !this.isGfsPlaying) {
         this._showMapLoading('NOAA GFS', `+${step}h`, timeLabel);
       }
@@ -2180,6 +2217,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.aromeMetadata = metadata;
         if (this._aromePreloadSet) this._aromePreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('arome');
       }
 
       const metadata = this.aromeMetadata;
@@ -2220,7 +2258,7 @@ export class LayerManager {
       const cacheKey = `arome_${type}_${step}`;
       const signal = this._getModelAbortSignal('arome');
 
-      const isCached = this.isStepCached('arome', step, type);
+      const isCached = this.isStepCached('arome', step, type, imgUrl);
       if (!isCached && !this.isAromePlaying) {
         this._showMapLoading('AROME HD', `+${step}h`, timeLabel);
       }
@@ -2375,6 +2413,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.harmonieMetadata = metadata;
         if (this._harmoniePreloadSet) this._harmoniePreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('harmonie');
       }
 
       const metadata = this.harmonieMetadata;
@@ -2414,7 +2453,7 @@ export class LayerManager {
       const cacheKey = `harmonie_${type}_${step}`;
       const signal = this._getModelAbortSignal('harmonie');
 
-      const isCached = this.isStepCached('harmonie', step, type);
+      const isCached = this.isStepCached('harmonie', step, type, imgUrl);
       if (!isCached && !this.isHarmoniePlaying) {
         this._showMapLoading('HARMONIE', `+${step}h`, timeLabel);
       }
@@ -2571,6 +2610,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.iconMetadata = metadata;
         if (this._iconPreloadSet) this._iconPreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('icon');
       }
 
       const metadata = this.iconMetadata;
@@ -2610,7 +2650,7 @@ export class LayerManager {
       const cacheKey = `icon_${type}_${step}`;
       const signal = this._getModelAbortSignal('icon');
 
-      const isCached = this.isStepCached('icon', step, type);
+      const isCached = this.isStepCached('icon', step, type, imgUrl);
       if (!isCached && !this.isIconPlaying) {
         this._showMapLoading('ICON-EU', `+${step}h`, timeLabel);
       }
@@ -2767,6 +2807,7 @@ export class LayerManager {
         const metadata = await metaResp.json();
         this.gemMetadata = metadata;
         if (this._gemPreloadSet) this._gemPreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('gem');
       }
 
       const metadata = this.gemMetadata;
@@ -2806,7 +2847,7 @@ export class LayerManager {
       const cacheKey = `gem_${type}_${step}`;
       const signal = this._getModelAbortSignal('gem');
 
-      const isCached = this.isStepCached('gem', step, type);
+      const isCached = this.isStepCached('gem', step, type, imgUrl);
       if (!isCached && !this.isGemPlaying) {
         this._showMapLoading('GEM-GDPS', `+${step}h`, timeLabel);
       }
