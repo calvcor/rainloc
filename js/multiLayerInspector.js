@@ -1135,18 +1135,18 @@ export class MultiLayerInspector {
           });
 
           if (closestStation) {
-            const rawCaudal = closestStation.ultimo_caudal !== undefined ? closestStation.ultimo_caudal : (closestStation.caudal !== undefined ? closestStation.caudal : closestStation.lastValue);
+            const rawCaudal = closestStation.ultimo_caudal !== undefined ? closestStation.ultimo_caudal : (closestStation.caudal !== undefined ? closestStation.caudal : (closestStation.caudal_actual !== undefined ? closestStation.caudal_actual : closestStation.lastValue));
             const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
-            const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : closestStation.nivel;
+            const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : (closestStation.nivel !== undefined ? closestStation.nivel : closestStation.nivel_actual);
             const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
             const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.unidad_grafica === 'm';
-            const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
+            const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
             const umbrales = closestStation.umbrales || {};
-            const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
-            const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
-            const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
+            const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
+            const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
+            const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
 
             let badgeBg = "#10b981";
             let alertLevel = "Normal";

@@ -679,33 +679,14 @@ class SAIHService:
             or id_str.upper() in guadalquivir_service._aforos_by_id
             or id_str.upper() in guadalquivir_service._embalses_by_id
         ):
-            station_info = (
-                guadalquivir_service._aforos_by_id.get(id_str)
-                or guadalquivir_service._aforos_by_id.get(id_str.upper())
-                or guadalquivir_service._embalses_by_id.get(id_str)
-                or guadalquivir_service._embalses_by_id.get(id_str.upper())
+            is_emb = (
+                id_str in guadalquivir_service._embalses_by_id
+                or id_str.upper() in guadalquivir_service._embalses_by_id
+                or "emb" in id_str.lower()
+                or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
+                or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
-            now = datetime.now(MADRID_TZ)
-            series = []
-            if station_info:
-                val = station_info.get("volumen_actual") if "volumen_actual" in station_info else (station_info.get("caudal_actual") or station_info.get("nivel_actual"))
-                if val is not None:
-                    series = [{
-                        "fecha": now.strftime("%Y-%m-%dT%H:%M:%S"),
-                        "valor": float(val),
-                        "estado": 1
-                    }]
-            return {
-                "id_variable": str(id_variable),
-                "estacion": station_info,
-                "rango": {
-                    "desde": (now - timedelta(hours=int(hours))).strftime("%Y-%m-%d %H:%M:%S"),
-                    "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "horas": hours,
-                },
-                "puntos_totales": len(series),
-                "serie": series,
-            }
+            return await guadalquivir_service.get_history(id_str, hours=hours, is_embalse=is_emb)
 
         now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):

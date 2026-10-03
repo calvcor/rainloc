@@ -4331,18 +4331,18 @@ export class LayerManager {
         const props = feature.properties || {};
         props.lat = latlng.lat;
         props.lon = latlng.lng;
-        const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : props.lastValue);
+        const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : (props.caudal_actual !== undefined ? props.caudal_actual : props.lastValue));
         const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
-        const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : props.nivel;
+        const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : props.nivel_actual);
         const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
-        const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
+        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.unidad_grafica === 'm';
+        const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
         const umbrales = props.umbrales || {};
-        const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
-        const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
-        const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
+        const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
+        const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
+        const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
 
         // Determinar nivel de alerta y color
         let color = '#10b981'; // Normal (Verde)
@@ -4446,18 +4446,18 @@ export class LayerManager {
 
     // Umbrales
     const umbrales = props.umbrales || {};
-    const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
-    const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
-    const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
+    const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
+    const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
+    const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
 
     // Calcular estado
-    const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : props.lastValue);
+    const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : (props.caudal_actual !== undefined ? props.caudal_actual : props.lastValue));
     const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
-    const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : props.nivel;
+    const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : props.nivel_actual);
     const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
-    const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
+    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.unidad_grafica === 'm';
+    const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
     let alertColor = '#10b981';
     let alertText = 'Caudal Normal';
@@ -4550,7 +4550,7 @@ export class LayerManager {
         ev.stopPropagation();
         rangeButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.loadCaudalHistoryForModal(props.id_variable, h, umbrales);
+        this.loadCaudalHistoryForModal(props.id_variable || props.codigo, h, umbrales);
       };
     });
 
@@ -4578,7 +4578,7 @@ export class LayerManager {
     backdrop.style.display = 'flex';
     backdrop.setAttribute('aria-hidden', 'false');
 
-    await this.loadCaudalHistoryForModal(props.id_variable, initialHours, umbrales);
+    await this.loadCaudalHistoryForModal(props.id_variable || props.codigo, initialHours, umbrales);
   }
 
   /**

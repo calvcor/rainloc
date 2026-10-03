@@ -5,13 +5,16 @@ Jaén, Córdoba, Granada, Sevilla, Huelva, Málaga, Ciudad Real, Badajoz, etc.
 """
 
 import asyncio
+import base64
 import html
+import http.cookiejar
 import json
 import logging
 import re
 import ssl
 import urllib.request
-from datetime import datetime
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -120,8 +123,12 @@ class GuadalquivirService:
                 idx[str(p["id_estacion"])] = p
             if p.get("codigo"):
                 idx[str(p["codigo"]).upper()] = p
+                idx[str(p["codigo"])] = p
             if p.get("codigo_corto"):
                 idx[str(p["codigo_corto"]).upper()] = p
+                idx[str(p["codigo_corto"])] = p
+            if p.get("sensor_code"):
+                idx[str(p["sensor_code"])] = p
         self._pluvios_by_id = idx
 
     def _index_aforos(self):
@@ -129,10 +136,16 @@ class GuadalquivirService:
         for a in self._aforos:
             if a.get("id_estacion"):
                 idx[str(a["id_estacion"])] = a
+            if a.get("id_variable"):
+                idx[str(a["id_variable"])] = a
             if a.get("codigo"):
                 idx[str(a["codigo"]).upper()] = a
+                idx[str(a["codigo"])] = a
             if a.get("codigo_corto"):
                 idx[str(a["codigo_corto"]).upper()] = a
+                idx[str(a["codigo_corto"])] = a
+            if a.get("sensor_code"):
+                idx[str(a["sensor_code"])] = a
         self._aforos_by_id = idx
 
     def _index_embalses(self):
@@ -140,10 +153,16 @@ class GuadalquivirService:
         for e in self._embalses:
             if e.get("id_estacion"):
                 idx[str(e["id_estacion"])] = e
+            if e.get("id_volumen"):
+                idx[str(e["id_volumen"])] = e
             if e.get("codigo"):
                 idx[str(e["codigo"]).upper()] = e
+                idx[str(e["codigo"])] = e
             if e.get("codigo_corto"):
                 idx[str(e["codigo_corto"]).upper()] = e
+                idx[str(e["codigo_corto"])] = e
+            if e.get("sensor_code"):
+                idx[str(e["sensor_code"])] = e
         self._embalses_by_id = idx
 
     # ==========================================
@@ -413,6 +432,7 @@ class GuadalquivirService:
                     "id_estacion": f"guadal_aforo_{code}",
                     "codigo": f"GUADAL_{code}",
                     "codigo_corto": code,
+                    "id_variable": f"guadal_aforo_{code}",
                     "sensor_code": sensor_code,
                     "nombre": f"{code} {clean_name}",
                     "rio": rio_name,
@@ -422,11 +442,19 @@ class GuadalquivirService:
                     "lat": lat,
                     "lon": lon,
                     "red": "GUADALQUIVIR",
+                    "caudal": caudal_m3s,
+                    "ultimo_caudal": caudal_m3s,
                     "caudal_actual": caudal_m3s,
+                    "lastValue": caudal_m3s,
+                    "nivel": nivel_m,
+                    "ultimo_nivel": nivel_m,
                     "nivel_actual": nivel_m,
-                    "cota_actual": cota_m,
                     "cota": cota_m,
+                    "cota_actual": cota_m,
                     "umbrales": {
+                        "amarillo": aviso_val,
+                        "naranja": prealerta_val,
+                        "rojo": alerta_val,
                         "aviso": aviso_val,
                         "prealerta": prealerta_val,
                         "alerta": alerta_val,
@@ -434,6 +462,8 @@ class GuadalquivirService:
                     "aviso": aviso_val,
                     "prealerta": prealerta_val,
                     "alerta": alerta_val,
+                    "tipo_umbral": "nivel",
+                    "unidad_umbrales": "m",
                     "ultima_hora": now_iso,
                     "fecha_comunicacion": now_iso,
                     "fuente": "S.A.I.H. Guadalquivir (CHG / MITECO)",
@@ -569,9 +599,14 @@ class GuadalquivirService:
                     "fuente": "S.A.I.H. Guadalquivir (CHG / MITECO)",
                     "lat": lat,
                     "lon": lon,
+                    "volumen": volumen,
+                    "ultimo_volumen": volumen,
                     "volumen_actual": volumen,
+                    "capacidad": capacidad,
                     "capacidad_nmn": capacidad,
+                    "porcentaje": pct,
                     "porcentaje_llenado": pct,
+                    "caudal": caudal_out,
                     "caudal_salida": caudal_out,
                     "caudal_salida_rio": caudal_out,
                     "municipio": meta.get("municipio", ""),
@@ -579,7 +614,9 @@ class GuadalquivirService:
                     "subcuenca": "Cuenca Hidrográfica del Guadalquivir",
                     "ultima_hora": now_iso,
                     "fecha_comunicacion": now_iso,
-                    "unidad": "hm³"
+                    "unidad": "hm³",
+                    "unidad_volumen": "hm³",
+                    "unidad_caudal": "m³/s"
                 }
                 emb_list.append(st_dict)
 
@@ -626,6 +663,208 @@ class GuadalquivirService:
                 {"type": "Feature", "geometry": {"type": "Point", "coordinates": [e["lon"], e["lat"]]}, "properties": e}
                 for e in embalses
             ]
+        }
+
+    # ==========================================
+    # 4. SERIES TEMPORALES HISTÓRICAS (saihhist4.aspx)
+    # ==========================================
+
+    def _get_opener(self):
+        if not hasattr(self, "_opener") or self._opener is None:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            self._cookie_jar = http.cookiejar.CookieJar()
+            self._opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=ctx),
+                urllib.request.HTTPCookieProcessor(self._cookie_jar)
+            )
+        return self._opener
+
+    def _ensure_session(self, is_embalse: bool = False):
+        opener = self._get_opener()
+        referer = f"{GUADALQUIVIR_BASE_URL}/{'EmbalJA.aspx' if is_embalse else 'AforosTabla.aspx'}"
+        req = urllib.request.Request(referer, headers={"User-Agent": USER_AGENT})
+        try:
+            with opener.open(req, timeout=10) as resp:
+                _ = resp.read(2048)
+        except Exception as e:
+            logger.warning(f"Error inicializando sesión Guadalquivir: {e}")
+
+    def _fetch_series_from_web(self, sensor_code: str, is_embalse: bool = False) -> List[Dict[str, Any]]:
+        """
+        Descarga la serie temporal histórica de saihhist4.aspx para un sensor de Guadalquivir.
+        """
+        if not sensor_code:
+            return []
+
+        if not hasattr(self, "_cookie_jar") or len(self._cookie_jar) == 0:
+            self._ensure_session(is_embalse)
+
+        opener = self._get_opener()
+        b_code = base64.b64encode(sensor_code.encode("utf-8")).decode("ascii")
+        url = f"{GUADALQUIVIR_BASE_URL}/saihhist4.aspx?b={b_code}&k=0x8"
+        referer = f"{GUADALQUIVIR_BASE_URL}/{'EmbalJA.aspx' if is_embalse else 'AforosTabla.aspx'}"
+
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Referer": referer
+        }
+        req = urllib.request.Request(url, headers=headers)
+
+        try:
+            with opener.open(req, timeout=12) as resp:
+                content = resp.read().decode("utf-8", "ignore")
+
+            # Si la respuesta es vacía o muy corta, refrescar sesión e intentar una vez más
+            if len(content) < 60:
+                self._ensure_session(is_embalse)
+                with opener.open(req, timeout=12) as resp:
+                    content = resp.read().decode("utf-8", "ignore")
+
+            root = ET.fromstring(content)
+            x_el = root.find(".//x")
+            y_el = root.find(".//y")
+            if x_el is None or y_el is None or not x_el.text or not y_el.text:
+                return []
+
+            timestamps_raw = x_el.text.strip().split(";")
+            values_raw = y_el.text.strip().split(";")
+
+            points = []
+            for t_str, v_str in zip(timestamps_raw, values_raw):
+                if not t_str or not v_str:
+                    continue
+                try:
+                    ts = int(t_str)
+                    if ts > 10000000000:
+                        ts = ts / 1000.0
+                    dt = datetime.fromtimestamp(ts, MADRID_TZ)
+                    iso_date = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    continue
+
+                clean_v = v_str.replace(",", ".").strip()
+                try:
+                    val_float = round(float(clean_v), 3)
+                except ValueError:
+                    val_float = None
+
+                points.append({
+                    "fecha": iso_date,
+                    "valor": val_float,
+                    "estado": 1,
+                    "volumen": val_float if is_embalse else None,
+                    "caudal": val_float if not is_embalse else None
+                })
+
+            points.sort(key=lambda p: p["fecha"])
+            return points
+
+        except Exception as e:
+            logger.error(f"Error al descargar serie temporal Guadalquivir ({sensor_code}): {e}")
+            return []
+
+    async def get_history(
+        self,
+        id_or_code: str,
+        hours: int = 24,
+        is_embalse: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Consulta la serie temporal histórica para un aforo o embalse de Guadalquivir.
+        Devuelve el formato estándar compatible con RainLoc y SAIH CHJ/Hidrosur.
+        """
+        sensor_code = None
+        station_name = str(id_or_code)
+        unidad = "hm³" if is_embalse else "m"
+        station_obj = None
+
+        if is_embalse:
+            await self.get_embalses()
+            emb = (
+                self._embalses_by_id.get(str(id_or_code).upper())
+                or self._embalses_by_id.get(str(id_or_code))
+            )
+            if emb:
+                sensor_code = emb.get("sensor_code")
+                station_name = emb.get("nombre", station_name)
+                station_obj = emb
+        else:
+            await self.get_caudales()
+            aforo = (
+                self._aforos_by_id.get(str(id_or_code).upper())
+                or self._aforos_by_id.get(str(id_or_code))
+            )
+            if aforo:
+                sensor_code = aforo.get("sensor_code")
+                station_name = aforo.get("nombre", station_name)
+                station_obj = aforo
+
+        if not sensor_code:
+            clean_code = str(id_or_code).replace("GUADAL_", "").replace("guadal_", "").replace("emb_", "").replace("aforo_", "").upper()
+            if clean_code.startswith("E"):
+                sensor_code = f"{clean_code}_101"
+                is_embalse = True
+                unidad = "hm³"
+            elif clean_code.startswith("A"):
+                sensor_code = f"{clean_code}_107"
+                is_embalse = False
+                unidad = "m"
+            else:
+                sensor_code = str(id_or_code)
+
+        cache_key = f"{sensor_code}_{'emb' if is_embalse else 'aforo'}"
+        now = datetime.now(MADRID_TZ)
+
+        if not hasattr(self, "_history_series_cache"):
+            self._history_series_cache = {}
+
+        cached = self._history_series_cache.get(cache_key)
+        if cached and (now - cached["ts"]).total_seconds() < 300:
+            full_series = cached["data"]
+        else:
+            full_series = await asyncio.to_thread(self._fetch_series_from_web, sensor_code, is_embalse)
+            if full_series:
+                self._history_series_cache[cache_key] = {"ts": now, "data": full_series}
+
+        cutoff = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
+        filtered_series = [
+            p for p in full_series
+            if datetime.strptime(p["fecha"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=MADRID_TZ) >= cutoff
+        ] if full_series else []
+
+        if not filtered_series and full_series:
+            filtered_series = full_series
+
+        valid_vals = [p["valor"] for p in filtered_series if p["valor"] is not None]
+        min_val = min(valid_vals) if valid_vals else 0.0
+        max_val = max(valid_vals) if valid_vals else 0.0
+        last_val = valid_vals[-1] if valid_vals else 0.0
+        last_date = filtered_series[-1]["fecha"] if filtered_series else now.strftime("%Y-%m-%d %H:%M:%S")
+
+        return {
+            "id_variable": str(id_or_code),
+            "estacion": station_obj,
+            "nombre": station_name,
+            "sensor_code": sensor_code,
+            "red": "GUADALQUIVIR",
+            "fuente": "S.A.I.H. Guadalquivir (CHG / MITECO)",
+            "total_puntos": len(filtered_series),
+            "puntos_totales": len(filtered_series),
+            "horas_solicitadas": hours,
+            "rango": {
+                "desde": cutoff.strftime("%Y-%m-%d %H:%M:%S"),
+                "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "horas": hours,
+            },
+            "serie": filtered_series,
+            "datos": filtered_series,
+            "min_valor": min_val,
+            "max_valor": max_val,
+            "ultimo_valor": last_val,
+            "fecha_ultimo": last_date,
+            "unidad": unidad
         }
 
 
