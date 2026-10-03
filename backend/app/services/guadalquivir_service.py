@@ -428,6 +428,8 @@ class GuadalquivirService:
                     if rio_m:
                         rio_name = f"Río {rio_m.group(1)}"
 
+                effective_nivel = nivel_m if nivel_m is not None else cota_m
+
                 st_dict = {
                     "id_estacion": f"guadal_aforo_{code}",
                     "codigo": f"GUADAL_{code}",
@@ -446,9 +448,9 @@ class GuadalquivirService:
                     "ultimo_caudal": caudal_m3s,
                     "caudal_actual": caudal_m3s,
                     "lastValue": caudal_m3s,
-                    "nivel": nivel_m,
-                    "ultimo_nivel": nivel_m,
-                    "nivel_actual": nivel_m,
+                    "nivel": effective_nivel,
+                    "ultimo_nivel": effective_nivel,
+                    "nivel_actual": effective_nivel,
                     "cota": cota_m,
                     "cota_actual": cota_m,
                     "umbrales": {

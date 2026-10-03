@@ -1137,7 +1137,7 @@ export class MultiLayerInspector {
           if (closestStation) {
             const rawCaudal = closestStation.ultimo_caudal !== undefined ? closestStation.ultimo_caudal : (closestStation.caudal !== undefined ? closestStation.caudal : (closestStation.caudal_actual !== undefined ? closestStation.caudal_actual : closestStation.lastValue));
             const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
-            const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : (closestStation.nivel !== undefined ? closestStation.nivel : closestStation.nivel_actual);
+            const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : (closestStation.nivel !== undefined ? closestStation.nivel : (closestStation.nivel_actual !== undefined ? closestStation.nivel_actual : (closestStation.cota_actual !== undefined ? closestStation.cota_actual : closestStation.cota)));
             const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
             const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.unidad_grafica === 'm';

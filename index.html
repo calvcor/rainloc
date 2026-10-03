@@ -486,7 +486,7 @@
 
           <div class="caudal-modal-stats-bar">
             <div class="caudal-stat-card">
-              <span class="caudal-stat-label">Caudal Actual</span>
+              <span id="caudal-stat-current-label" class="caudal-stat-label">Caudal Actual</span>
               <span id="caudal-stat-current" class="caudal-stat-val">-- m³/s</span>
               <span id="caudal-stat-time" class="caudal-stat-sub">Última lectura: --</span>
             </div>
@@ -511,7 +511,7 @@
           </div>
 
           <div class="caudal-modal-chart-controls">
-            <span class="chart-controls-title">Evolución temporal del caudal:</span>
+            <span id="caudal-chart-controls-title" class="chart-controls-title">Evolución temporal del caudal:</span>
             <div class="time-range-buttons" id="caudal-range-buttons" role="group" aria-label="Rango temporal">
               <button type="button" class="btn-range" data-hours="12">12h</button>
               <button type="button" class="btn-range active" data-hours="24">24h</button>
@@ -527,7 +527,7 @@
           </div>
 
           <footer class="caudal-modal-footer">
-            <span class="caudal-source-tag">Fuente: SAIH Confederación Hidrográfica del Júcar (CHJ) &bull; Datos cada 5 min</span>
+            <span id="caudal-modal-source-tag" class="caudal-source-tag">Fuente: SAIH Confederación Hidrográfica del Júcar (CHJ) &bull; Datos cada 5 min</span>
             <a id="caudal-saih-link" href="https://saih.chj.es" target="_blank" rel="noopener noreferrer" class="caudal-external-link">
               Ver ficha SAIH
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
