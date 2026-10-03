@@ -5036,6 +5036,9 @@ export class LayerManager {
 
     // Cerrar modal
     const closeModal = () => {
+      if (document.activeElement && backdrop.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
       backdrop.style.display = 'none';
       backdrop.classList.remove('no-anim');
       const otherBackdrop = document.getElementById('embalse-modal-backdrop');
@@ -6656,6 +6659,9 @@ export class LayerManager {
     });
 
     const closeModal = () => {
+      if (document.activeElement && backdrop.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
       backdrop.style.display = 'none';
       backdrop.classList.remove('no-anim');
       const otherBackdrop = document.getElementById('caudal-modal-backdrop');
@@ -7179,6 +7185,9 @@ export class LayerManager {
     });
 
     const closeModal = () => {
+      if (document.activeElement && backdrop.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
       backdrop.style.display = 'none';
       backdrop.setAttribute('aria-hidden', 'true');
       backdrop.classList.remove('no-anim');

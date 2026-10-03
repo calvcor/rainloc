@@ -261,6 +261,9 @@ export class UIManager {
       this.btnMobileSettings.setAttribute('aria-expanded', 'false');
     }
     if (this.drawerBackdrop) {
+      if (document.activeElement && this.drawerBackdrop.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
       this.drawerBackdrop.classList.remove('active');
       this.drawerBackdrop.setAttribute('aria-hidden', 'true');
     }
