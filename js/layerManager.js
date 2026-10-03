@@ -7221,7 +7221,7 @@ export class LayerManager {
       container.innerHTML = `
         <div class="caudal-chart-modal-loading">
           <div class="caudal-spinner"></div>
-          <span>Calculando integración hidrológica al vuelo sobre la cuenca...</span>
+          <span>Calculando integración hidrológica sobre la cuenca...</span>
         </div>
       `;
     }
