@@ -185,10 +185,12 @@ export class LayerManager {
     }
     this.currentMaxPoints = {};
 
-    // Control de pantalla de carga, cancelación de peticiones obsoletas y URLs de blobs
+    // Control de pantalla de carga, caché de imágenes en memoria, cancelación de peticiones obsoletas y URLs de blobs
     this._mapLoadingTimer = null;
     this._modelAbortControllers = {};
     this._modelMaxAbortControllers = {};
+    this._modelImageStore = new Map(); // key -> { img, objectUrl, imgUrl }
+    this._preloadInFlight = new Set();
     this._currentRadarObjectUrl = null;
     this._currentEcmwfObjectUrl = null;
     this._currentGfsObjectUrl = null;
@@ -387,9 +389,27 @@ export class LayerManager {
   }
 
   _showMapLoading(title = 'Cargando modelo...', stepText = '', subtitle = 'Descargando predicción') {
-    if (this._mapLoadingTimer) clearTimeout(this._mapLoadingTimer);
-    // Micro-retraso de 75ms: si la imagen ya está en caché del navegador se carga en <75ms sin parpadeos UI
+    if (this._mapLoadingTimer) {
+      clearTimeout(this._mapLoadingTimer);
+      this._mapLoadingTimer = null;
+    }
+    if (this._mapOverlayHideTimer) {
+      clearTimeout(this._mapOverlayHideTimer);
+      this._mapOverlayHideTimer = null;
+    }
+    if (this._mapLoadingRaf) {
+      cancelAnimationFrame(this._mapLoadingRaf);
+      this._mapLoadingRaf = null;
+    }
+
+    const token = ++this._mapLoadingToken || (this._mapLoadingToken = 1);
+    this._isMapLoadingActive = true;
+
+    // Micro-retraso de 80ms: si la imagen ya está en caché del navegador se carga en <80ms sin parpadeos UI
     this._mapLoadingTimer = setTimeout(() => {
+      this._mapLoadingTimer = null;
+      if (!this._isMapLoadingActive || this._mapLoadingToken !== token) return;
+
       const overlay = document.getElementById('map-loading-overlay');
       const mapEl = document.getElementById('map');
       if (overlay) {
@@ -407,7 +427,12 @@ export class LayerManager {
         }
         if (subEl) subEl.textContent = subtitle;
         overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('visible'));
+        this._mapLoadingRaf = requestAnimationFrame(() => {
+          this._mapLoadingRaf = null;
+          if (this._isMapLoadingActive && this._mapLoadingToken === token && overlay) {
+            overlay.classList.add('visible');
+          }
+        });
       }
       if (mapEl) {
         mapEl.classList.add('map-loading-active');
@@ -415,23 +440,36 @@ export class LayerManager {
       if (this.uiManager && this.uiManager.setTimelineLoading) {
         this.uiManager.setTimelineLoading(true);
       }
-    }, 75);
+    }, 80);
   }
 
   _hideMapLoading() {
+    this._mapLoadingToken = (this._mapLoadingToken || 0) + 1;
+    this._isMapLoadingActive = false;
+
     if (this._mapLoadingTimer) {
       clearTimeout(this._mapLoadingTimer);
       this._mapLoadingTimer = null;
     }
+    if (this._mapLoadingRaf) {
+      cancelAnimationFrame(this._mapLoadingRaf);
+      this._mapLoadingRaf = null;
+    }
+    if (this._mapOverlayHideTimer) {
+      clearTimeout(this._mapOverlayHideTimer);
+      this._mapOverlayHideTimer = null;
+    }
+
     const overlay = document.getElementById('map-loading-overlay');
     const mapEl = document.getElementById('map');
     if (overlay) {
       overlay.classList.remove('visible');
-      setTimeout(() => {
-        if (overlay && !overlay.classList.contains('visible')) {
+      this._mapOverlayHideTimer = setTimeout(() => {
+        this._mapOverlayHideTimer = null;
+        if (overlay && !this._isMapLoadingActive) {
           overlay.style.display = 'none';
         }
-      }, 220);
+      }, 200);
     }
     if (mapEl) {
       mapEl.classList.remove('map-loading-active');
@@ -462,7 +500,31 @@ export class LayerManager {
     }
   }
 
-  async _fetchModelImage(imgUrl, signal) {
+  isStepCached(modelKey, step, type = 'total') {
+    if (!this._modelImageStore) return false;
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    const key = cleanModel === 'radar' ? `radar_radar_${step}` : `${cleanModel}_${type}_${step}`;
+    return this._modelImageStore.has(key);
+  }
+
+  _isObjectUrlInUse(url) {
+    if (!url) return false;
+    return (
+      url === this._currentRadarObjectUrl ||
+      url === this._currentEcmwfObjectUrl ||
+      url === this._currentGfsObjectUrl ||
+      url === this._currentAromeObjectUrl ||
+      url === this._currentHarmonieObjectUrl ||
+      url === this._currentIconObjectUrl ||
+      url === this._currentGemObjectUrl
+    );
+  }
+
+  async _fetchModelImage(imgUrl, signal, cacheKey = null) {
+    if (cacheKey && this._modelImageStore && this._modelImageStore.has(cacheKey)) {
+      return this._modelImageStore.get(cacheKey);
+    }
+
     const response = await fetch(imgUrl, { signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
@@ -474,7 +536,69 @@ export class LayerManager {
       img.onerror = (e) => reject(new Error('Error al decodificar imagen ráster'));
       img.src = objectUrl;
     });
-    return { img, objectUrl };
+
+    const item = { img, objectUrl, imgUrl };
+    if (cacheKey) {
+      if (!this._modelImageStore) this._modelImageStore = new Map();
+      this._modelImageStore.set(cacheKey, item);
+
+      // Limitar memoria a un máximo de 160 imágenes en RAM (~20 MB)
+      if (this._modelImageStore.size > 160) {
+        const oldestKey = this._modelImageStore.keys().next().value;
+        const oldestItem = this._modelImageStore.get(oldestKey);
+        if (oldestItem && !this._isObjectUrlInUse(oldestItem.objectUrl)) {
+          URL.revokeObjectURL(oldestItem.objectUrl);
+        }
+        this._modelImageStore.delete(oldestKey);
+      }
+    }
+    return item;
+  }
+
+  pauseModelPlayback(modelKey) {
+    if (modelKey === 'radar') this.pauseRadarPlayback();
+    else if (modelKey === 'ecmwf' || modelKey === 'ecmwf_ifs') this.pauseEcmwfPlayback();
+    else if (modelKey === 'gfs' || modelKey === 'gfs_0p25') this.pauseGfsPlayback();
+    else if (modelKey === 'arome' || modelKey === 'arome_precip') this.pauseAromePlayback();
+    else if (modelKey === 'harmonie' || modelKey === 'harmonie_aemet') this.pauseHarmoniePlayback();
+    else if (modelKey === 'icon' || modelKey === 'icon_eu') this.pauseIconPlayback();
+    else if (modelKey === 'gem' || modelKey === 'gem_gdps') this.pauseGemPlayback();
+  }
+
+  _preloadAdjacentSteps(modelKey, currentStep, type, steps, getUrlFn) {
+    if (!steps || steps.length === 0) return;
+    const curIdx = steps.indexOf(currentStep);
+    if (curIdx === -1) return;
+
+    // 1. Prioridad concéntrica desde el paso actual: +1, -1, +2, -2... hasta el final de la serie
+    const targetIndices = [];
+    const maxRadius = Math.max(curIdx, steps.length - 1 - curIdx);
+    for (let r = 1; r <= maxRadius; r++) {
+      if (curIdx + r < steps.length) targetIndices.push(curIdx + r);
+      if (curIdx - r >= 0) targetIndices.push(curIdx - r);
+    }
+
+    if (!this._preloadInFlight) this._preloadInFlight = new Set();
+
+    targetIndices.forEach((idx, priorityOrder) => {
+      const step = steps[idx];
+      const cacheKey = modelKey === 'radar' ? `radar_radar_${step}` : `${modelKey}_${type}_${step}`;
+      if (!this._modelImageStore || !this._modelImageStore.has(cacheKey)) {
+        if (!this._preloadInFlight.has(cacheKey)) {
+          this._preloadInFlight.add(cacheKey);
+          const imgUrl = getUrlFn(step, type);
+          // Prioridad alta inmediata (<10 pasos), y progresiva en segundo plano para el resto
+          const delay = priorityOrder < 10 ? 0 : Math.min((priorityOrder - 10) * 40, 800);
+          setTimeout(() => {
+            this._fetchModelImage(imgUrl, undefined, cacheKey)
+              .catch(() => {})
+              .finally(() => {
+                if (this._preloadInFlight) this._preloadInFlight.delete(cacheKey);
+              });
+          }, delay);
+        }
+      }
+    });
   }
 
   _showLayerOnMap(layerId) {
@@ -1351,63 +1475,51 @@ export class LayerManager {
    */
   _updateSharedProbeCanvas(offscreenImg, bounds, stepOrTimestep, validText, extraProps = {}) {
     try {
-      if (!this._sharedProbeCanvas) {
-        this._sharedProbeCanvas = document.createElement('canvas');
-      }
-      if (this._sharedProbeCanvas.width !== offscreenImg.naturalWidth) {
-        this._sharedProbeCanvas.width = offscreenImg.naturalWidth;
-      }
-      if (this._sharedProbeCanvas.height !== offscreenImg.naturalHeight) {
-        this._sharedProbeCanvas.height = offscreenImg.naturalHeight;
-      }
-      if (!this._sharedProbeCtx) {
-        this._sharedProbeCtx = this._sharedProbeCanvas.getContext('2d', { willReadFrequently: true });
-      }
-      this._sharedProbeCtx.clearRect(0, 0, this._sharedProbeCanvas.width, this._sharedProbeCanvas.height);
-      this._sharedProbeCtx.drawImage(offscreenImg, 0, 0);
-      return {
-        ctx: this._sharedProbeCtx,
-        width: offscreenImg.naturalWidth,
-        height: offscreenImg.naturalHeight,
+      const probe = {
+        _img: offscreenImg,
+        width: offscreenImg.naturalWidth || 1000,
+        height: offscreenImg.naturalHeight || 1000,
         bounds: bounds,
         timestep: stepOrTimestep,
         step: stepOrTimestep,
         validText: validText,
         ...extraProps
       };
+      const lm = this;
+      Object.defineProperty(probe, 'ctx', {
+        get() {
+          if (!this._ctxCached) {
+            if (!lm._sharedProbeCanvas) {
+              lm._sharedProbeCanvas = document.createElement('canvas');
+            }
+            const canvas = lm._sharedProbeCanvas;
+            if (canvas.width !== this.width) canvas.width = this.width;
+            if (canvas.height !== this.height) canvas.height = this.height;
+            if (!lm._sharedProbeCtx) {
+              lm._sharedProbeCtx = canvas.getContext('2d', { willReadFrequently: true });
+            }
+            lm._sharedProbeCtx.clearRect(0, 0, canvas.width, canvas.height);
+            lm._sharedProbeCtx.drawImage(this._img, 0, 0);
+            this._ctxCached = lm._sharedProbeCtx;
+          }
+          return this._ctxCached;
+        },
+        configurable: true,
+        enumerable: true
+      });
+      return probe;
     } catch (e) {
       return null;
     }
   }
 
   /**
-   * Precarga fotogramas contiguos en la caché de red del navegador (sin crear canvas)
+   * Precarga fotogramas contiguos en la memoria y caché para scroll instantáneo y fluido
    */
   _preloadRadarSteps(currentStep) {
     if (!this.radarTimeline || this.radarTimeline.length === 0) return;
-    const curIdx = this.radarTimeline.findIndex(t => t.timestep === currentStep);
-    if (curIdx === -1) return;
-
-    if (!this._radarPreloadSet) this._radarPreloadSet = new Set();
-
-    // Precargar 3 siguientes y 1 anterior en la caché HTTP
-    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
-
-    targetIndices.forEach(idx => {
-      if (idx >= 0 && idx < this.radarTimeline.length) {
-        const item = this.radarTimeline[idx];
-        const key = item.timestep;
-        if (!this._radarPreloadSet.has(key)) {
-          this._radarPreloadSet.add(key);
-          fetch(this._getRadarImageUrl(key), { priority: 'low' }).catch(() => {});
-
-          if (this._radarPreloadSet.size > 40) {
-            const first = this._radarPreloadSet.values().next().value;
-            this._radarPreloadSet.delete(first);
-          }
-        }
-      }
-    });
+    const steps = this.radarTimeline.map(t => t.timestep);
+    this._preloadAdjacentSteps('radar', currentStep, 'radar', steps, (step) => this._getRadarImageUrl(step));
   }
 
   /**
@@ -1465,13 +1577,16 @@ export class LayerManager {
       this.currentRadarMode = this.currentRadarMode || 'mixed';
 
       const imgUrl = this._getRadarImageUrl(currentStep);
+      const cacheKey = `radar_radar_${currentStep}`;
       const signal = this._getModelAbortSignal('radar');
 
-      this._showMapLoading('Radar Meteorológico', '', timeText);
+      const isCached = this.isStepCached('radar', currentStep);
+      if (!isCached && !this.isRadarPlaying) {
+        this._showMapLoading('Radar Meteorológico', '', timeText);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._radarStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -1481,23 +1596,21 @@ export class LayerManager {
         this.radarCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'radarPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'radar-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentRadarOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentRadarOverlay && layerGroup.hasLayer(this.currentRadarOverlay)) {
+        this.currentRadarOverlay.setUrl(objectUrl);
+        this.currentRadarOverlay.setBounds(bounds);
+        this.currentRadarOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'radarPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'radar-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentRadarOverlay = newOverlay;
       }
-      if (this._currentRadarObjectUrl && this._currentRadarObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentRadarObjectUrl);
-      }
-      this.currentRadarOverlay = newOverlay;
       this._currentRadarObjectUrl = objectUrl;
 
       this._preloadRadarSteps(currentStep);
@@ -1617,34 +1730,12 @@ export class LayerManager {
    * Precarga pasos adyacentes en la memoria del navegador para transiciones instantáneas y fluidas
    */
   /**
-   * Precarga pasos adyacentes de ECMWF en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de ECMWF en la memoria y caché para transiciones ultra fluidas
    */
   _preloadEcmwfSteps(currentStep, type) {
     if (!this.ecmwfMetadata || !this.ecmwfMetadata.available_steps) return;
     const steps = this.ecmwfMetadata.available_steps;
-    const curIdx = steps.indexOf(currentStep);
-    if (curIdx === -1) return;
-
-    if (!this._ecmwfPreloadSet) this._ecmwfPreloadSet = new Set();
-
-    // Precargar los 3 siguientes y el anterior en la caché HTTP con baja prioridad
-    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
-
-    targetIndices.forEach(idx => {
-      if (idx >= 0 && idx < steps.length) {
-        const step = steps[idx];
-        const key = `${type}_${step}`;
-        if (!this._ecmwfPreloadSet.has(key)) {
-          this._ecmwfPreloadSet.add(key);
-          fetch(this._getEcmwfImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-          if (this._ecmwfPreloadSet.size > 30) {
-            const first = this._ecmwfPreloadSet.values().next().value;
-            this._ecmwfPreloadSet.delete(first);
-          }
-        }
-      }
-    });
+    this._preloadAdjacentSteps('ecmwf', currentStep, type, steps, (step, t) => this._getEcmwfImageUrl(step, t));
   }
 
   /**
@@ -1696,13 +1787,16 @@ export class LayerManager {
       this.currentEcmwfBounds = bounds;
 
       const imgUrl = this._getEcmwfImageUrl(step, type);
+      const cacheKey = `ecmwf_${type}_${step}`;
       const signal = this._getModelAbortSignal('ecmwf');
 
-      this._showMapLoading('ECMWF IFS', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('ecmwf', step, type);
+      if (!isCached && !this.isEcmwfPlaying) {
+        this._showMapLoading('ECMWF IFS', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._ecmwfStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -1711,23 +1805,21 @@ export class LayerManager {
         this.ecmwfCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'ecmwf-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentEcmwfOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentEcmwfOverlay && layerGroup.hasLayer(this.currentEcmwfOverlay)) {
+        this.currentEcmwfOverlay.setUrl(objectUrl);
+        this.currentEcmwfOverlay.setBounds(bounds);
+        this.currentEcmwfOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'ecmwf-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentEcmwfOverlay = newOverlay;
       }
-      if (this._currentEcmwfObjectUrl && this._currentEcmwfObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentEcmwfObjectUrl);
-      }
-      this.currentEcmwfOverlay = newOverlay;
       this._currentEcmwfObjectUrl = objectUrl;
 
       this._preloadEcmwfSteps(step, type);
@@ -1838,34 +1930,12 @@ export class LayerManager {
    * Precarga pasos adyacentes de GFS en la memoria del navegador para transiciones instantáneas y fluidas
    */
   /**
-   * Precarga pasos adyacentes de GFS en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de GFS en la memoria y caché para transiciones ultra fluidas
    */
   _preloadGfsSteps(currentStep, type) {
     if (!this.gfsMetadata || !this.gfsMetadata.available_steps) return;
     const steps = this.gfsMetadata.available_steps;
-    const curIdx = steps.indexOf(currentStep);
-    if (curIdx === -1) return;
-
-    if (!this._gfsPreloadSet) this._gfsPreloadSet = new Set();
-
-    // Precargar los 3 siguientes y el anterior en la caché HTTP con baja prioridad
-    const targetIndices = [curIdx + 1, curIdx + 2, curIdx + 3, curIdx - 1];
-
-    targetIndices.forEach(idx => {
-      if (idx >= 0 && idx < steps.length) {
-        const step = steps[idx];
-        const key = `${type}_${step}`;
-        if (!this._gfsPreloadSet.has(key)) {
-          this._gfsPreloadSet.add(key);
-          fetch(this._getGfsImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-          if (this._gfsPreloadSet.size > 30) {
-            const first = this._gfsPreloadSet.values().next().value;
-            this._gfsPreloadSet.delete(first);
-          }
-        }
-      }
-    });
+    this._preloadAdjacentSteps('gfs', currentStep, type, steps, (step, t) => this._getGfsImageUrl(step, t));
   }
 
   /**
@@ -1917,13 +1987,16 @@ export class LayerManager {
       this.currentGfsBounds = bounds;
 
       const imgUrl = this._getGfsImageUrl(step, type);
+      const cacheKey = `gfs_${type}_${step}`;
       const signal = this._getModelAbortSignal('gfs');
 
-      this._showMapLoading('NOAA GFS', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('gfs', step, type);
+      if (!isCached && !this.isGfsPlaying) {
+        this._showMapLoading('NOAA GFS', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._gfsStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -1932,23 +2005,21 @@ export class LayerManager {
         this.gfsCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'ecmwf-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentGfsOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentGfsOverlay && layerGroup.hasLayer(this.currentGfsOverlay)) {
+        this.currentGfsOverlay.setUrl(objectUrl);
+        this.currentGfsOverlay.setBounds(bounds);
+        this.currentGfsOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'gfs-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentGfsOverlay = newOverlay;
       }
-      if (this._currentGfsObjectUrl && this._currentGfsObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentGfsObjectUrl);
-      }
-      this.currentGfsOverlay = newOverlay;
       this._currentGfsObjectUrl = objectUrl;
 
       this._preloadGfsSteps(step, type);
@@ -2050,35 +2121,12 @@ export class LayerManager {
    * Precarga pasos adyacentes de AROME en la memoria del navegador para transiciones instantáneas y fluidas
    */
   /**
-   * Precarga pasos adyacentes de AROME en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de AROME en la memoria y caché para transiciones ultra fluidas
    */
   _preloadAromeSteps(currentStep, type) {
     if (!this.aromeMetadata || !this.aromeMetadata.available_steps) return;
     const steps = this.aromeMetadata.available_steps;
-    const idx = steps.indexOf(currentStep);
-    if (idx === -1) return;
-
-    if (!this._aromePreloadSet) this._aromePreloadSet = new Set();
-
-    // Precargar los siguientes 3 pasos y el anterior con baja prioridad
-    const stepsToPreload = [];
-    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
-    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
-    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
-    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
-
-    stepsToPreload.forEach(step => {
-      const key = `${type}_${step}`;
-      if (!this._aromePreloadSet.has(key)) {
-        this._aromePreloadSet.add(key);
-        fetch(this._getAromeImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-        if (this._aromePreloadSet.size > 30) {
-          const first = this._aromePreloadSet.values().next().value;
-          this._aromePreloadSet.delete(first);
-        }
-      }
-    });
+    this._preloadAdjacentSteps('arome', currentStep, type, steps, (step, t) => this._getAromeImageUrl(step, t));
   }
 
   /**
@@ -2130,13 +2178,16 @@ export class LayerManager {
       this.currentAromeBounds = bounds;
 
       const imgUrl = this._getAromeImageUrl(step, type);
+      const cacheKey = `arome_${type}_${step}`;
       const signal = this._getModelAbortSignal('arome');
 
-      this._showMapLoading('AROME HD', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('arome', step, type);
+      if (!isCached && !this.isAromePlaying) {
+        this._showMapLoading('AROME HD', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._aromeStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -2145,23 +2196,21 @@ export class LayerManager {
         this.aromeCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'arome-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentAromeOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentAromeOverlay && layerGroup.hasLayer(this.currentAromeOverlay)) {
+        this.currentAromeOverlay.setUrl(objectUrl);
+        this.currentAromeOverlay.setBounds(bounds);
+        this.currentAromeOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'arome-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentAromeOverlay = newOverlay;
       }
-      if (this._currentAromeObjectUrl && this._currentAromeObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentAromeObjectUrl);
-      }
-      this.currentAromeOverlay = newOverlay;
       this._currentAromeObjectUrl = objectUrl;
 
       this._preloadAromeSteps(step, type);
@@ -2267,34 +2316,12 @@ export class LayerManager {
   }
 
   /**
-   * Precarga pasos adyacentes de Harmonie en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de Harmonie en la memoria y caché para transiciones ultra fluidas
    */
   _preloadHarmonieSteps(currentStep, type) {
     if (!this.harmonieMetadata || !this.harmonieMetadata.available_steps) return;
     const steps = this.harmonieMetadata.available_steps;
-    const idx = steps.indexOf(currentStep);
-    if (idx === -1) return;
-
-    if (!this._harmoniePreloadSet) this._harmoniePreloadSet = new Set();
-
-    const stepsToPreload = [];
-    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
-    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
-    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
-    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
-
-    stepsToPreload.forEach(step => {
-      const key = `${type}_${step}`;
-      if (!this._harmoniePreloadSet.has(key)) {
-        this._harmoniePreloadSet.add(key);
-        fetch(this._getHarmonieImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-        if (this._harmoniePreloadSet.size > 30) {
-          const first = this._harmoniePreloadSet.values().next().value;
-          this._harmoniePreloadSet.delete(first);
-        }
-      }
-    });
+    this._preloadAdjacentSteps('harmonie', currentStep, type, steps, (step, t) => this._getHarmonieImageUrl(step, t));
   }
 
   /**
@@ -2345,13 +2372,16 @@ export class LayerManager {
       this.currentHarmonieBounds = bounds;
 
       const imgUrl = this._getHarmonieImageUrl(step, type);
+      const cacheKey = `harmonie_${type}_${step}`;
       const signal = this._getModelAbortSignal('harmonie');
 
-      this._showMapLoading('HARMONIE', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('harmonie', step, type);
+      if (!isCached && !this.isHarmoniePlaying) {
+        this._showMapLoading('HARMONIE', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._harmonieStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -2360,23 +2390,21 @@ export class LayerManager {
         this.harmonieCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'harmonie-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentHarmonieOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentHarmonieOverlay && layerGroup.hasLayer(this.currentHarmonieOverlay)) {
+        this.currentHarmonieOverlay.setUrl(objectUrl);
+        this.currentHarmonieOverlay.setBounds(bounds);
+        this.currentHarmonieOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'harmonie-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentHarmonieOverlay = newOverlay;
       }
-      if (this._currentHarmonieObjectUrl && this._currentHarmonieObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentHarmonieObjectUrl);
-      }
-      this.currentHarmonieOverlay = newOverlay;
       this._currentHarmonieObjectUrl = objectUrl;
 
       this._preloadHarmonieSteps(step, type);
@@ -2484,34 +2512,12 @@ export class LayerManager {
   }
 
   /**
-   * Precarga pasos adyacentes de ICON-EU en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de ICON-EU en la memoria y caché para transiciones ultra fluidas
    */
   _preloadIconSteps(currentStep, type) {
     if (!this.iconMetadata || !this.iconMetadata.available_steps) return;
     const steps = this.iconMetadata.available_steps;
-    const idx = steps.indexOf(currentStep);
-    if (idx === -1) return;
-
-    if (!this._iconPreloadSet) this._iconPreloadSet = new Set();
-
-    const stepsToPreload = [];
-    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
-    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
-    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
-    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
-
-    stepsToPreload.forEach(step => {
-      const key = `${type}_${step}`;
-      if (!this._iconPreloadSet.has(key)) {
-        this._iconPreloadSet.add(key);
-        fetch(this._getIconImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-        if (this._iconPreloadSet.size > 30) {
-          const first = this._iconPreloadSet.values().next().value;
-          this._iconPreloadSet.delete(first);
-        }
-      }
-    });
+    this._preloadAdjacentSteps('icon', currentStep, type, steps, (step, t) => this._getIconImageUrl(step, t));
   }
 
   /**
@@ -2562,13 +2568,16 @@ export class LayerManager {
       this.currentIconBounds = bounds;
 
       const imgUrl = this._getIconImageUrl(step, type);
+      const cacheKey = `icon_${type}_${step}`;
       const signal = this._getModelAbortSignal('icon');
 
-      this._showMapLoading('ICON-EU', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('icon', step, type);
+      if (!isCached && !this.isIconPlaying) {
+        this._showMapLoading('ICON-EU', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._iconStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -2577,23 +2586,21 @@ export class LayerManager {
         this.iconCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'icon-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentIconOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentIconOverlay && layerGroup.hasLayer(this.currentIconOverlay)) {
+        this.currentIconOverlay.setUrl(objectUrl);
+        this.currentIconOverlay.setBounds(bounds);
+        this.currentIconOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'icon-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentIconOverlay = newOverlay;
       }
-      if (this._currentIconObjectUrl && this._currentIconObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentIconObjectUrl);
-      }
-      this.currentIconOverlay = newOverlay;
       this._currentIconObjectUrl = objectUrl;
 
       this._preloadIconSteps(step, type);
@@ -2701,34 +2708,12 @@ export class LayerManager {
   }
 
   /**
-   * Precarga pasos adyacentes de GEM-GDPS en la memoria del navegador para transiciones fluidas
+   * Precarga pasos adyacentes de GEM-GDPS en la memoria y caché para transiciones ultra fluidas
    */
   _preloadGemSteps(currentStep, type) {
     if (!this.gemMetadata || !this.gemMetadata.available_steps) return;
     const steps = this.gemMetadata.available_steps;
-    const idx = steps.indexOf(currentStep);
-    if (idx === -1) return;
-
-    if (!this._gemPreloadSet) this._gemPreloadSet = new Set();
-
-    const stepsToPreload = [];
-    if (idx > 0) stepsToPreload.push(steps[idx - 1]);
-    if (idx + 1 < steps.length) stepsToPreload.push(steps[idx + 1]);
-    if (idx + 2 < steps.length) stepsToPreload.push(steps[idx + 2]);
-    if (idx + 3 < steps.length) stepsToPreload.push(steps[idx + 3]);
-
-    stepsToPreload.forEach(step => {
-      const key = `${type}_${step}`;
-      if (!this._gemPreloadSet.has(key)) {
-        this._gemPreloadSet.add(key);
-        fetch(this._getGemImageUrl(step, type), { priority: 'low' }).catch(() => {});
-
-        if (this._gemPreloadSet.size > 30) {
-          const first = this._gemPreloadSet.values().next().value;
-          this._gemPreloadSet.delete(first);
-        }
-      }
-    });
+    this._preloadAdjacentSteps('gem', currentStep, type, steps, (step, t) => this._getGemImageUrl(step, t));
   }
 
   /**
@@ -2779,13 +2764,16 @@ export class LayerManager {
       this.currentGemBounds = bounds;
 
       const imgUrl = this._getGemImageUrl(step, type);
+      const cacheKey = `gem_${type}_${step}`;
       const signal = this._getModelAbortSignal('gem');
 
-      this._showMapLoading('GEM-GDPS', `+${step}h`, timeLabel);
+      const isCached = this.isStepCached('gem', step, type);
+      if (!isCached && !this.isGemPlaying) {
+        this._showMapLoading('GEM-GDPS', `+${step}h`, timeLabel);
+      }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal);
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
       if (requestId !== this._gemStepRequestId) {
-        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -2794,23 +2782,21 @@ export class LayerManager {
         this.gemCanvasData = probeData;
       }
 
-      const newOverlay = L.imageOverlay(objectUrl, bounds, {
-        pane: 'modelsPane',
-        opacity: opacity,
-        interactive: false,
-        crossOrigin: 'anonymous',
-        className: 'gem-raster-overlay'
-      });
-
-      layerGroup.addLayer(newOverlay);
-      const oldOverlay = this.currentGemOverlay;
-      if (oldOverlay && oldOverlay !== newOverlay) {
-        layerGroup.removeLayer(oldOverlay);
+      if (this.currentGemOverlay && layerGroup.hasLayer(this.currentGemOverlay)) {
+        this.currentGemOverlay.setUrl(objectUrl);
+        this.currentGemOverlay.setBounds(bounds);
+        this.currentGemOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'gem-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentGemOverlay = newOverlay;
       }
-      if (this._currentGemObjectUrl && this._currentGemObjectUrl !== objectUrl) {
-        URL.revokeObjectURL(this._currentGemObjectUrl);
-      }
-      this.currentGemOverlay = newOverlay;
       this._currentGemObjectUrl = objectUrl;
 
       this._preloadGemSteps(step, type);

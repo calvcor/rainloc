@@ -1697,27 +1697,99 @@ export class UIManager {
         }
       };
 
-      const handleSliderChange = (rawVal) => {
+      const isSliderValCached = (rawVal) => {
+        if (!this.layerManager) return false;
+        const activeType = this._getActiveTimelineType();
+        if (!activeType) return false;
+        if (activeType === 'radar') {
+          const timeline = this.layerManager.radarTimeline || [];
+          const item = timeline[rawVal];
+          return item ? this.layerManager.isStepCached('radar', item.timestep) : false;
+        }
+        let meta = null;
+        let curType = 'total';
+        if (activeType === 'harmonie_aemet') {
+          meta = this.layerManager.harmonieMetadata;
+          curType = this.layerManager.currentHarmonieType || 'total';
+        } else if (activeType === 'arome_precip') {
+          meta = this.layerManager.aromeMetadata;
+          curType = this.layerManager.currentAromeType || 'total';
+        } else if (activeType === 'icon_eu') {
+          meta = this.layerManager.iconMetadata;
+          curType = this.layerManager.currentIconType || 'total';
+        } else if (activeType === 'gem_gdps') {
+          meta = this.layerManager.gemMetadata;
+          curType = this.layerManager.currentGemType || 'total';
+        } else if (activeType === 'ecmwf_ifs') {
+          meta = this.layerManager.ecmwfMetadata;
+          curType = this.layerManager.currentEcmwfType || 'total';
+        } else if (activeType === 'gfs_0p25') {
+          meta = this.layerManager.gfsMetadata;
+          curType = this.layerManager.currentGfsType || 'total';
+        }
+        if (!meta || !meta.available_steps || meta.available_steps.length === 0) return false;
+        const steps = meta.available_steps;
+        let closestStep = steps[0];
+        let minDiff = Infinity;
+        for (const s of steps) {
+          const diff = Math.abs(s - rawVal);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestStep = s;
+          }
+        }
+        return this.layerManager.isStepCached(activeType, closestStep, curType);
+      };
+
+      let _pendingTimelineVal = null;
+      let _timelineRaf = null;
+
+      const applyTimelineStep = (val) => {
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
         if (activeType === 'radar') {
           this.layerManager.pauseRadarPlayback();
           const timeline = this.layerManager.radarTimeline || [];
-          const item = timeline[rawVal];
+          const item = timeline[val];
           if (item) this.layerManager.setRadarTimestep(item.timestep);
         } else if (activeType) {
-          this._handleModelSliderInput(activeType, rawVal);
+          this._handleModelSliderInput(activeType, val);
+        }
+      };
+
+      const queueTimelineUpdate = (val) => {
+        _pendingTimelineVal = val;
+        // Vista previa ligera inmediata del texto / badge en el HUD
+        previewTimelineSlider(val);
+
+        if (isSliderValCached(val)) {
+          if (_sliderDebounceTimer) {
+            clearTimeout(_sliderDebounceTimer);
+            _sliderDebounceTimer = null;
+          }
+          // Coalescer usando requestAnimationFrame: exactamente 1 render por frame de pantalla (60/120 FPS)
+          if (!_timelineRaf) {
+            _timelineRaf = requestAnimationFrame(() => {
+              _timelineRaf = null;
+              if (_pendingTimelineVal !== null) {
+                const target = _pendingTimelineVal;
+                _pendingTimelineVal = null;
+                applyTimelineStep(target);
+              }
+            });
+          }
+        } else {
+          // Si no está en caché, debounce rápido de 40ms
+          if (_sliderDebounceTimer) clearTimeout(_sliderDebounceTimer);
+          _sliderDebounceTimer = setTimeout(() => {
+            _sliderDebounceTimer = null;
+            applyTimelineStep(val);
+          }, 40);
         }
       };
 
       slider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        previewTimelineSlider(val);
-        if (_sliderDebounceTimer) clearTimeout(_sliderDebounceTimer);
-        _sliderDebounceTimer = setTimeout(() => {
-          _sliderDebounceTimer = null;
-          handleSliderChange(val);
-        }, 75);
+        queueTimelineUpdate(parseInt(e.target.value, 10));
       });
 
       slider.addEventListener('change', (e) => {
@@ -1725,26 +1797,60 @@ export class UIManager {
           clearTimeout(_sliderDebounceTimer);
           _sliderDebounceTimer = null;
         }
-        handleSliderChange(parseInt(e.target.value, 10));
+        if (_timelineRaf) {
+          cancelAnimationFrame(_timelineRaf);
+          _timelineRaf = null;
+        }
+        applyTimelineStep(parseInt(e.target.value, 10));
       });
 
-      slider.addEventListener('wheel', (e) => {
+      let _wheelAccumulator = 0;
+      let _wheelResetTimer = null;
+      const handleWheelScroll = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         if (!this.layerManager) return;
         const activeType = this._getActiveTimelineType();
-        if (activeType === 'radar') {
-          const timeline = this.layerManager.radarTimeline || [];
-          if (timeline.length === 0) return;
-          const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
-          const delta = e.deltaY > 0 ? -1 : 1;
-          const newIdx = Math.max(0, Math.min(curIdx + delta, timeline.length - 1));
-          this.layerManager.pauseRadarPlayback();
-          this.layerManager.setRadarTimestep(timeline[newIdx].timestep);
-        } else if (activeType) {
-          const delta = e.deltaY > 0 ? -1 : 1;
-          this._stepModel(activeType, delta);
+        if (!activeType) return;
+
+        const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        _wheelAccumulator += delta;
+
+        if (_wheelResetTimer) clearTimeout(_wheelResetTimer);
+        _wheelResetTimer = setTimeout(() => { _wheelAccumulator = 0; }, 180);
+
+        const threshold = 14;
+        if (Math.abs(_wheelAccumulator) >= threshold) {
+          const stepCount = Math.trunc(_wheelAccumulator / threshold);
+          _wheelAccumulator = _wheelAccumulator % threshold;
+
+          // delta < 0 (scroll arriba/adelante) -> avanzar hacia adelante (+1)
+          // delta > 0 (scroll abajo/atrás) -> retroceder en el tiempo (-1)
+          const direction = -stepCount;
+
+          if (activeType === 'radar') {
+            const timeline = this.layerManager.radarTimeline || [];
+            if (timeline.length === 0) return;
+            const curIdx = timeline.findIndex(t => t.timestep === this.layerManager.currentRadarTimestep);
+            const safeCurIdx = curIdx >= 0 ? curIdx : timeline.length - 1;
+            const newIdx = Math.max(0, Math.min(safeCurIdx + direction, timeline.length - 1));
+            if (newIdx !== safeCurIdx) {
+              if (slider) slider.value = newIdx;
+              queueTimelineUpdate(newIdx);
+            }
+          } else {
+            this.layerManager.pauseModelPlayback(activeType);
+            this._stepModel(activeType, direction);
+          }
         }
-      }, { passive: false });
+      };
+
+      const bottomPlayer = document.getElementById('timeline-bottom-player');
+      if (bottomPlayer) {
+        bottomPlayer.addEventListener('wheel', handleWheelScroll, { passive: false });
+      } else {
+        slider.addEventListener('wheel', handleWheelScroll, { passive: false });
+      }
     }
   }
 
@@ -1782,8 +1888,11 @@ export class UIManager {
     const steps = meta.available_steps || [];
     if (steps.length === 0) return;
     const curIdx = steps.indexOf(curStep);
-    const nextIdx = (curIdx + direction + steps.length) % steps.length;
-    setStepFn(steps[nextIdx]);
+    const nextIdx = Math.max(0, Math.min(curIdx + direction, steps.length - 1));
+    const nextStep = steps[nextIdx];
+    const slider = document.getElementById('timeline-step-slider');
+    if (slider) slider.value = nextStep;
+    setStepFn(nextStep);
   }
 
   _handleModelSliderInput(modelId, rawVal) {
