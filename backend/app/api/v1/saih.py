@@ -42,12 +42,16 @@ async def get_caudal_station_by_id(id_variable: str):
 
 @router.get(
     "/caudales/{id_variable}/history",
-    summary="Consultar serie temporal de caudal de una estación",
+    summary="Consultar serie temporal de caudal o nivel de una estación",
 )
 @router.get("/aforos/{id_variable}/history", include_in_schema=False)
 async def get_caudal_history(
     id_variable: str,
     hours: int = Query(24, ge=1, le=720, description="Número de horas hacia atrás a consultar"),
+    variable_type: Optional[str] = Query(
+        None,
+        description="Tipo de variable deseada: 'nivel' (m), 'caudal' (m³/s)",
+    ),
     start_date: Optional[str] = Query(
         None,
         description="Fecha inicio personalizada (formato: YYYY-MM-DD HH:mm:ss)",
@@ -60,14 +64,15 @@ async def get_caudal_history(
     ),
 ):
     """
-    Obtiene la serie temporal (pasos de 5 minutos) de caudal registrada por la estación
-    consultando dinámicamente la API del SAIH Júcar.
+    Obtiene la serie temporal de nivel o caudal registrada por la estación
+    consultando dinámicamente la API del SAIH correspondiente.
     """
     return await saih_service.get_history(
         id_variable=id_variable,
         hours=hours,
         start_date=start_date,
         end_date=end_date,
+        variable_type=variable_type,
     )
 
 

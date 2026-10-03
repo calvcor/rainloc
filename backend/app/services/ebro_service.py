@@ -703,12 +703,13 @@ class EbroService:
                         "alerta": umb.get("rojo"),
                         "tipo_umbral": "nivel",
                         "unidad_umbrales": "m",
-                        "unidad_grafica": "m³/s" if caudal_val is not None else "m",
+                        "unidad_grafica": "m",
                         "ultima_hora": q_info.get("fecha") or n_info.get("fecha") or now_iso,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
-                        "unidad": "m³/s" if caudal_val is not None else "m",
+                        "unidad": "m",
                         "unidad_nivel": "m",
+                        "unidad_caudal": "m³/s",
                     }
                     aforos_list.append(st_dict)
 
@@ -790,12 +791,13 @@ class EbroService:
                         "alerta": umb.get("rojo"),
                         "tipo_umbral": "nivel",
                         "unidad_umbrales": "m",
-                        "unidad_grafica": "m³/s" if caudal_val is not None else "m",
+                        "unidad_grafica": "m",
                         "ultima_hora": fecha_val,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
-                        "unidad": "m³/s" if caudal_val is not None else "m",
+                        "unidad": "m",
                         "unidad_nivel": "m",
+                        "unidad_caudal": "m³/s",
                     }
                     aforos_list.append(st_dict)
 
@@ -961,9 +963,11 @@ class EbroService:
         id_or_code: str,
         hours: int = 24,
         is_embalse: bool = False,
+        variable_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Consulta la serie temporal para una estación de caudal o embalse de SAIH Ebro.
+        Por defecto en aforos consulta el Nivel (NRIO, en metros), coincidiendo con los umbrales de peligro oficiales.
         """
         clean_id = (
             str(id_or_code)
@@ -975,16 +979,28 @@ class EbroService:
         )
         station_obj = None
         tag = None
-        tipo_tag = "VEMBA" if is_embalse else "QRIO"
+        tipo_tag = "VEMBA" if is_embalse else "NRIO"
 
         if is_embalse:
             await self.get_embalses()
             station_obj = self._embalses_by_id.get(clean_id) or self._embalses_by_id.get(clean_id.upper())
+            if variable_type == "cota":
+                tipo_tag = "NEMBA"
+            elif variable_type == "porcentaje":
+                tipo_tag = "PORCE"
+            else:
+                tipo_tag = "VEMBA"
         else:
             await self.get_caudales()
             station_obj = self._aforos_by_id.get(clean_id) or self._aforos_by_id.get(clean_id.upper())
-            if station_obj:
-                tag = station_obj.get("tag_caudal")
+            if variable_type == "caudal":
+                tipo_tag = "QRIO"
+                if station_obj:
+                    tag = station_obj.get("tag_caudal")
+            else:
+                tipo_tag = "NRIO"
+                if station_obj:
+                    tag = station_obj.get("tag_nivel") or station_obj.get("tag_caudal")
 
         # Si no tenemos el tag exacto, resolverlo dinámicamente
         if not tag:
@@ -996,11 +1012,18 @@ class EbroService:
                 elif "NEMBA" in tags_map:
                     tipo_tag = "NEMBA"
             else:
-                tag = tags_map.get("QRIO") or tags_map.get("NRIO")
-                if "QRIO" in tags_map:
-                    tipo_tag = "QRIO"
-                elif "NRIO" in tags_map:
-                    tipo_tag = "NRIO"
+                if tipo_tag == "QRIO":
+                    tag = tags_map.get("QRIO") or tags_map.get("NRIO")
+                    if "QRIO" in tags_map:
+                        tipo_tag = "QRIO"
+                    elif "NRIO" in tags_map:
+                        tipo_tag = "NRIO"
+                else:
+                    tag = tags_map.get("NRIO") or tags_map.get("QRIO")
+                    if "NRIO" in tags_map:
+                        tipo_tag = "NRIO"
+                    elif "QRIO" in tags_map:
+                        tipo_tag = "QRIO"
 
         now = datetime.now(MADRID_TZ)
         start_dt = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
@@ -1013,7 +1036,7 @@ class EbroService:
         if not points and tag:
             points = await asyncio.to_thread(self._fetch_sparkline_series, tag, tipo_tag)
 
-        # Ajustar nombres de campos según sea embalse o caudal
+        # Ajustar nombres de campos según sea embalse o caudal/nivel
         unit_str = "hm³" if is_embalse else ("m³/s" if tipo_tag == "QRIO" else "m")
         var_type_str = "volumen" if is_embalse else ("caudal" if tipo_tag == "QRIO" else "nivel")
 

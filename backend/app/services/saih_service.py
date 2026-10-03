@@ -677,6 +677,7 @@ class SAIHService:
         hours: int = 24,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        variable_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Consulta la API temporal del SAIH para una variable dada.
@@ -731,7 +732,7 @@ class SAIHService:
                 or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
                 or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
-            return await ebro_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+            return await ebro_service.get_history(id_str, hours=hours, is_embalse=is_emb, variable_type=variable_type)
 
         now = datetime.now(MADRID_TZ)
         if not end_date or not isinstance(end_date, str):
