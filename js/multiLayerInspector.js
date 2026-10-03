@@ -1357,10 +1357,12 @@ export class MultiLayerInspector {
             const nearestInfo = nearest ? `📍 Estación más próxima: <strong>${nearest.name || 'Estación'}</strong> (${nearest.red || 'Red'}) · ${meshData.nearestDistanceKm.toFixed(1)} km` : '';
 
             sections.push({
+              type: 'pluvio_mesh',
               id: 'pluvio_mesh',
               priority: 45,
               icon: '🌧️',
               title: `Mapa Suave de Lluvia (${period})`,
+              name: nearest ? `Entorno de ${nearest.name}` : 'Interpolación Continua',
               headerColor: '#0284c7',
               badge: badgeText,
               badgeBg: badgeBg,
@@ -2187,7 +2189,7 @@ export class MultiLayerInspector {
             </span>
             ${sec.badge ? `<span class="unified-section-badge" style="background:${sec.badgeBg || "rgba(255,255,255,0.1)"}; color:${sec.badgeColor || "#fff"};">${sec.badge}</span>` : ""}
           </div>
-          <div class="unified-section-name">${sec.name}</div>
+          ${sec.name ? `<div class="unified-section-name">${sec.name}</div>` : ""}
           ${sec.details ? `<div class="unified-section-details">${sec.details}</div>` : ""}
         </div>
       `;
