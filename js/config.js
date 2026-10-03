@@ -32,6 +32,9 @@ export const CONFIG = {
     ebroCuencasGeoJson: [
       `${apiBase}/cuencas/ebro`
     ],
+    seguraCuencasGeoJson: [
+      `${apiBase}/cuencas/segura`
+    ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,
       `${apiBase}/cuencas/ccaa`,
@@ -79,7 +82,7 @@ export const CONFIG = {
     }
   },
 
-  // Paleta de colores de alto contraste cromático por Sistema de Explotación (CHJ y CHEbro)
+  // Paleta de colores de alto contraste cromático por Sistema de Explotación (CHJ, CHEbro y CHSegura)
   systemColors: {
     // Confederación Hidrográfica del Júcar (CHJ)
     'Cenia - Mijares': '#059669',       // Verde Esmeralda vibrante (Norte)
@@ -116,6 +119,30 @@ export const CONFIG = {
     'Tirón': '#4f46e5',
     'Najerilla': '#0891b2',
     'Queiles': '#be185d',
+
+    // Confederación Hidrográfica del Segura (CHSegura)
+    'Cabecera Río Segura': '#0284c7',
+    'Cabecera Río Mundo': '#0d9488',
+    'Confluencia Segura-Mundo': '#06b6d4',
+    'Zona Alta 1 Margen Der.': '#059669',
+    'Zona Alta 1 Margen Izq.': '#10b981',
+    'Zona Alta 1 Río Segura': '#38bdf8',
+    'Zona Alta 2 Margen Der.': '#f59e0b',
+    'Zona Alta 2 Margen Izq.': '#eab308',
+    'Zona Alta 2 Río Segura': '#60a5fa',
+    'Segura - Azud De Los Huertos': '#3b82f6',
+    'Rambla Salada - Embalse Santomera': '#d946ef',
+    'Alto Guadalentin': '#e11d48',
+    'Medio Guadalentin': '#ea580c',
+    'Bajo Guadalentin': '#f97316',
+    'Sangonera-Regueron': '#ec4899',
+    'Zona Baja Río Segura': '#2563eb',
+    'Chícamo - Partidor': '#8b5cf6',
+    'Crevillente-Levante': '#4338ca',
+    'Rambla Del Albujon': '#065f46',
+    'Ramblas Costeras Sur': '#14b8a6',
+    'Ramblas Costeras Norte': '#6366f1',
+    'Altiplano': '#84cc16',
 
     'Default': '#3b82f6'                // Azul estándar
   },

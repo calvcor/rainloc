@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Response
 from app.config import settings
 from app.services.ebro_service import ebro_service
+from app.services.segura_service import segura_service
 
 router = APIRouter(prefix="/cuencas", tags=["Cuencas y Subsistemas"])
 
@@ -120,6 +121,26 @@ async def get_ebro_cuencas():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Ebro: {str(e)}")
+
+@router.get("/segura", summary="Obtener GeoJSON de cuencas y subcuencas de la CHS (Segura)")
+async def get_segura_cuencas():
+    """
+    Devuelve la FeatureCollection con geometrías optimizadas y propiedades de las
+    subcuencas de la Confederación Hidrográfica del Segura (CHS).
+    Si el archivo no existe localmente, se descarga y optimiza dinámicamente desde fuentes oficiales.
+    """
+    try:
+        data = await segura_service.get_cuencas_geojson()
+        return Response(
+            content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+            media_type="application/geo+json",
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Feature-Count": str(len(data.get("features", []))),
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Segura: {str(e)}")
 
 @router.get("/sistemas", summary="Resumen estadístico por Sistema de Explotación")
 async def get_sistemas_summary():

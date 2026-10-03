@@ -46,9 +46,69 @@ STATIC_SEGURA_EMBALSES_FILE = DATA_DIR / "segura_embalses_estaciones.json"
 SEGURA_PLUVIOS_GEOJSON_FILE = DATA_DIR / "segura_lluvias.geojson"
 SEGURA_AFOROS_GEOJSON_FILE = DATA_DIR / "segura_aforos.geojson"
 SEGURA_EMBALSES_GEOJSON_FILE = DATA_DIR / "segura_embalses.geojson"
+SEGURA_CUENCAS_GEOJSON_FILE = DATA_DIR / "segura_subcuencas.geojson"
 
 # Transformador de coordenadas EPSG:25830 (UTM 30N) a EPSG:4326 (WGS84 lon, lat)
 transformer = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+
+
+def _point_line_distance(point, start, end):
+    if start == end:
+        return ((point[0] - start[0]) ** 2 + (point[1] - start[1]) ** 2) ** 0.5
+    n = abs((end[1] - start[1]) * point[0] - (end[0] - start[0]) * point[1] + end[0] * start[1] - end[1] * start[0])
+    d = ((end[1] - start[1]) ** 2 + (end[0] - start[0]) ** 2) ** 0.5
+    return n / d if d > 0 else 0.0
+
+
+def _ramer_douglas_peucker(points, tolerance=0.0008):
+    if len(points) <= 2:
+        return points
+    dmax = 0.0
+    index = 0
+    for i in range(1, len(points) - 1):
+        d = _point_line_distance(points[i], points[0], points[-1])
+        if d > dmax:
+            index = i
+            dmax = d
+    if dmax > tolerance:
+        rec1 = _ramer_douglas_peucker(points[:index + 1], tolerance)
+        rec2 = _ramer_douglas_peucker(points[index:], tolerance)
+        return rec1[:-1] + rec2
+    else:
+        return [points[0], points[-1]]
+
+
+def _simplify_geom(geom, tolerance=0.0008):
+    if not geom:
+        return None
+    g_type = geom.get("type")
+    coords = geom.get("coordinates", [])
+    if g_type == "Polygon":
+        new_rings = []
+        for ring in coords:
+            r = [[round(p[0], 5), round(p[1], 5)] for p in ring]
+            if len(r) > 6:
+                s = _ramer_douglas_peucker(r[:-1], tolerance)
+                s.append(s[0])
+                new_rings.append(s)
+            else:
+                new_rings.append(r)
+        return {"type": "Polygon", "coordinates": new_rings}
+    elif g_type == "MultiPolygon":
+        new_polys = []
+        for poly in coords:
+            new_rings = []
+            for ring in poly:
+                r = [[round(p[0], 5), round(p[1], 5)] for p in ring]
+                if len(r) > 6:
+                    s = _ramer_douglas_peucker(r[:-1], tolerance)
+                    s.append(s[0])
+                    new_rings.append(s)
+                else:
+                    new_rings.append(r)
+            new_polys.append(new_rings)
+        return {"type": "MultiPolygon", "coordinates": new_polys}
+    return geom
 
 
 def _parse_num(val: Any) -> Optional[float]:
@@ -97,6 +157,8 @@ class SeguraService:
         self._last_embalses_sync_time: Optional[datetime] = None
 
         self._sync_lock = asyncio.Lock()
+        self._cuencas_lock = asyncio.Lock()
+        self._cuencas_geojson_cache: Optional[Dict[str, Any]] = None
         self._load_cached_files()
 
     def _load_cached_files(self):
@@ -946,6 +1008,98 @@ class SeguraService:
             "puntos_totales": len(serie),
             "serie": serie,
         }
+
+    def _download_and_process_cuencas_geojson(self) -> Dict[str, Any]:
+        """Descarga dinámicamente desde el ArcGIS REST oficial de la CHS las subcuencas del Segura, las optimiza y guarda en disco."""
+        url = "https://www.chsegura.es/arcgis/rest/services/CHSApps/SaihSubcuencasPrevisiones/MapServer/3/query?where=1%3D1&outFields=*&f=geojson&outSR=4326"
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=15) as res:
+            data = json.loads(res.read().decode("utf-8"))
+
+        features = []
+        for f in data.get("features", []):
+            props = f.get("properties", {})
+            nom = props.get("NOMBRE") or ""
+            if not nom or nom.lower().startswith("etieueta") or props.get("EtiquetaFecha") == 1:
+                continue
+            code = props.get("CODIGO") or f"CHS_{props.get('OBJECTID')}"
+            area = props.get("SUPERFICIE")
+            clean_nom = (
+                nom.title()
+                .replace("Rbla.", "Rambla")
+                .replace("E.", "Embalse")
+                .replace("Mi", "Margen Izq.")
+                .replace("Md", "Margen Der.")
+                .replace("Rio", "Río")
+                .strip()
+            )
+
+            geom = _simplify_geom(f.get("geometry"), tolerance=0.0008)
+            features.append({
+                "type": "Feature",
+                "id": f"CHS_{code}",
+                "properties": {
+                    "id": f"CHS_{code}",
+                    "NomSistExp": clean_nom,
+                    "Subsistema": clean_nom,
+                    "Sistema": clean_nom,
+                    "Demarcacion": "Demarcación Hidrográfica del Segura (CHS)",
+                    "codigo_saih": code,
+                    "Area km2": area,
+                    "Superf km2": area,
+                    "demarcacion": "Segura",
+                },
+                "geometry": geom,
+            })
+
+        fc = {"type": "FeatureCollection", "features": features}
+
+        try:
+            SEGURA_CUENCAS_GEOJSON_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(SEGURA_CUENCAS_GEOJSON_FILE, "w", encoding="utf-8") as out_f:
+                json.dump(fc, out_f, ensure_ascii=False, separators=(",", ":"))
+            logger.info("GeoJSON de cuencas del Segura generado y guardado en %s (%d subcuencas)", SEGURA_CUENCAS_GEOJSON_FILE, len(features))
+        except Exception as e:
+            logger.warning("No se pudo escribir archivo local segura_subcuencas.geojson: %s", e)
+
+        return fc
+
+    async def get_cuencas_geojson(self) -> Dict[str, Any]:
+        """Devuelve la FeatureCollection de cuencas/subcuencas del Segura con descarga y caché dinámicas."""
+        if self._cuencas_geojson_cache is not None:
+            return self._cuencas_geojson_cache
+
+        async with self._cuencas_lock:
+            if self._cuencas_geojson_cache is not None:
+                return self._cuencas_geojson_cache
+
+            # 1. Verificar si ya existe en disco
+            candidates = [
+                SEGURA_CUENCAS_GEOJSON_FILE,
+                DATA_DIR / "segura_subcuencas.geojson",
+                DATA_DIR / "segura_cuencas.geojson",
+                PUBLIC_DATA_DIR / "segura_subcuencas.geojson" if PUBLIC_DATA_DIR else None,
+            ]
+            for cand in candidates:
+                if cand and cand.exists():
+                    try:
+                        with open(cand, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            if data and "features" in data:
+                                self._cuencas_geojson_cache = data
+                                return self._cuencas_geojson_cache
+                    except Exception as e:
+                        logger.warning("Error leyendo archivo local %s: %s", cand, e)
+
+            # 2. Descargar dinámicamente desde el ArcGIS de la CHS
+            logger.info("GeoJSON de cuencas del Segura no encontrado localmente. Descargando dinámicamente desde CHSegura ArcGIS...")
+            try:
+                data = await asyncio.to_thread(self._download_and_process_cuencas_geojson)
+                self._cuencas_geojson_cache = data
+                return self._cuencas_geojson_cache
+            except Exception as e:
+                logger.error("Error al descargar dinámicamente cuencas del Segura: %s", e)
+                raise
 
 
 segura_service = SeguraService()

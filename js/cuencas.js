@@ -140,6 +140,24 @@ export class CuencasLayer {
       }
     }
 
+    // Cargar cuencas y subcuencas del Segura (CHSegura) dinámicamente desde el backend
+    if (CONFIG.dataSources.seguraCuencasGeoJson) {
+      for (const url of CONFIG.dataSources.seguraCuencasGeoJson) {
+        try {
+          const chsRes = await fetch(url);
+          if (chsRes.ok) {
+            const chsData = await chsRes.json();
+            if (chsData && Array.isArray(chsData.features)) {
+              allFeatures.push(...chsData.features);
+            }
+            break;
+          }
+        } catch (err) {
+          console.warn('No se pudo cargar la capa de cuencas del Segura:', err);
+        }
+      }
+    }
+
     this.featuresData = allFeatures;
     this._createLayer({ type: 'FeatureCollection', features: allFeatures });
 
@@ -360,8 +378,9 @@ export class CuencasLayer {
     if (!feature || !latlng || !this.map) return;
 
     const props = feature.properties || {};
-    const isEbro = props.Demarcacion && props.Demarcacion.includes('Ebro');
-    const badgeText = isEbro ? (props.Demarcacion || 'Cuenca del Ebro (CHE)') : (props.NomSistExp || 'Demarcación CHJ');
+    const isEbro = (props.Demarcacion && props.Demarcacion.includes('Ebro')) || (props.demarcacion === 'Ebro');
+    const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
+    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (props.NomSistExp || 'Demarcación CHJ')));
     const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${feature.id || 'N/D'}`;
     const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
     const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;
