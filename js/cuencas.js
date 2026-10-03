@@ -346,8 +346,11 @@ export class CuencasLayer {
    * Manejador de evento click (mostrar popup detallado y zoom opcional)
    */
   _onFeatureClick(e, feature, layer) {
-    if (e && e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopBasinClick || e.originalEvent.defaultPrevented)) {
-      return;
+    if (e && e.originalEvent) {
+      if (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopBasinClick || e.originalEvent.defaultPrevented) {
+        return;
+      }
+      e.originalEvent._stopBasinClick = true;
     }
     if (e && e.originalEvent && e.originalEvent.target) {
       const el = e.originalEvent.target;
@@ -378,15 +381,46 @@ export class CuencasLayer {
     if (!feature || !latlng || !this.map) return;
 
     const props = feature.properties || {};
+    const basinId = String(feature.id || props.id || props.cod_subse || props.cod_sisexp || props.codigo_saih || '').trim();
     const isEbro = (props.Demarcacion && props.Demarcacion.includes('Ebro')) || (props.demarcacion === 'Ebro');
     const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
     const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (props.NomSistExp || 'Demarcación CHJ')));
-    const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${feature.id || 'N/D'}`;
+    const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${basinId || 'N/D'}`;
     const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
     const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;
     const superfFormatted = rawSuperf ? formatNumber(rawSuperf) + ' km²' : 'No disponible';
     const systemColor = CONFIG.systemColors[sistemaKey] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors['Default'];
     const isFav = StorageManager.isFavorite(feature.id);
+
+    const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
+    const modelNames = {
+      harmonie: 'AEMET HARMONIE (2.5 km)',
+      arome: 'AROME (1.3 km)',
+      icon: 'ICON-EU (6.5 km)',
+      gem: 'GEM GDPS (15 km)',
+      ecmwf: 'ECMWF IFS (25 km)',
+      gfs: 'NOAA GFS (25 km)'
+    };
+    const defaultModelLabel = modelNames[activeModel] || (activeModel ? activeModel.toUpperCase() : 'ECMWF IFS');
+
+    // Comprobar si ya disponemos de los datos en caché para renderizado instantáneo
+    const cleanModel = (activeModel || 'ecmwf').toLowerCase();
+    const cacheKey = `${cleanModel}_${basinId}`;
+    let cachedHydro = null;
+    if (this.layerManager && this.layerManager._basinHydroCache && this.layerManager._basinHydroCache.has(cacheKey)) {
+      const c = this.layerManager._basinHydroCache.get(cacheKey);
+      if (c && c.series && c.series.length > 0) {
+        cachedHydro = c;
+      }
+    }
+
+    const initVolHtml = cachedHydro
+      ? `${cachedHydro.total_accumulated_hm3.toFixed(2)} hm³`
+      : `<span class="inspector-spinner"></span> Calculando...`;
+    const initModelText = cachedHydro ? (cachedHydro.model_name || defaultModelLabel) : `Modelo: ${defaultModelLabel}`;
+    const initPeakText = cachedHydro
+      ? (cachedHydro.peak_interval_hm3 > 0 ? `Pico: +${cachedHydro.peak_interval_hm3.toFixed(2)} hm³` : 'Sin lluvia')
+      : 'Pico: --';
 
     // Popup enriquecido con estrella de favorita junto al título y tarjeta hidrológica
     const popupContent = `
@@ -413,11 +447,11 @@ export class CuencasLayer {
           <div class="popup-hydro-card" id="popup-hydro-card-${feature.id}">
             <div class="popup-hydro-row">
               <span class="popup-hydro-label">Volumen Previsto (NWP):</span>
-              <span class="popup-hydro-val" id="popup-hydro-vol-${feature.id}"><span class="inspector-spinner"></span> Calculando...</span>
+              <span class="popup-hydro-val" id="popup-hydro-vol-${feature.id}">${initVolHtml}</span>
             </div>
             <div class="popup-hydro-row" style="font-size: 0.72rem; color: #94a3b8;">
-              <span id="popup-hydro-model-${feature.id}">Modelo: ECMWF IFS</span>
-              <span id="popup-hydro-peak-${feature.id}">Pico: --</span>
+              <span class="popup-hydro-model" id="popup-hydro-model-${feature.id}">${escapeHtml(initModelText)}</span>
+              <span class="popup-hydro-peak" id="popup-hydro-peak-${feature.id}">${escapeHtml(initPeakText)}</span>
             </div>
           </div>
 
@@ -450,18 +484,37 @@ export class CuencasLayer {
     .setContent(popupContent)
     .openOn(this.map);
 
+    // Función auxiliar para actualizar los elementos hidrológicos del popup con seguridad
+    const applyHydroData = (data) => {
+      const popupEl = popup.getElement();
+      const volEl = (popupEl && popupEl.querySelector('.popup-hydro-val')) || document.getElementById(`popup-hydro-vol-${feature.id}`);
+      const modelEl = (popupEl && popupEl.querySelector('.popup-hydro-model')) || document.getElementById(`popup-hydro-model-${feature.id}`);
+      const peakEl = (popupEl && popupEl.querySelector('.popup-hydro-peak')) || document.getElementById(`popup-hydro-peak-${feature.id}`);
+
+      if (!data || !data.series || data.series.length === 0) {
+        if (volEl) volEl.textContent = 'No disponible';
+        if (modelEl) modelEl.textContent = defaultModelLabel;
+        if (peakEl) peakEl.textContent = 'Sin datos';
+        return;
+      }
+
+      if (volEl) volEl.textContent = `${data.total_accumulated_hm3.toFixed(2)} hm³`;
+      if (modelEl) modelEl.textContent = data.model_name || defaultModelLabel;
+      if (peakEl) peakEl.textContent = data.peak_interval_hm3 > 0 ? `Pico: +${data.peak_interval_hm3.toFixed(2)} hm³` : 'Sin lluvia';
+    };
+
     // Cargar datos hidrológicos al vuelo para el popup
-    const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
-    if (this.layerManager) {
-      this.layerManager.fetchBasinHydrograph(activeModel, feature.id).then(hydroData => {
-        if (!hydroData) return;
-        const volEl = document.getElementById(`popup-hydro-vol-${feature.id}`);
-        const modelEl = document.getElementById(`popup-hydro-model-${feature.id}`);
-        const peakEl = document.getElementById(`popup-hydro-peak-${feature.id}`);
-        if (volEl) volEl.textContent = `${hydroData.total_accumulated_hm3.toFixed(2)} hm³`;
-        if (modelEl) modelEl.textContent = hydroData.model_name || activeModel.toUpperCase();
-        if (peakEl) peakEl.textContent = hydroData.peak_interval_hm3 > 0 ? `Pico: +${hydroData.peak_interval_hm3.toFixed(2)} hm³` : 'Sin lluvia';
-      });
+    if (cachedHydro) {
+      setTimeout(() => applyHydroData(cachedHydro), 0);
+    } else if (this.layerManager) {
+      this.layerManager.fetchBasinHydrograph(activeModel, basinId || feature.id)
+        .then(hydroData => {
+          applyHydroData(hydroData);
+        })
+        .catch(err => {
+          console.warn(`[RainLoc Hydro] Error obteniendo hidrograma para ${basinId || feature.id}:`, err);
+          applyHydroData(null);
+        });
     }
 
     // Escuchar botones dentro del popup de forma robusta
@@ -469,13 +522,17 @@ export class CuencasLayer {
       const popupEl = popup.getElement();
       if (!popupEl) return;
 
+      if (cachedHydro) {
+        applyHydroData(cachedHydro);
+      }
+
       const hydroBtn = popupEl.querySelector('.popup-btn-hydro');
       const hydroCard = popupEl.querySelector('.popup-hydro-card');
       const onOpenHydro = (ev) => {
         ev.stopPropagation();
         const currentModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';
         if (this.layerManager) {
-          this.layerManager.openBasinHydroModal(feature.id, props, currentModel);
+          this.layerManager.openBasinHydroModal(basinId || feature.id, props, currentModel);
         }
       };
 
@@ -510,7 +567,8 @@ export class CuencasLayer {
               svg.setAttribute('stroke', 'currentColor');
             }
           } else {
-            StorageManager.setFavoriteBasin(feature.id, subsistema);
+            const subsistemaName = props.Subsistema || props.NomSistExp || `Cuenca ${feature.id}`;
+            StorageManager.setFavoriteBasin(feature.id, subsistemaName);
             favBtn.classList.add('is-fav');
             favBtn.title = 'Quitar de cuencas favoritas';
             if (svg) {

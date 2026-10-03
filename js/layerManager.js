@@ -7083,7 +7083,10 @@ export class LayerManager {
    */
   async fetchBasinHydrograph(modelKey, basinId) {
     const cleanModel = (modelKey || 'ecmwf').toLowerCase();
-    const cacheKey = `${cleanModel}_${basinId}`;
+    const cleanBasinId = String(basinId || '').trim();
+    if (!cleanBasinId) return null;
+
+    const cacheKey = `${cleanModel}_${cleanBasinId}`;
     if (!this._basinHydroCache) {
       this._basinHydroCache = new Map();
     }
@@ -7093,21 +7096,38 @@ export class LayerManager {
         return cached;
       }
     }
-    try {
-      const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(basinId)}`);
-      if (!resp.ok) {
-        console.warn(`[RainLoc Hydro] HTTP ${resp.status} al consultar cuenca ${basinId} para modelo ${cleanModel}`);
-        return null;
-      }
-      const data = await resp.json();
-      if (data && data.series && data.series.length > 0) {
-        this._basinHydroCache.set(cacheKey, data);
-      }
-      return data;
-    } catch (err) {
-      console.warn(`[RainLoc Hydro] Error fetching basin hydrograph for ${basinId} (${cleanModel}):`, err);
-      return null;
+
+    if (!this._inFlightBasinHydro) {
+      this._inFlightBasinHydro = new Map();
     }
+    if (this._inFlightBasinHydro.has(cacheKey)) {
+      return this._inFlightBasinHydro.get(cacheKey);
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(cleanBasinId)}`);
+        if (!resp.ok) {
+          console.warn(`[RainLoc Hydro] HTTP ${resp.status} al consultar cuenca ${cleanBasinId} para modelo ${cleanModel}`);
+          return null;
+        }
+        const data = await resp.json();
+        if (data && data.series && data.series.length > 0) {
+          this._basinHydroCache.set(cacheKey, data);
+        }
+        return data;
+      } catch (err) {
+        console.warn(`[RainLoc Hydro] Error fetching basin hydrograph for ${cleanBasinId} (${cleanModel}):`, err);
+        return null;
+      } finally {
+        if (this._inFlightBasinHydro) {
+          this._inFlightBasinHydro.delete(cacheKey);
+        }
+      }
+    })();
+
+    this._inFlightBasinHydro.set(cacheKey, fetchPromise);
+    return fetchPromise;
   }
 
   /**
