@@ -10,6 +10,7 @@ import html
 import http.cookiejar
 import json
 import logging
+import math
 import re
 import ssl
 import urllib.request
@@ -698,9 +699,10 @@ class GuadalquivirService:
         except Exception as e:
             logger.warning(f"Error inicializando sesión Guadalquivir: {e}")
 
-    def _fetch_series_from_web(self, sensor_code: str, is_embalse: bool = False) -> List[Dict[str, Any]]:
+    def _fetch_series_from_web(self, sensor_code: str, hours: int = 24, is_embalse: bool = False) -> List[Dict[str, Any]]:
         """
-        Descarga la serie temporal histórica de saihhist4.aspx para un sensor de Guadalquivir.
+        Descarga la serie temporal histórica de saihhist4.aspx para un sensor de Guadalquivir,
+        calculando el parámetro de días (dia) necesario para abarcar el rango de horas solicitado.
         """
         if not sensor_code:
             return []
@@ -709,7 +711,14 @@ class GuadalquivirService:
             self._ensure_session(is_embalse)
 
         opener = self._get_opener()
-        b_code = base64.b64encode(sensor_code.encode("utf-8")).decode("ascii")
+        
+        # Calcular el número de días necesarios (dia >= 1)
+        req_hours = int(hours) if isinstance(hours, (int, float)) and hours > 0 else 24
+        dia = max(1, math.ceil(req_hours / 24.0))
+
+        # El formato oficial de parámetro es "sensor,dia,ano" (ano=0 para modo días)
+        param = f"{sensor_code},{dia},0"
+        b_code = base64.b64encode(param.encode("utf-8")).decode("ascii")
         url = f"{GUADALQUIVIR_BASE_URL}/saihhist4.aspx?b={b_code}&k=0x8"
         referer = f"{GUADALQUIVIR_BASE_URL}/{'EmbalJA.aspx' if is_embalse else 'AforosTabla.aspx'}"
 
@@ -769,7 +778,7 @@ class GuadalquivirService:
             return points
 
         except Exception as e:
-            logger.error(f"Error al descargar serie temporal Guadalquivir ({sensor_code}): {e}")
+            logger.error(f"Error al descargar serie temporal Guadalquivir ({sensor_code}, dia={dia}): {e}")
             return []
 
     async def get_history(
@@ -821,6 +830,9 @@ class GuadalquivirService:
             else:
                 sensor_code = str(id_or_code)
 
+        req_hours = int(hours) if isinstance(hours, (int, float)) and hours > 0 else 24
+        dia = max(1, math.ceil(req_hours / 24.0))
+
         cache_key = f"{sensor_code}_{'emb' if is_embalse else 'aforo'}"
         now = datetime.now(MADRID_TZ)
 
@@ -828,14 +840,14 @@ class GuadalquivirService:
             self._history_series_cache = {}
 
         cached = self._history_series_cache.get(cache_key)
-        if cached and (now - cached["ts"]).total_seconds() < 300:
+        if cached and (now - cached["ts"]).total_seconds() < 300 and cached.get("dia", 1) >= dia:
             full_series = cached["data"]
         else:
-            full_series = await asyncio.to_thread(self._fetch_series_from_web, sensor_code, is_embalse)
+            full_series = await asyncio.to_thread(self._fetch_series_from_web, sensor_code, req_hours, is_embalse)
             if full_series:
-                self._history_series_cache[cache_key] = {"ts": now, "data": full_series}
+                self._history_series_cache[cache_key] = {"ts": now, "dia": dia, "data": full_series}
 
-        cutoff = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
+        cutoff = now - timedelta(hours=req_hours)
         filtered_series = [
             p for p in full_series
             if datetime.strptime(p["fecha"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=MADRID_TZ) >= cutoff
@@ -859,11 +871,11 @@ class GuadalquivirService:
             "fuente": "S.A.I.H. Guadalquivir (CHG / MITECO)",
             "total_puntos": len(filtered_series),
             "puntos_totales": len(filtered_series),
-            "horas_solicitadas": hours,
+            "horas_solicitadas": req_hours,
             "rango": {
                 "desde": cutoff.strftime("%Y-%m-%d %H:%M:%S"),
                 "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "horas": hours,
+                "horas": req_hours,
             },
             "serie": filtered_series,
             "datos": filtered_series,
