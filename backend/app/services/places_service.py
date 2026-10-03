@@ -9,6 +9,7 @@ import re
 import json
 import sqlite3
 import logging
+import html
 import unicodedata
 import urllib.request
 import zipfile
@@ -52,11 +53,19 @@ CV_PROVINCIAS = {
     "CS": "Castellón"
 }
 
+def clean_str(val: Any) -> str:
+    """Limpia cadenas decodificando entidades HTML (ej: &oacute; -> ó) y normalizando apóstrofes."""
+    if not val or not isinstance(val, str):
+        return ""
+    text = html.unescape(val)
+    text = text.replace('′', "'").replace('’', "'").replace('`', "'")
+    return text.strip()
+
 def normalize_text(text: str) -> str:
     """Normaliza texto eliminando acentos, diacríticos y caracteres especiales."""
     if not text:
         return ""
-    text = text.lower()
+    text = clean_str(text).lower()
     # Descomponer caracteres Unicode y quitar marcas de acento
     nfkd = unicodedata.normalize('NFKD', text)
     clean = "".join([c for c in nfkd if not unicodedata.combining(c)])
@@ -422,8 +431,8 @@ class PlacesService:
                     sub_data = json.load(f)
                 for feat in sub_data.get("features", []):
                     props = feat.get("properties", {})
-                    nom_sis = props.get("NomSistExp", "")
-                    subsistema = props.get("Subsistema", "")
+                    nom_sis = clean_str(props.get("NomSistExp") or props.get("nom_sis") or "")
+                    subsistema = clean_str(props.get("Subsistema") or props.get("subsistema") or "")
                     if not subsistema:
                         continue
 
@@ -464,11 +473,11 @@ class PlacesService:
                     if not coords or len(coords) < 2:
                         continue
                     lon, lat = coords[0], coords[1]
-                    name = props.get("nombre") or props.get("name") or "Embalse"
-                    pob = props.get("poblacion") or props.get("municipio") or ""
-                    prov = props.get("provincia") or props.get("province") or ""
-                    cuenca = props.get("subcuenca") or props.get("cuenca") or ""
-                    code = props.get("codigo") or props.get("id_estacion") or ""
+                    name = clean_str(props.get("nombre") or props.get("name") or "Embalse")
+                    pob = clean_str(props.get("poblacion") or props.get("municipio") or "")
+                    prov = clean_str(props.get("provincia") or props.get("province") or "")
+                    cuenca = clean_str(props.get("subcuenca") or props.get("cuenca") or "")
+                    code = clean_str(str(props.get("codigo") or props.get("id_estacion") or ""))
 
                     eid = f"emb_{normalize_text(name).replace(' ', '_')}_{code}"
                     if eid in inserted_ids:
@@ -478,11 +487,11 @@ class PlacesService:
                     alt_info = f"{pob} ({prov})" if pob and prov else (pob or prov or cuenca)
                     norm = normalize_text(f"{name} {pob} {prov} {cuenca} embalse panta presa pantano embassament {code}")
                     places_to_insert.append((
-                        eid, name.title(), alt_info,
+                        eid, name, alt_info,
                         norm, 'reservoir', 'embalse_saih', prov, '', lat, lon, 14, 80,
                         json.dumps(props)
                     ))
-                    fts_to_insert.append((name.title(), alt_info, norm, 'reservoir', prov, ''))
+                    fts_to_insert.append((name, alt_info, norm, 'reservoir', prov, ''))
             except Exception as e:
                 logger.error(f"Error leyendo {emb_file.name}: {e}")
 
@@ -499,12 +508,12 @@ class PlacesService:
                     if not coords or len(coords) < 2:
                         continue
                     lon, lat = coords[0], coords[1]
-                    name = props.get("nombre") or props.get("name") or "Aforo"
-                    variable = props.get("variable") or ""
-                    cuenca = props.get("subcuenca") or props.get("cuenca") or ""
-                    pob = props.get("poblacion") or props.get("municipio") or ""
-                    prov = props.get("provincia") or props.get("province") or ""
-                    code = props.get("codigo") or props.get("id_estacion") or ""
+                    name = clean_str(props.get("nombre") or props.get("name") or "Aforo")
+                    variable = clean_str(props.get("variable") or "")
+                    cuenca = clean_str(props.get("subcuenca") or props.get("cuenca") or "")
+                    pob = clean_str(props.get("poblacion") or props.get("municipio") or "")
+                    prov = clean_str(props.get("provincia") or props.get("province") or "")
+                    code = clean_str(str(props.get("codigo") or props.get("id_estacion") or ""))
 
                     aid = f"afo_{normalize_text(name).replace(' ', '_')}_{code}"
                     if aid in inserted_ids:
@@ -514,11 +523,11 @@ class PlacesService:
                     alt_info = f"{pob} ({cuenca})" if pob and cuenca else (pob or cuenca or variable)
                     norm = normalize_text(f"{name} {pob} {variable} {cuenca} {prov} {code} aforo caudal rio riera barranc")
                     places_to_insert.append((
-                        aid, name.title(), alt_info,
+                        aid, name, alt_info,
                         norm, 'river', 'aforo', prov, '', lat, lon, 14, 75,
                         json.dumps(props)
                     ))
-                    fts_to_insert.append((name.title(), alt_info, norm, 'river', prov, ''))
+                    fts_to_insert.append((name, alt_info, norm, 'river', prov, ''))
             except Exception as e:
                 logger.error(f"Error leyendo {afo_file.name}: {e}")
 
@@ -536,10 +545,11 @@ class PlacesService:
                     if not coords or len(coords) < 2:
                         continue
                     lon, lat = coords[0], coords[1]
-                    name = props.get("nombre") or props.get("name") or props.get("station_name") or "Estación"
-                    pob = props.get("poblacion") or props.get("municipio") or props.get("comarca") or props.get("location") or ""
-                    prov = props.get("provincia") or props.get("province") or ""
-                    code = props.get("id") or props.get("codigo") or props.get("indicativo") or ""
+                    raw_name = props.get("nombre") or props.get("name") or props.get("station_name") or "Estación"
+                    name = clean_str(raw_name)
+                    pob = clean_str(props.get("poblacion") or props.get("municipio") or props.get("comarca") or props.get("location") or "")
+                    prov = clean_str(props.get("provincia") or props.get("province") or "")
+                    code = clean_str(str(props.get("id") or props.get("codigo") or props.get("indicativo") or ""))
 
                     pid = f"st_{network.lower()}_{code}_{normalize_text(name).replace(' ', '_')}"
                     if pid in inserted_ids:

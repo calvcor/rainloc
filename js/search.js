@@ -347,8 +347,10 @@ export class PlacesSearchControl {
     }
 
     const html = results.map((item, index) => {
-      const highlightedName = this._highlightMatch(item.name, query);
-      const subInfo = [item.province || item.community, item.alt_name].filter(Boolean).join(' • ');
+      const cleanName = this._decodeHtml(item.name);
+      const highlightedName = this._highlightMatch(cleanName, query);
+      const subParts = [item.province || item.community, item.alt_name].filter(Boolean).map(s => this._decodeHtml(s));
+      const subInfo = subParts.join(' • ');
 
       return `
         <div class="places-result-item" data-index="${index}" role="option" tabindex="-1">
@@ -524,17 +526,26 @@ export class PlacesSearchControl {
     this.activeMarker = marker;
   }
 
+  _decodeHtml(text) {
+    if (!text || typeof text !== 'string') return '';
+    const txt = document.createElement('textarea');
+    txt.innerHTML = text;
+    return txt.value.replace(/[′’`´]/g, "'").trim();
+  }
+
   _escapeHtml(text) {
     if (!text) return '';
+    const clean = this._decodeHtml(text);
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = clean;
     return div.innerHTML;
   }
 
   _highlightMatch(text, query) {
     if (!text || !query) return this._escapeHtml(text);
+    const cleanText = this._decodeHtml(text);
     const escapedQ = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${escapedQ})`, 'gi');
-    return this._escapeHtml(text).replace(regex, '<mark class="places-highlight">$1</mark>');
+    return this._escapeHtml(cleanText).replace(regex, '<mark class="places-highlight">$1</mark>');
   }
 }

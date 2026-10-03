@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import re
+import html
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,14 @@ from zoneinfo import ZoneInfo
 from app.config import DATA_DIR
 
 logger = logging.getLogger("rainloc-backend.avamet_pluvios_service")
+
+def clean_str(val: Any) -> str:
+    """Limpia cadenas decodificando entidades HTML y normalizando comillas/apóstrofes."""
+    if not val or not isinstance(val, str):
+        return ""
+    text = html.unescape(val)
+    text = text.replace('′', "'").replace('’', "'").replace('`', "'").replace('´', "'")
+    return text.strip()
 
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 
@@ -96,7 +105,7 @@ class AvametPluviosService:
             for r in rows:
                 comarca_match = re.search(r"class=[\"\x27]rComarca[\"\x27][^>]*>(.*?)</td>", r, re.IGNORECASE)
                 if comarca_match:
-                    current_comarca = re.sub(r"<[^>]+>", "", comarca_match.group(1)).strip()
+                    current_comarca = clean_str(re.sub(r"<[^>]+>", "", comarca_match.group(1)))
                     continue
 
                 id_match = re.search(r"mxo_i\.php\?id=([a-zA-Z0-9_-]+)", r)
@@ -115,7 +124,7 @@ class AvametPluviosService:
                     except Exception:
                         return 0.0
 
-                st_name = re.sub(r"<[^>]+>", "", tds[0]).strip()
+                st_name = clean_str(re.sub(r"<[^>]+>", "", tds[0]))
                 prec_hoy = _clean_val(tds[1])
                 prec_mes = _clean_val(tds[4]) if len(tds) > 4 else 0.0
                 prec_any = _clean_val(tds[5]) if len(tds) > 5 else 0.0
@@ -146,7 +155,7 @@ class AvametPluviosService:
                     except Exception:
                         alt_float = None
 
-                poblacion = meta.get("muni") or st_name
+                poblacion = clean_str(meta.get("muni")) or st_name
 
                 pluvio_obj = {
                     "id_estacion": st_id,
