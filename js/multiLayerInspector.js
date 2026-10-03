@@ -1290,12 +1290,13 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData, AVAMET y Meteocat)
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData, AVAMET, Meteocat y SAIH Hidrosur)
       const pluvioLayerDefs = [
         { id: "saih_lluvias", defaultSource: "SAIH CHJ", headerColor: "#0284c7" },
         { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" },
         { id: "avamet_lluvias", defaultSource: "AVAMET", headerColor: "#059669" },
-        { id: "meteocat_lluvias", defaultSource: "METEOCAT", headerColor: "#d97706" }
+        { id: "meteocat_lluvias", defaultSource: "METEOCAT", headerColor: "#d97706" },
+        { id: "hidrosur_lluvias", defaultSource: "HIDROSUR", headerColor: "#0d9488" }
       ];
 
       for (const pluvioDef of pluvioLayerDefs) {
@@ -1364,16 +1365,18 @@ export class MultiLayerInspector {
               const isAemet = network === 'AEMET';
               const isAvamet = network === 'AVAMET';
               const isMeteocat = network === 'METEOCAT';
-              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : 'SAIH CHJ'));
-              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : '#0284c7'));
-              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : '#38bdf8'));
+              const isHidrosur = network === 'HIDROSUR';
+              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : (isMeteocat ? 'METEOCAT' : (isHidrosur ? 'SAIH HIDROSUR' : 'SAIH CHJ')));
+              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : (isMeteocat ? '#d97706' : (isHidrosur ? '#0d9488' : '#0284c7')));
+              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : (isMeteocat ? '#fbbf24' : (isHidrosur ? '#5eead4' : '#38bdf8')));
 
               const locParts = [];
               if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
               if (closestPluvio.municipio && closestPluvio.municipio !== closestPluvio.poblacion) locParts.push(`(${closestPluvio.municipio})`);
               else if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
               if (closestPluvio.comarca) locParts.push(`· ${closestPluvio.comarca}`);
-              if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
+              if (closestPluvio.subsistema) locParts.push(`· ${closestPluvio.subsistema}`);
+              else if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
               const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
               const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
               let horaText = '';
@@ -1382,7 +1385,7 @@ export class MultiLayerInspector {
                 horaText = formatted ? `· ${formatted}` : `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}`;
               }
 
-              // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET / Meteocat
+              // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET / Meteocat / Hidrosur
               let extraMeteoHtml = '';
               const parts = [];
               if (closestPluvio.temperatura !== null && closestPluvio.temperatura !== undefined && String(closestPluvio.temperatura).trim() !== '') {
@@ -1398,8 +1401,11 @@ export class MultiLayerInspector {
                 const vVal = Number(String(closestPluvio.viento_vel).replace(',', '.'));
                 if (!isNaN(vVal)) parts.push(`💨 ${isAemet ? (vVal * 3.6).toFixed(0) : vVal.toFixed(0)} km/h`);
               }
-              if ((isAvamet || isMeteocat) && closestPluvio.lluvia_hoy !== undefined && closestPluvio.lluvia_hoy !== null) {
+              if ((isAvamet || isMeteocat || isHidrosur) && closestPluvio.lluvia_hoy !== undefined && closestPluvio.lluvia_hoy !== null) {
                 parts.push(`📅 Hoy: <strong>${closestPluvio.lluvia_hoy} mm</strong>`);
+              }
+              if (isHidrosur && closestPluvio.lluvia_ayer !== undefined && closestPluvio.lluvia_ayer !== null && Number(closestPluvio.lluvia_ayer) > 0) {
+                parts.push(`Ayer: ${closestPluvio.lluvia_ayer} mm`);
               }
               if (parts.length > 0) {
                 extraMeteoHtml = `<div style="font-size:0.68rem; color:#94a3b8; margin-top:3px; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">${parts.join(' · ')}</div>`;

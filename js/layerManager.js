@@ -332,6 +332,9 @@ export class LayerManager {
     else if (def.id === 'meteocat_lluvias') {
       this._loadMeteocatLluviasLayer(layerGroup, opacity);
     }
+    else if (def.id === 'hidrosur_lluvias') {
+      this._loadHidrosurLluviasLayer(layerGroup, opacity);
+    }
     else if (def.id === 'ecmwf_ifs') {
       this._loadEcmwfLayer(layerGroup, opacity);
     }
@@ -664,6 +667,8 @@ export class LayerManager {
               this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
             } else if (s.id === 'meteocat_lluvias') {
               this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
+            } else if (s.id === 'hidrosur_lluvias') {
+              this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
             }
           } else {
             this._hideLayerFromMap(s.id);
@@ -685,6 +690,7 @@ export class LayerManager {
         if (this._aemetLluviasPollInterval) { clearInterval(this._aemetLluviasPollInterval); this._aemetLluviasPollInterval = null; }
         if (this._avametLluviasPollInterval) { clearInterval(this._avametLluviasPollInterval); this._avametLluviasPollInterval = null; }
         if (this._meteocatLluviasPollInterval) { clearInterval(this._meteocatLluviasPollInterval); this._meteocatLluviasPollInterval = null; }
+        if (this._hidrosurLluviasPollInterval) { clearInterval(this._hidrosurLluviasPollInterval); this._hidrosurLluviasPollInterval = null; }
       }
 
       if (this.uiManager) {
@@ -854,6 +860,26 @@ export class LayerManager {
         }
       }
 
+      if (layerId === 'hidrosur_lluvias') {
+        if (active) {
+          const op = this.layerStates['hidrosur_lluvias'].opacity || 0.95;
+          this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+          if (!this._hidrosurLluviasPollInterval) {
+            this._hidrosurLluviasPollInterval = setInterval(() => {
+              if (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].active) {
+                const op = this.layerStates['hidrosur_lluvias'].opacity || 0.95;
+                this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+              }
+            }, 5 * 60 * 1000);
+          }
+        } else {
+          if (this._hidrosurLluviasPollInterval) {
+            clearInterval(this._hidrosurLluviasPollInterval);
+            this._hidrosurLluviasPollInterval = null;
+          }
+        }
+      }
+
       if (layerId === 'radar') {
         if (active) {
           if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
@@ -944,6 +970,8 @@ export class LayerManager {
         this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
       } else if (sublayerId === 'meteocat_lluvias') {
         this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
+      } else if (sublayerId === 'hidrosur_lluvias') {
+        this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
       }
     } else {
       if (this.layerStates[sublayerId]) {
@@ -973,11 +1001,11 @@ export class LayerManager {
   }
 
   /**
-   * Conmuta todas las fuentes de la red pluviométrica (SAIH, AEMET, AVAMET, METEOCAT) simultáneamente
+   * Conmuta todas las fuentes de la red pluviométrica (SAIH, AEMET, AVAMET, METEOCAT, HIDROSUR) simultáneamente
    * @param {boolean} active 
    */
   togglePluvioGroup(active) {
-    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias'];
+    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
     
     if (active) {
       if (!this.layerStates['saih_hidrologia'] || !this.layerStates['saih_hidrologia'].active) {
@@ -1002,6 +1030,7 @@ export class LayerManager {
         else if (id === 'aemet_lluvias') this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
         else if (id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
         else if (id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
+        else if (id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
       });
     } else {
       pluvioIds.forEach(id => {
@@ -4199,6 +4228,16 @@ export class LayerManager {
   }
 
   /**
+   * Recarga la capa de pluviómetros / observaciones del SAIH Hidrosur
+   */
+  reloadHidrosurLluviasLayer() {
+    const group = this.layers['hidrosur_lluvias'];
+    if (!group) return;
+    const opacity = (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].opacity) || 0.95;
+    this._loadHidrosurLluviasLayer(group, opacity);
+  }
+
+  /**
    * Configura e inicializa el autorrefresco en segundo plano para avisos AEMET, caudales, embalses y lluvias
    */
   startAutoRefresh(intervalSec = 300) {
@@ -4208,11 +4247,11 @@ export class LayerManager {
     }
 
     const sec = Math.max(30, intervalSec || 300);
-    console.log(`⏱️ Autorrefresco de capas SAIH/AEMET/AVAMET/METEOCAT activado cada ${sec}s (${Math.round(sec / 60)} min).`);
+    console.log(`⏱️ Autorrefresco de capas SAIH/AEMET/AVAMET/METEOCAT/HIDROSUR activado cada ${sec}s (${Math.round(sec / 60)} min).`);
 
     // Refresco periódico secundario (cada 5 min = 300s por defecto)
     this._refreshTimer = setInterval(() => {
-      console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET / AVAMET / METEOCAT / Radar...');
+      console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET / AVAMET / METEOCAT / HIDROSUR / Radar...');
       if (this.layerStates['radar'] && this.layerStates['radar'].active) {
         this.reloadRadarLayer(true);
       }
@@ -4227,6 +4266,9 @@ export class LayerManager {
       }
       if (this.layerStates['meteocat_lluvias'] && this.layerStates['meteocat_lluvias'].active) {
         this.reloadMeteocatLluviasLayer();
+      }
+      if (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].active) {
+        this.reloadHidrosurLluviasLayer();
       }
       const isSaihActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
       if (isSaihActive && this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
@@ -5458,6 +5500,119 @@ export class LayerManager {
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
       this.uiManager.updateLayerTimestamp('meteocat_lluvias', tsHtml);
+    }
+  }
+
+  /**
+   * Carga asíncrona de estaciones pluviométricas / observaciones del SAIH Hidrosur (Junta de Andalucía)
+   */
+  async _loadHidrosurLluviasLayer(layerGroup, opacity) {
+    const apiUrl = `${CONFIG.apiBaseUrl}/hidrosur/lluvias?format=geojson&_t=${Date.now()}`;
+    const fallbackUrls = [
+      './data/hidrosur_lluvias.geojson',
+      './hidrosur_lluvias.geojson',
+      './backend/data/hidrosur_lluvias.geojson'
+    ];
+
+    let geojson = null;
+    try {
+      const resp = await fetch(apiUrl);
+      if (resp.ok) {
+        geojson = await resp.json();
+      }
+    } catch (err) {
+      console.warn('API de pluviómetros SAIH Hidrosur no accesible directamente, buscando fallback local...');
+    }
+
+    if (!geojson || !geojson.features) {
+      for (const url of fallbackUrls) {
+        try {
+          const resp = await fetch(url);
+          if (resp.ok) {
+            geojson = await resp.json();
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!geojson || !geojson.features) {
+      console.warn('No se pudieron cargar datos de pluviómetros de SAIH Hidrosur.');
+      return;
+    }
+
+    this._hidrosurLluviasFeatures = geojson.features;
+    layerGroup.clearLayers();
+
+    const hidrosurLluviasGeoJSON = L.geoJSON(geojson, {
+      pane: 'lluviasPane',
+      pointToLayer: (feature, latlng) => {
+        const props = feature.properties || {};
+        props.lat = latlng.lat;
+        props.lon = latlng.lng;
+
+        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+          ? Number(props.lluvia_1h)
+          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+          ? Number(props.lluvia_4h)
+          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+          ? Number(props.lluvia_12h)
+          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+          ? Number(props.lluvia_24h)
+          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+
+        // Escala de colores según precipitación acumulada
+        let color = '#64748b'; // 0 mm (gris pizarra)
+        let alertClass = 'pluvio-status-zero';
+        let alertLevelText = 'Sin lluvia acumulada';
+
+        if (r24h >= 100 || r1h >= 20) {
+          color = '#ef4444'; // Rojo / Torrencial
+          alertClass = 'pluvio-status-extreme caudal-pulse';
+          alertLevelText = 'Lluvia Torrencial';
+        } else if (r24h >= 60 || r1h >= 10) {
+          color = '#f97316'; // Naranja / Muy fuerte
+          alertClass = 'pluvio-status-heavy';
+          alertLevelText = 'Lluvia Muy Fuerte';
+        } else if (r24h >= 30 || r1h >= 5) {
+          color = '#eab308'; // Amarillo / Fuerte
+          alertClass = 'pluvio-status-mod';
+          alertLevelText = 'Lluvia Fuerte';
+        } else if (r24h >= 10) {
+          color = '#0284c7'; // Azul / Moderada
+          alertClass = 'pluvio-status-light';
+          alertLevelText = 'Lluvia Moderada';
+        } else if (r24h > 0 || r1h > 0) {
+          color = '#38bdf8'; // Celeste / Débil
+          alertClass = 'pluvio-status-light';
+          alertLevelText = 'Lluvia Débil';
+        }
+
+        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+        const marker = L.circleMarker(latlng, {
+          pane: 'lluviasPane',
+          radius: radius,
+          color: '#ffffff',
+          weight: 1.2,
+          fillColor: color,
+          fillOpacity: Math.min(1.0, opacity * 0.92),
+          className: `pluvio-marker ${alertClass}`,
+          interactive: false
+        });
+
+        return marker;
+      }
+    });
+
+    layerGroup.addLayer(hidrosurLluviasGeoJSON);
+
+    if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      this.uiManager.updateLayerTimestamp('hidrosur_lluvias', tsHtml);
     }
   }
 

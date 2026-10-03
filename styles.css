@@ -1226,6 +1226,12 @@ body {
   border: 1px solid rgba(217, 119, 6, 0.35);
 }
 
+.badge-hidrosur {
+  background: rgba(13, 148, 136, 0.18);
+  color: #5eead4;
+  border: 1px solid rgba(13, 148, 136, 0.35);
+}
+
 /* Bloque Legal de Fuentes y Licencias de Reutilización */
 .saih-sources-legal-block {
   background: rgba(0, 0, 0, 0.22);

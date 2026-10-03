@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.services.aemet_pluvios_service import aemet_pluvios_service
 from app.services.avamet_pluvios_service import avamet_pluvios_service
 from app.services.meteocat_pluvios_service import meteocat_pluvios_service
+from app.services.hidrosur_pluvios_service import hidrosur_pluvios_service
 from app.services.saih_service import saih_service
 
 router = APIRouter(tags=["Pluviómetros"])
@@ -163,27 +164,78 @@ async def sync_meteocat_lluvias():
 
 
 # ==========================================
+# SAIH HIDROSUR (JUNTA DE ANDALUCÍA)
+# ==========================================
+
+@router.get("/hidrosur/lluvias", summary="Obtener pluviómetros del S.A.I.H. Hidrosur (Junta de Andalucía)")
+@router.get("/hidrosur/pluvios", include_in_schema=False)
+async def get_hidrosur_lluvias(
+    format: Literal["geojson", "json"] = Query(
+        "geojson",
+        description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
+    )
+):
+    """
+    Devuelve las ~147 estaciones pluviométricas del SAIH Hidrosur (Cuencas Mediterráneas Andaluzas)
+    con lluvia acumulada en 1h, 4h, 12h y 24h (mm) obtenidas bajo demanda.
+    """
+    if format == "geojson":
+        return await hidrosur_pluvios_service.get_pluvios_geojson()
+    return await hidrosur_pluvios_service.get_pluvios()
+
+
+@router.get("/hidrosur/lluvias/{id_or_code}", summary="Obtener datos de una estación SAIH Hidrosur específica")
+@router.get("/hidrosur/pluvios/{id_or_code}", include_in_schema=False)
+async def get_hidrosur_pluvio_by_id(id_or_code: str):
+    """
+    Devuelve los datos de una estación SAIH Hidrosur según su código o ID (ej. '2' o 'hidrosur_2').
+    """
+    await hidrosur_pluvios_service.ensure_fresh_data()
+    pluvio = hidrosur_pluvios_service.get_pluvio_by_id(id_or_code)
+    if not pluvio:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Estación SAIH Hidrosur con identificador o código '{id_or_code}' no encontrada.",
+        )
+    return pluvio
+
+
+@router.post("/hidrosur/lluvias/sync", summary="Forzar sincronización de pluviómetros SAIH Hidrosur")
+async def sync_hidrosur_lluvias():
+    """
+    Fuerza la descarga y actualización de pluviómetros del SAIH Hidrosur.
+    """
+    pluvios = hidrosur_pluvios_service.sync_pluvios_metadata()
+    return {
+        "status": "success",
+        "message": f"Sincronizados {len(pluvios)} pluviómetros de SAIH Hidrosur correctamente.",
+        "total": len(pluvios),
+    }
+
+
+# ==========================================
 # CATÁLOGO UNIFICADO
 # ==========================================
 
-@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET + METEOCAT)")
+@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET + METEOCAT + HIDROSUR)")
 async def get_all_pluvios(
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
     ),
-    source: Literal["all", "chj", "aemet", "avamet", "meteocat"] = Query(
+    source: Literal["all", "chj", "aemet", "avamet", "meteocat", "hidrosur"] = Query(
         "all",
-        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET), 'avamet' (AVAMET) o 'meteocat' (Meteocat)",
+        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET), 'avamet' (AVAMET), 'meteocat' (Meteocat) o 'hidrosur' (SAIH Hidrosur)",
     )
 ):
     """
-    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET, AVAMET y/o Meteocat en idéntico formato.
+    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET, AVAMET, Meteocat y/o Hidrosur en idéntico formato.
     """
     chj_list = []
     aemet_list = []
     avamet_list = []
     meteocat_list = []
+    hidrosur_list = []
 
     if source in ("all", "chj"):
         chj_list = await saih_service.get_pluvios()
@@ -193,8 +245,10 @@ async def get_all_pluvios(
         avamet_list = await avamet_pluvios_service.get_pluvios()
     if source in ("all", "meteocat"):
         meteocat_list = await meteocat_pluvios_service.get_pluvios()
+    if source in ("all", "hidrosur"):
+        hidrosur_list = await hidrosur_pluvios_service.get_pluvios()
 
-    combined = chj_list + aemet_list + avamet_list + meteocat_list
+    combined = chj_list + aemet_list + avamet_list + meteocat_list + hidrosur_list
 
     if format == "json":
         return combined

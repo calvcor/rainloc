@@ -157,8 +157,8 @@ export const CONFIG = {
       {
         id: 'saih_hidrologia',
         name: 'Red Hidrológica y Pluviometría',
-        subtitle: 'Aforos, Embalses y Pluviómetros (~2.145 est.)',
-        description: 'Monitorización integral en tiempo real: 79 aforos en ríos, 25 embalses y presas, y más de 2.140 pluviómetros oficiales (SAIH CHJ, AEMET OpenData, AVAMET y Meteocat).',
+        subtitle: 'Aforos, Embalses y Pluviómetros (~2.290 est.)',
+        description: 'Monitorización integral en tiempo real: 79 aforos en ríos, 25 embalses y presas, y más de 2.290 pluviómetros oficiales (SAIH CHJ, AEMET OpenData, AVAMET, Meteocat y SAIH Hidrosur).',
         type: 'saih_group',
         defaultActive: false,
         defaultOpacity: 0.95,
@@ -238,6 +238,18 @@ export const CONFIG = {
             defaultActive: true,
             sourceName: 'Servei Meteorològic de Catalunya (Dades Obertes Gencat)',
             sourceUrl: 'https://analisi.transparenciacatalunya.cat/d/nzvn-apee'
+          },
+          {
+            id: 'hidrosur_lluvias',
+            group: 'pluvio',
+            name: 'Pluviómetros SAIH Hidrosur',
+            subtitle: '147 pluviómetros Cuencas Andaluzas (1h, 4h, 12h, 24h)',
+            icon: '🌧️',
+            badge: 'HIDROSUR',
+            badgeClass: 'badge-hidrosur',
+            defaultActive: true,
+            sourceName: 'S.A.I.H. Hidrosur (Junta de Andalucía)',
+            sourceUrl: 'https://www.redhidrosurmedioambiente.es/saih/'
           }
         ]
       }
@@ -362,24 +374,36 @@ export function formatMadridDateTime(dateInput) {
     dateObj = dateInput;
   } else if (typeof dateInput === 'string') {
     const s = dateInput.trim();
-    if (s.length >= 13 && s.includes('T')) {
-      // Formato YYYYMMDDTHHMM (UTC) ej. 20260918T1530
+    // Caso 1: DD-MM-YYYY HH:MM o DD/MM/YYYY HH:MM (ej. AVAMET)
+    const dmyMatch = s.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (dmyMatch) {
+      const [, day, month, year, hh, mm, ss] = dmyMatch;
+      dateObj = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(hh || 0, 10), parseInt(mm || 0, 10), parseInt(ss || 0, 10));
+    }
+    // Caso 2: Formato estándar ISO YYYY-MM-DD... (ej. SAIH CHJ '...Z', Hidrosur, Meteocat, AEMET)
+    else if (s.includes('-') && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      dateObj = new Date(s);
+    }
+    // Caso 3: Formato compacto de radar YYYYMMDDTHHMM (UTC) ej. 20260918T1530
+    else if (s.length >= 13 && s.includes('T') && !s.includes('-')) {
       const yr = s.substring(0, 4);
       const mo = s.substring(4, 6);
       const dy = s.substring(6, 8);
       const hh = s.substring(9, 11);
       const mm = s.substring(11, 13);
       dateObj = new Date(Date.UTC(parseInt(yr, 10), parseInt(mo, 10) - 1, parseInt(dy, 10), parseInt(hh, 10), parseInt(mm, 10)));
-    } else if (s.length === 12 && /^\d{12}$/.test(s)) {
-      // Formato YYYYMMDDHHMM (UTC) ej. 202609181530
+    }
+    // Caso 4: Formato numérico continuo YYYYMMDDHHMM (UTC) ej. 202609181530
+    else if (s.length === 12 && /^\d{12}$/.test(s)) {
       const yr = s.substring(0, 4);
       const mo = s.substring(4, 6);
       const dy = s.substring(6, 8);
       const hh = s.substring(8, 10);
       const mm = s.substring(10, 12);
       dateObj = new Date(Date.UTC(parseInt(yr, 10), parseInt(mo, 10) - 1, parseInt(dy, 10), parseInt(hh, 10), parseInt(mm, 10)));
-    } else if (s.length === 4 && /^\d{4}$/.test(s)) {
-      // Formato HHMM (UTC) de hoy
+    }
+    // Caso 5: Formato HHMM (UTC) de hoy
+    else if (s.length === 4 && /^\d{4}$/.test(s)) {
       const now = new Date();
       const hh = parseInt(s.substring(0, 2), 10);
       const mm = parseInt(s.substring(2, 4), 10);

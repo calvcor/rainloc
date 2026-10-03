@@ -823,6 +823,9 @@ export class UIManager {
                   <a href="https://analisi.transparenciacatalunya.cat/d/nzvn-apee" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="Servei Meteorològic de Catalunya - Dades Obertes Gencat">
                     <span class="source-dot" style="background:#d97706;"></span> <strong>METEOCAT</strong>
                   </a>
+                  <a href="https://www.redhidrosurmedioambiente.es/saih/" target="_blank" rel="noopener noreferrer" class="source-legal-link" title="S.A.I.H. Hidrosur - Junta de Andalucía (Cuencas Andaluzas)">
+                    <span class="source-dot" style="background:#0d9488;"></span> <strong>HIDROSUR</strong>
+                  </a>
                 </div>
               </div>
             </div>
@@ -1024,6 +1027,7 @@ export class UIManager {
       case 'aemet_lluvias':
       case 'avamet_lluvias':
       case 'meteocat_lluvias':
+      case 'hidrosur_lluvias':
         return `Actualizado: <strong>${nowFormatted}</strong>`;
       case 'arome_precip':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+6h)</strong>`;
