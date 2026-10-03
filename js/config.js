@@ -29,6 +29,9 @@ export const CONFIG = {
       './data/subsistemas.geojson',
       './data/cuencas.geojson'
     ],
+    ebroCuencasGeoJson: [
+      `${apiBase}/cuencas/ebro`
+    ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,
       `${apiBase}/cuencas/ccaa`,
@@ -76,8 +79,9 @@ export const CONFIG = {
     }
   },
 
-  // Paleta de colores de alto contraste cromático por Sistema de Explotación CHJ
+  // Paleta de colores de alto contraste cromático por Sistema de Explotación (CHJ y CHEbro)
   systemColors: {
+    // Confederación Hidrográfica del Júcar (CHJ)
     'Cenia - Mijares': '#059669',       // Verde Esmeralda vibrante (Norte)
     'Palancia - Los Valles': '#d97706',   // Ámbar / Naranja dorado
     'Turia': '#8b5cf6',                 // Violeta / Púrpura eléctrico
@@ -87,6 +91,32 @@ export const CONFIG = {
     'Marina Baja': '#d946ef',           // Fucsia / Magenta
     'Alacantí': '#ea580c',              // Naranja cálido
     'Vinalopó': '#4338ca',              // Azul Índigo profundo (Sur)
+
+    // Confederación Hidrográfica del Ebro (CHEbro)
+    'Matarraña': '#10b981',
+    'Gállego - Cinca': '#0284c7',
+    'Garona': '#06b6d4',
+    'Guadalope - Regallo': '#f59e0b',
+    'Huecha': '#e11d48',
+    'Huerva': '#8b5cf6',
+    'Iregua - Leza - Valle de Ocón': '#3b82f6',
+    'Jalón': '#ea580c',
+    'Martín': '#d946ef',
+    'Ésera - Noguera Ribagorzana': '#0d9488',
+    'Ebro bajo': '#2563eb',
+    'Ega': '#6366f1',
+    'Aguas Vivas': '#eab308',
+    'Alhama': '#ec4899',
+    'Arbas': '#14b8a6',
+    'Bayas, Zadorra e Inglares': '#84cc16',
+    'Cidacos': '#f97316',
+    'Ciurana': '#a855f7',
+    'Ebro alto y medio y Aragón': '#38bdf8',
+    'Segre - Noguera Pallaresa': '#065f46',
+    'Tirón': '#4f46e5',
+    'Najerilla': '#0891b2',
+    'Queiles': '#be185d',
+
     'Default': '#3b82f6'                // Azul estándar
   },
 

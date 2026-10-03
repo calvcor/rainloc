@@ -120,11 +120,31 @@ export class CuencasLayer {
       throw new Error(`No se pudo cargar el archivo de subsistemas GeoJSON desde ninguna de las rutas: ${CONFIG.dataSources.subsistemasGeoJson.join(', ')}`);
     }
 
-    this.featuresData = geojsonData.features;
-    this._createLayer(geojsonData);
+    const allFeatures = [...geojsonData.features];
+
+    // Cargar cuencas y subcuencas del Ebro (CHEbro) dinámicamente desde el backend
+    if (CONFIG.dataSources.ebroCuencasGeoJson) {
+      for (const url of CONFIG.dataSources.ebroCuencasGeoJson) {
+        try {
+          const ebroRes = await fetch(url);
+          if (ebroRes.ok) {
+            const ebroData = await ebroRes.json();
+            if (ebroData && Array.isArray(ebroData.features)) {
+              allFeatures.push(...ebroData.features);
+            }
+            break;
+          }
+        } catch (err) {
+          console.warn('No se pudo cargar la capa de cuencas del Ebro:', err);
+        }
+      }
+    }
+
+    this.featuresData = allFeatures;
+    this._createLayer({ type: 'FeatureCollection', features: allFeatures });
 
     return {
-      featuresCount: geojsonData.features.length,
+      featuresCount: allFeatures.length,
       sourceUrl: loadedFrom
     };
   }
@@ -135,8 +155,8 @@ export class CuencasLayer {
    */
   getFeatureStyle(feature) {
     const props = feature.properties || {};
-    const sistema = props.NomSistExp || 'Default';
-    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
+    const sistema = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
+    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Sistema] || CONFIG.systemColors['Default'];
     const isFav = StorageManager.isFavorite(feature.id);
 
     if (isFav) {
@@ -191,7 +211,7 @@ export class CuencasLayer {
     });
 
     // Registrar en el control de capas para futura gestión de overlays
-    this.mapManager.addOverlayLayer(this.geoJsonLayer, 'Cuencas y Subsistemas (CHJ)');
+    this.mapManager.addOverlayLayer(this.geoJsonLayer, 'Cuencas y Subsistemas Hidrográficos');
   }
 
   /**
@@ -228,8 +248,8 @@ export class CuencasLayer {
     this._hoveredFeatureId = feature.id;
 
     const props = feature.properties || {};
-    const sistema = props.NomSistExp || 'Default';
-    const color = systemColor || CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'] || '#38bdf8';
+    const sistema = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
+    const color = systemColor || CONFIG.systemColors[sistema] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Sistema] || CONFIG.systemColors['Default'] || '#38bdf8';
     const isFav = StorageManager.isFavorite(feature.id);
 
     this.hoverHighlightLayer = L.geoJSON(feature, {
@@ -279,8 +299,8 @@ export class CuencasLayer {
     if (this._isTouchDevice()) return;
 
     const props = feature.properties || {};
-    const sistema = props.NomSistExp || 'Default';
-    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
+    const sistema = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
+    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Sistema] || CONFIG.systemColors['Default'];
 
     this.setHoverHighlight(feature, systemColor);
 
@@ -340,11 +360,13 @@ export class CuencasLayer {
     if (!feature || !latlng || !this.map) return;
 
     const props = feature.properties || {};
-    const sistema = props.NomSistExp || 'Demarcación CHJ';
-    const subsistema = props.Subsistema || `Subsistema ${feature.id || 'N/D'}`;
+    const isEbro = props.Demarcacion && props.Demarcacion.includes('Ebro');
+    const badgeText = isEbro ? (props.Demarcacion || 'Cuenca del Ebro (CHE)') : (props.NomSistExp || 'Demarcación CHJ');
+    const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${feature.id || 'N/D'}`;
+    const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
     const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;
     const superfFormatted = rawSuperf ? formatNumber(rawSuperf) + ' km²' : 'No disponible';
-    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors['Default'];
+    const systemColor = CONFIG.systemColors[sistemaKey] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors['Default'];
     const isFav = StorageManager.isFavorite(feature.id);
 
     // Popup enriquecido con estrella de favorita junto al título y tarjeta hidrológica
@@ -352,10 +374,10 @@ export class CuencasLayer {
       <div class="rainloc-popup">
         <div class="popup-header" style="border-left: 4px solid ${systemColor};">
           <span class="popup-badge" style="background-color: ${systemColor}20; color: ${systemColor};">
-            ${escapeHtml(sistema)}
+            ${escapeHtml(badgeText)}
           </span>
           <div class="popup-title-row">
-            <h3 class="popup-title">${escapeHtml(subsistema)}</h3>
+            <h3 class="popup-title">${escapeHtml(titleText)}</h3>
             <button type="button" class="popup-star-fav ${isFav ? 'is-fav' : ''}" data-fav-id="${feature.id}" title="${isFav ? 'Quitar de cuencas favoritas' : 'Marcar como cuenca favorita'}" aria-label="Favorito">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="${isFav ? '#f59e0b' : 'none'}" stroke="${isFav ? '#f59e0b' : 'currentColor'}" stroke-width="2">
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>

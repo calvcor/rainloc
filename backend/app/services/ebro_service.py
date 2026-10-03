@@ -40,6 +40,33 @@ EBRO_META_FILE = DATA_DIR / "ebro_metadata.json"
 EBRO_PLUVIOS_GEOJSON_FILE = DATA_DIR / "ebro_lluvias.geojson"
 EBRO_AFOROS_GEOJSON_FILE = DATA_DIR / "ebro_aforos.geojson"
 EBRO_EMBALSES_GEOJSON_FILE = DATA_DIR / "ebro_embalses.geojson"
+EBRO_CUENCAS_GEOJSON_FILE = DATA_DIR / "ebro_subcuencas.geojson"
+
+
+def _point_line_distance(point, start, end):
+    if start == end:
+        return ((point[0] - start[0]) ** 2 + (point[1] - start[1]) ** 2) ** 0.5
+    n = abs((end[1] - start[1]) * point[0] - (end[0] - start[0]) * point[1] + end[0] * start[1] - end[1] * start[0])
+    d = ((end[1] - start[1]) ** 2 + (end[0] - start[0]) ** 2) ** 0.5
+    return n / d if d > 0 else 0.0
+
+
+def _ramer_douglas_peucker(points, tolerance=0.0008):
+    if len(points) <= 2:
+        return points
+    dmax = 0.0
+    index = 0
+    for i in range(1, len(points) - 1):
+        d = _point_line_distance(points[i], points[0], points[-1])
+        if d > dmax:
+            index = i
+            dmax = d
+    if dmax > tolerance:
+        rec1 = _ramer_douglas_peucker(points[:index + 1], tolerance)
+        rec2 = _ramer_douglas_peucker(points[index:], tolerance)
+        return rec1[:-1] + rec2
+    else:
+        return [points[0], points[-1]]
 
 
 def _parse_num(val: Any) -> Optional[float]:
@@ -88,6 +115,8 @@ class EbroService:
         self._last_embalses_sync_time: Optional[datetime] = None
 
         self._sync_lock = asyncio.Lock()
+        self._cuencas_lock = asyncio.Lock()
+        self._cuencas_geojson_cache: Optional[Dict[str, Any]] = None
         self._load_cached_files()
 
     def set_api_key(self, api_key: Optional[str]):
@@ -1160,6 +1189,222 @@ class EbroService:
             "puntos_totales": len(points),
             "serie": points,
         }
+
+    def _parse_dbf(self, dbf_bytes: bytes) -> List[Dict[str, str]]:
+        import struct
+        num_records, header_len, record_len = struct.unpack("<IHH", dbf_bytes[4:12])
+        num_fields = (header_len - 33) // 32
+        fields = []
+        offset = 32
+        for _ in range(num_fields):
+            name = dbf_bytes[offset : offset + 11].replace(b"\x00", b"").decode("ascii", errors="ignore").strip()
+            typ = chr(dbf_bytes[offset + 11])
+            length = dbf_bytes[offset + 16]
+            fields.append((name, typ, length))
+            offset += 32
+        records = []
+        offset = header_len
+        for _ in range(num_records):
+            rec_offset = offset + 1
+            row = {}
+            for name, typ, length in fields:
+                row[name] = dbf_bytes[rec_offset : rec_offset + length].decode("utf-8", errors="replace").strip()
+                rec_offset += length
+            offset += record_len
+            records.append(row)
+        return records
+
+    def _parse_shp_polygons(self, shp_bytes: bytes, tolerance: float = 0.0008) -> List[Optional[Dict[str, Any]]]:
+        import struct
+        offset = 100
+        features = []
+        shp_len = len(shp_bytes)
+        while offset < shp_len:
+            if offset + 8 > shp_len:
+                break
+            rec_id, content_len = struct.unpack(">II", shp_bytes[offset : offset + 8])
+            rec_bytes = content_len * 2
+            offset += 8
+            if rec_bytes == 0:
+                features.append(None)
+                continue
+            shape_type = struct.unpack("<I", shp_bytes[offset : offset + 4])[0]
+            if shape_type in (5, 15, 25):  # Polygon
+                num_parts, num_points = struct.unpack("<II", shp_bytes[offset + 36 : offset + 44])
+                parts_offset = offset + 44
+                parts = list(struct.unpack(f"<{num_parts}I", shp_bytes[parts_offset : parts_offset + 4 * num_parts]))
+                parts.append(num_points)
+                points_offset = parts_offset + 4 * num_parts
+                raw_pts = struct.unpack(f"<{num_points*2}d", shp_bytes[points_offset : points_offset + 16 * num_points])
+
+                coords = []
+                for p_idx in range(num_parts):
+                    p_start = parts[p_idx]
+                    p_end = parts[p_idx + 1]
+                    ring = []
+                    last_pt = None
+                    for pt_i in range(p_start, p_end):
+                        x = round(raw_pts[pt_i * 2], 5)
+                        y = round(raw_pts[pt_i * 2 + 1], 5)
+                        if last_pt != (x, y):
+                            ring.append([x, y])
+                            last_pt = (x, y)
+                    if len(ring) >= 3:
+                        if tolerance > 0 and len(ring) > 6:
+                            simplified = _ramer_douglas_peucker(ring[:-1], tolerance)
+                            if len(simplified) >= 3:
+                                simplified.append(simplified[0])
+                                coords.append(simplified)
+                            else:
+                                coords.append(ring)
+                        else:
+                            coords.append(ring)
+                if len(coords) == 1:
+                    geom = {"type": "Polygon", "coordinates": coords}
+                elif len(coords) > 1:
+                    geom = {"type": "MultiPolygon", "coordinates": [[r] for r in coords]}
+                else:
+                    geom = None
+                features.append(geom)
+            else:
+                features.append(None)
+            offset += rec_bytes
+        return features
+
+    def _download_and_process_cuencas_geojson(self) -> Dict[str, Any]:
+        """Descarga dinámicamente desde el MITECO el shapefile oficial de Sistemas de Explotación, extrae la demarcación del Ebro y la optimiza."""
+        import hashlib, http.cookiejar, base64
+
+        cj = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+
+        url_page = "https://gis.miteco.gob.es/descargas/app/DescargaFichero?f=sistemasexplotacion-2022_2027.zip"
+        req = urllib.request.Request(url_page, headers={"User-Agent": USER_AGENT})
+        res = opener.open(req)
+        html = res.read().decode("utf-8")
+        token_match = re.search(r'name="__RequestVerificationToken"\s+type="hidden"\s+value="([^"]+)"', html)
+        if not token_match:
+            raise RuntimeError("No se pudo obtener el token de verificación de descarga de MITECO")
+        token = token_match.group(1)
+
+        url_altcha = "https://gis.miteco.gob.es/descargas/app/DescargaFichero?handler=Altcha"
+        altcha_data = json.loads(opener.open(urllib.request.Request(url_altcha, headers={"User-Agent": USER_AGENT})).read())
+
+        algorithm = altcha_data.get("algorithm", "SHA-256")
+        challenge = altcha_data.get("challenge")
+        salt = altcha_data.get("salt")
+        maxnumber = altcha_data.get("maxnumber", 100000)
+
+        solution_num = None
+        for i in range(maxnumber + 1):
+            h = hashlib.sha256((salt + str(i)).encode("utf-8")).hexdigest()
+            if h == challenge:
+                solution_num = i
+                break
+
+        if solution_num is None:
+            raise RuntimeError("No se pudo resolver el reto Altcha de MITECO")
+
+        altcha_payload = base64.b64encode(json.dumps({
+            "algorithm": algorithm, "challenge": challenge, "number": solution_num, "salt": salt, "signature": altcha_data.get("signature")
+        }).encode("utf-8")).decode("utf-8")
+
+        post_data = urllib.parse.urlencode({
+            "f": "sistemasexplotacion-2022_2027.zip", "altcha": altcha_payload, "__RequestVerificationToken": token
+        }).encode("utf-8")
+
+        req_post = urllib.request.Request("https://gis.miteco.gob.es/descargas/app/DescargaFichero?handler=Download", data=post_data, headers={
+            "User-Agent": USER_AGENT, "Referer": url_page, "Origin": "https://gis.miteco.gob.es"
+        })
+        file_data = opener.open(req_post).read()
+
+        z = zipfile.ZipFile(io.BytesIO(file_data))
+        dbf_name = [n for n in z.namelist() if n.endswith(".dbf")][0]
+        shp_name = [n for n in z.namelist() if n.endswith(".shp")][0]
+        records = self._parse_dbf(z.read(dbf_name))
+        geoms = self._parse_shp_polygons(z.read(shp_name), tolerance=0.0008)
+
+        features = []
+        for idx, (rec, geom) in enumerate(zip(records, geoms)):
+            if rec.get("cod_demar") == "ES091" and geom:
+                nom_raw = rec.get("nom_subse") or rec.get("nom_sisexp") or ""
+                nom = (
+                    nom_raw.replace("â\x80\x93", "-")
+                    .replace("\u2013", "-")
+                    .replace("Ã¡", "á")
+                    .replace("Ã©", "é")
+                    .replace("Ã\xad", "í")
+                    .replace("Ã³", "ó")
+                    .replace("Ãº", "ú")
+                    .replace("Ã±", "ñ")
+                    .replace("Ã\x89", "É")
+                    .strip()
+                )
+                features.append({
+                    "type": "Feature",
+                    "id": rec.get("cod_subse") or f"EBRO_{idx}",
+                    "properties": {
+                        "id": rec.get("cod_subse") or f"EBRO_{idx}",
+                        "NomSistExp": nom,
+                        "Subsistema": nom,
+                        "Sistema": nom,
+                        "Demarcacion": "Demarcación Hidrográfica del Ebro (CHE)",
+                        "cod_sisexp": rec.get("cod_sisexp"),
+                        "cod_subse": rec.get("cod_subse"),
+                        "cod_demar": "ES091",
+                    },
+                    "geometry": geom,
+                })
+
+        fc = {"type": "FeatureCollection", "features": features}
+
+        # Guardar en disco para persistencia y caché local
+        try:
+            EBRO_CUENCAS_GEOJSON_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(EBRO_CUENCAS_GEOJSON_FILE, "w", encoding="utf-8") as f:
+                json.dump(fc, f, ensure_ascii=False, separators=(",", ":"))
+            logger.info("GeoJSON de cuencas del Ebro generado y guardado en %s (%d subcuencas)", EBRO_CUENCAS_GEOJSON_FILE, len(features))
+        except Exception as e:
+            logger.warning("No se pudo escribir archivo local ebro_subcuencas.geojson: %s", e)
+
+        return fc
+
+    async def get_cuencas_geojson(self) -> Dict[str, Any]:
+        """Devuelve la FeatureCollection de cuencas/subcuencas del Ebro con descarga y caché dinámicas."""
+        if self._cuencas_geojson_cache is not None:
+            return self._cuencas_geojson_cache
+
+        async with self._cuencas_lock:
+            if self._cuencas_geojson_cache is not None:
+                return self._cuencas_geojson_cache
+
+            # 1. Verificar si ya existe en disco
+            candidates = [
+                EBRO_CUENCAS_GEOJSON_FILE,
+                DATA_DIR / "ebro_subcuencas.geojson",
+                DATA_DIR / "ebro_cuencas.geojson",
+                PUBLIC_DATA_DIR / "ebro_subcuencas.geojson" if PUBLIC_DATA_DIR else None,
+            ]
+            for cand in candidates:
+                if cand and cand.exists():
+                    try:
+                        with open(cand, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            if data and "features" in data:
+                                self._cuencas_geojson_cache = data
+                                return self._cuencas_geojson_cache
+                    except Exception as e:
+                        logger.warning("Error leyendo archivo local %s: %s", cand, e)
+
+            # 2. Descargar dinámicamente
+            logger.info("GeoJSON de cuencas del Ebro no encontrado localmente. Descargando dinámicamente desde MITECO/CHEbro...")
+            try:
+                data = await asyncio.to_thread(self._download_and_process_cuencas_geojson)
+                self._cuencas_geojson_cache = data
+                return self._cuencas_geojson_cache
+            except Exception as e:
+                logger.error("Error al descargar dinámicamente cuencas del Ebro: %s", e)
+                raise
 
 
 ebro_service = EbroService()
