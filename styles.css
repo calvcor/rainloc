@@ -1650,6 +1650,17 @@ body {
   transition: all 0.2s ease;
 }
 
+.timeline-bottom-player.is-loading .timeline-time-badge {
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+  animation: pulseLoadingBadge 1s ease-in-out infinite alternate;
+}
+
+@keyframes pulseLoadingBadge {
+  from { opacity: 0.75; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .timeline-player-left-group,
 .radar-player-left-group {
   display: flex;
@@ -2342,6 +2353,20 @@ body {
 @keyframes fadeInBanner {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.prediction-time-banner.is-loading {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 20px rgba(56, 189, 248, 0.35);
+}
+
+.prediction-time-banner.is-loading .prediction-time-icon {
+  animation: bannerPulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes bannerPulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  100% { transform: scale(1.05); opacity: 1; filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6)); }
 }
 
 .prediction-time-icon {

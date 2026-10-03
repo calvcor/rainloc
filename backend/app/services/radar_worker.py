@@ -624,9 +624,6 @@ class RadarService:
                     except Exception:
                         pass
 
-            if best_key is None and vradh_keys:
-                best_key = vradh_keys[-1]
-
             if best_key:
                 h5_bytes = self._download_s3_file(best_key)
                 if h5_bytes:
@@ -673,10 +670,20 @@ class RadarService:
             short_grid_2d = short_grid_1d.reshape(GRID_H, GRID_W)
             cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
 
-            # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma')
+            # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma', Baleares 'espmb')
             # Las estaciones como Cullera ('escul' / 'va') no disponen de volcado directo en OPERA ni en S3 PVOL.
-            # Se integran de forma continua mediante su imagen regional oficial de AEMET (en vivo o fallback persistido).
-            if aemet_opendata_service.is_configured:
+            # CRÍTICO: Solo se integra AEMET OpenData si el fotograma es en vivo / tiempo casi real (últimos 20 min).
+            # Evita inyectar la imagen actual o estática en fotogramas históricos o pasados.
+            target_ts = timestep[:13] if len(timestep) >= 13 else ""
+            is_near_realtime = False
+            try:
+                dt_target = datetime.strptime(target_ts, "%Y%m%dT%H%M").replace(tzinfo=timezone.utc)
+                if abs((datetime.now(timezone.utc) - dt_target).total_seconds()) <= 1200:
+                    is_near_realtime = True
+            except Exception:
+                is_near_realtime = False
+
+            if is_near_realtime and aemet_opendata_service.is_configured:
                 priority_stations = ["escul", "espma", "espmb"]
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
@@ -856,6 +863,11 @@ class RadarService:
 
             for f in self.cache_dir.glob("*.h5"):
                 if f.stat().st_mtime < cutoff_mtime:
+                    f.unlink(missing_ok=True)
+
+            # Eliminar GIFs temporales de AEMET que tengan más de 30 minutos
+            for f in self.cache_dir.glob("aemet_regional_*.gif"):
+                if (time.time() - f.stat().st_mtime) > 1800:
                     f.unlink(missing_ok=True)
 
             # Limpiar timeline en memoria de pasos obsoletos

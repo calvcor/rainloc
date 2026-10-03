@@ -1616,8 +1616,86 @@ export class UIManager {
 
     const slider = document.getElementById('timeline-step-slider');
     if (slider) {
-      let _sliderRaf = null;
-      let _pendingVal = null;
+      let _sliderDebounceTimer = null;
+
+      const previewTimelineSlider = (rawVal) => {
+        if (!this.layerManager) return;
+        const activeType = this._getActiveTimelineType();
+        if (activeType === 'radar') {
+          const timeline = this.layerManager.radarTimeline || [];
+          const item = timeline[rawVal];
+          if (item) {
+            const timeText = document.getElementById('timeline-time-text');
+            if (timeText) {
+              const timeOnly = item.valid_time_local ? String(item.valid_time_local).trim().split(/\s+/).pop() : '';
+              const isLive = item.is_latest || item.timestep === timeline[timeline.length - 1]?.timestep;
+              timeText.textContent = isLive ? (timeOnly ? `Radar · ${timeOnly}` : 'Radar · Directo') : `Radar · ${timeOnly}`;
+            }
+          }
+        } else if (activeType) {
+          let meta = null;
+          let modelLabel = '';
+          let modelFlag = '';
+          let curType = 'total';
+          if (activeType === 'harmonie_aemet') {
+            meta = this.layerManager.harmonieMetadata;
+            curType = this.layerManager.currentHarmonieType || 'total';
+            modelLabel = 'HARMONIE (2.5km)';
+            modelFlag = '🇪🇸';
+          } else if (activeType === 'arome_precip') {
+            meta = this.layerManager.aromeMetadata;
+            curType = this.layerManager.currentAromeType || 'total';
+            modelLabel = 'AROME HD';
+            modelFlag = '🇫🇷';
+          } else if (activeType === 'icon_eu') {
+            meta = this.layerManager.iconMetadata;
+            curType = this.layerManager.currentIconType || 'total';
+            modelLabel = 'ICON-EU (6.5km)';
+            modelFlag = '🇩🇪';
+          } else if (activeType === 'gem_gdps') {
+            meta = this.layerManager.gemMetadata;
+            curType = this.layerManager.currentGemType || 'total';
+            modelLabel = 'GEM-GDPS (15km)';
+            modelFlag = '🇨🇦';
+          } else if (activeType === 'ecmwf_ifs') {
+            meta = this.layerManager.ecmwfMetadata;
+            curType = this.layerManager.currentEcmwfType || 'total';
+            modelLabel = 'ECMWF IFS';
+            modelFlag = '🇪🇺';
+          } else if (activeType === 'gfs_0p25') {
+            meta = this.layerManager.gfsMetadata;
+            curType = this.layerManager.currentGfsType || 'total';
+            modelLabel = 'NOAA GFS';
+            modelFlag = '🇺🇸';
+          }
+          if (!meta || !meta.available_steps || meta.available_steps.length === 0) return;
+          const steps = meta.available_steps;
+          let closestStep = steps[0];
+          let minDiff = Infinity;
+          for (const s of steps) {
+            const diff = Math.abs(s - rawVal);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestStep = s;
+            }
+          }
+          const timeText = document.getElementById('timeline-time-text');
+          if (timeText) {
+            timeText.innerHTML = `${modelFlag} <strong>${modelLabel}</strong> (+${closestStep}h)`;
+          }
+          const maxPill = document.getElementById('timeline-max-pill');
+          const stepInfo = (meta.steps || []).find(s => s.step === closestStep);
+          if (maxPill && stepInfo) {
+            const maxVal = curType === 'interval'
+              ? (stepInfo.max_interval_mm !== undefined ? stepInfo.max_interval_mm : stepInfo.max_interval_precip_mm)
+              : (stepInfo.max_total_mm !== undefined ? stepInfo.max_total_mm : stepInfo.max_total_precip_mm);
+            maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+          }
+          if (this.predictionBannerExactTime && stepInfo && stepInfo.valid_time_iso) {
+            this.predictionBannerExactTime.textContent = formatPredictionInstant(stepInfo.valid_time_iso);
+          }
+        }
+      };
 
       const handleSliderChange = (rawVal) => {
         if (!this.layerManager) return;
@@ -1633,21 +1711,19 @@ export class UIManager {
       };
 
       slider.addEventListener('input', (e) => {
-        _pendingVal = parseInt(e.target.value, 10);
-        if (_sliderRaf) return;
-        _sliderRaf = requestAnimationFrame(() => {
-          _sliderRaf = null;
-          if (_pendingVal !== null) {
-            handleSliderChange(_pendingVal);
-            _pendingVal = null;
-          }
-        });
+        const val = parseInt(e.target.value, 10);
+        previewTimelineSlider(val);
+        if (_sliderDebounceTimer) clearTimeout(_sliderDebounceTimer);
+        _sliderDebounceTimer = setTimeout(() => {
+          _sliderDebounceTimer = null;
+          handleSliderChange(val);
+        }, 75);
       });
 
       slider.addEventListener('change', (e) => {
-        if (_sliderRaf) {
-          cancelAnimationFrame(_sliderRaf);
-          _sliderRaf = null;
+        if (_sliderDebounceTimer) {
+          clearTimeout(_sliderDebounceTimer);
+          _sliderDebounceTimer = null;
         }
         handleSliderChange(parseInt(e.target.value, 10));
       });
@@ -1746,6 +1822,16 @@ export class UIManager {
       }
     }
     setStepFn(closestStep);
+  }
+
+  setTimelineLoading(isLoading) {
+    const bottomPlayer = this.timelineBottomPlayer || document.getElementById('timeline-bottom-player');
+    if (bottomPlayer) {
+      bottomPlayer.classList.toggle('is-loading', Boolean(isLoading));
+    }
+    if (this.predictionBanner) {
+      this.predictionBanner.classList.toggle('is-loading', Boolean(isLoading));
+    }
   }
 
   toggleRadarBottomPlayer(show) {

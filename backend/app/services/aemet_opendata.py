@@ -58,6 +58,7 @@ class AemetOpenDataService:
         self.base_url = settings.AEMET_OPENDATA_BASE_URL
         self._last_download_time: Dict[str, float] = {}
         self._cache_bytes: Dict[str, bytes] = {}
+        self._cache_time: Dict[str, float] = {}
         self._lock = threading.Lock()
 
     @property
@@ -65,35 +66,51 @@ class AemetOpenDataService:
         """Indica si hay una clave de API de AEMET configurada."""
         return bool(settings.AEMET_API_KEY and len(settings.AEMET_API_KEY.strip()) > 10)
 
-    def _get_fallback_bytes(self, aemet_code: str) -> Optional[bytes]:
-        """Obtiene la última imagen válida desde memoria o disco."""
+    def _get_fallback_bytes(self, aemet_code: str, max_age_sec: float = 900.0) -> Optional[bytes]:
+        """
+        Obtiene la última imagen válida desde memoria o disco solo si es reciente (<= 15 min).
+        Evita mantener ecos estáticos / congelados de tormentas pasadas.
+        """
+        now = time.time()
         if aemet_code in self._cache_bytes and self._cache_bytes[aemet_code]:
-            return self._cache_bytes[aemet_code]
+            if (now - self._cache_time.get(aemet_code, 0.0)) <= max_age_sec:
+                return self._cache_bytes[aemet_code]
+            else:
+                del self._cache_bytes[aemet_code]
+                if aemet_code in self._cache_time:
+                    del self._cache_time[aemet_code]
+
         try:
             disk_p = settings.RADAR_CACHE_DIR / f"aemet_regional_{aemet_code}.gif"
             if disk_p.exists():
-                data = disk_p.read_bytes()
-                if data and len(data) > 500:
-                    self._cache_bytes[aemet_code] = data
-                    return data
+                mtime = disk_p.stat().st_mtime
+                if (now - mtime) <= max_age_sec:
+                    data = disk_p.read_bytes()
+                    if data and len(data) > 500:
+                        self._cache_bytes[aemet_code] = data
+                        self._cache_time[aemet_code] = mtime
+                        return data
+                else:
+                    # Eliminar archivo obsoleto en disco para evitar que reaparezca
+                    disk_p.unlink(missing_ok=True)
         except Exception:
             pass
         return None
 
-    def fetch_regional_radar_gif(self, aemet_code: str, min_interval_sec: float = 300.0) -> Optional[bytes]:
+    def fetch_regional_radar_gif(self, aemet_code: str, min_interval_sec: float = 300.0, max_age_sec: float = 900.0) -> Optional[bytes]:
         """
         Descarga la última imagen GIF del radar regional desde AEMET OpenData.
-        Aplica proxy seguro desde el servidor, control thread-safe de rate-limits, persistencia en disco y fallback ininterrumpido.
+        Aplica proxy seguro desde el servidor, control thread-safe de rate-limits, persistencia en disco y fallback reciente.
         """
         if not self.is_configured:
-            return self._get_fallback_bytes(aemet_code)
+            return self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
 
         with self._lock:
             # Comprobar intervalo mínimo entre descargas para no saturar la API de AEMET
             now_ts = time.time()
             last_ts = self._last_download_time.get(aemet_code, 0.0)
             if (now_ts - last_ts) < min_interval_sec:
-                cached = self._get_fallback_bytes(aemet_code)
+                cached = self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
                 if cached:
                     return cached
 
@@ -113,14 +130,14 @@ class AemetOpenDataService:
                     if resp.status != 200:
                         logger.warning(f"AEMET OpenData HTTP {resp.status} al consultar radar {aemet_code}")
                         self._last_download_time[aemet_code] = now_ts - (min_interval_sec - 60.0) # Reintento tras 60s
-                        return self._get_fallback_bytes(aemet_code)
+                        return self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
                     data = json.loads(resp.read().decode("utf-8", "ignore"))
 
                 datos_url = data.get("datos")
                 if not datos_url:
                     logger.warning(f"AEMET OpenData no devolvió URL de datos para radar {aemet_code}: {data.get('descripcion')}")
                     self._last_download_time[aemet_code] = now_ts - (min_interval_sec - 60.0)
-                    return self._get_fallback_bytes(aemet_code)
+                    return self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
 
                 # Descargar imagen GIF desde la URL temporal devuelta
                 img_req = urllib.request.Request(datos_url, headers={"User-Agent": settings.AEMET_USER_AGENT})
@@ -129,18 +146,19 @@ class AemetOpenDataService:
                     if gif_bytes and len(gif_bytes) > 500:
                         self._last_download_time[aemet_code] = time.time()
                         self._cache_bytes[aemet_code] = gif_bytes
+                        self._cache_time[aemet_code] = time.time()
                         try:
                             disk_p = settings.RADAR_CACHE_DIR / f"aemet_regional_{aemet_code}.gif"
                             disk_p.write_bytes(gif_bytes)
                         except Exception:
                             pass
                         return gif_bytes
-                    return self._get_fallback_bytes(aemet_code)
+                    return self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
 
             except Exception as e:
                 logger.warning(f"Error en AEMET OpenData para radar {aemet_code}: {e}")
                 self._last_download_time[aemet_code] = now_ts - (min_interval_sec - 60.0)
-                return self._get_fallback_bytes(aemet_code)
+                return self._get_fallback_bytes(aemet_code, max_age_sec=max_age_sec)
 
     def decode_and_blend_station(
         self,
