@@ -543,28 +543,31 @@ class ACAService:
         if raw_code.endswith("_vol") or raw_code.endswith("_cota"):
             raw_code = raw_code.rsplit("_", 1)[0]
 
-        now_utc = datetime.now(UTC_TZ)
+        now_madrid = datetime.now(MADRID_TZ)
         if end_date:
             try:
                 dt_e = datetime.fromisoformat(str(end_date).replace(" ", "T"))
                 if dt_e.tzinfo is None:
-                    dt_e = dt_e.replace(tzinfo=MADRID_TZ).astimezone(UTC_TZ)
-                end_iso = dt_e.strftime("%Y-%m-%dT%H:%M:%S")
+                    dt_e = dt_e.replace(tzinfo=MADRID_TZ)
+                end_dt = dt_e
             except Exception:
-                end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%S")
+                end_dt = now_madrid
         else:
-            end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%S")
+            end_dt = now_madrid
 
         if start_date:
             try:
                 dt_s = datetime.fromisoformat(str(start_date).replace(" ", "T"))
                 if dt_s.tzinfo is None:
-                    dt_s = dt_s.replace(tzinfo=MADRID_TZ).astimezone(UTC_TZ)
-                start_iso = dt_s.strftime("%Y-%m-%dT%H:%M:%S")
+                    dt_s = dt_s.replace(tzinfo=MADRID_TZ)
+                start_dt = dt_s
             except Exception:
-                start_iso = (now_utc - timedelta(hours=int(hours))).strftime("%Y-%m-%dT%H:%M:%S")
+                start_dt = end_dt - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
         else:
-            start_iso = (now_utc - timedelta(hours=int(hours))).strftime("%Y-%m-%dT%H:%M:%S")
+            start_dt = end_dt - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
+
+        start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
         is_emb = (
             is_embalse
@@ -647,8 +650,8 @@ class ACAService:
             "id_variable": str(id_variable),
             "estacion": station_info,
             "rango": {
-                "desde": _format_madrid_iso(start_iso),
-                "hasta": _format_madrid_iso(end_iso),
+                "desde": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "hasta": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "horas": hours,
             },
             "puntos_totales": len(series),
