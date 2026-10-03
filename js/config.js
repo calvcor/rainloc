@@ -35,6 +35,9 @@ export const CONFIG = {
     seguraCuencasGeoJson: [
       `${apiBase}/cuencas/segura`
     ],
+    guadalquivirCuencasGeoJson: [
+      `${apiBase}/cuencas/guadalquivir`
+    ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,
       `${apiBase}/cuencas/ccaa`,
@@ -143,6 +146,16 @@ export const CONFIG = {
     'Ramblas Costeras Sur': '#14b8a6',
     'Ramblas Costeras Norte': '#6366f1',
     'Altiplano': '#84cc16',
+
+    // Confederación Hidrográfica del Guadalquivir (CHGuadalquivir)
+    'Abastecimiento de Sevilla': '#0284c7',
+    'Alto Genil': '#10b981',
+    'Bembézar-Retortillo': '#8b5cf6',
+    'Guadiamar': '#06b6d4',
+    'Hoya de Guadix': '#ea580c',
+    'Regulación General': '#2563eb',
+    'Abastecimiento de Córdoba': '#d946ef',
+    'Abastecimiento de Jaén': '#e11d48',
 
     'Default': '#3b82f6'                // Azul estándar
   },

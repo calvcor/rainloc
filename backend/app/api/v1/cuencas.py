@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Response
 from app.config import settings
 from app.services.ebro_service import ebro_service
 from app.services.segura_service import segura_service
+from app.services.guadalquivir_service import guadalquivir_service
 
 router = APIRouter(prefix="/cuencas", tags=["Cuencas y Subsistemas"])
 
@@ -151,6 +152,31 @@ async def get_segura_cuencas():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Segura: {str(e)}")
+
+@router.get("/guadalquivir", summary="Obtener GeoJSON de cuencas y subcuencas de la CHG (Guadalquivir)")
+async def get_guadalquivir_cuencas():
+    """
+    Devuelve la FeatureCollection con geometrías optimizadas y propiedades de los
+    sistemas de explotación y subcuencas de la Confederación Hidrográfica del Guadalquivir (CHG).
+    Si el archivo no existe localmente, se descarga y optimiza dinámicamente desde fuentes oficiales.
+    """
+    try:
+        data = await guadalquivir_service.get_cuencas_geojson()
+        try:
+            basin_hydrology_service.ingest_feature_collection(data, default_demarcation="Demarcación Hidrográfica del Guadalquivir (CHG)")
+        except Exception:
+            pass
+        return Response(
+            content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+            media_type="application/geo+json",
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Feature-Count": str(len(data.get("features", []))),
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Guadalquivir: {str(e)}")
+
 
 @router.get("/sistemas", summary="Resumen estadístico por Sistema de Explotación")
 async def get_sistemas_summary():

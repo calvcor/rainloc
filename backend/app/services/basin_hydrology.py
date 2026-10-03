@@ -145,6 +145,11 @@ class BasinHydrologyService:
                         if norm.startswith("es091se"):
                             aliases.add(norm[7:])
                             aliases.add("se" + norm[7:])
+                        if norm.startswith("es050se"):
+                            aliases.add(norm[7:])
+                            aliases.add("se" + norm[7:])
+                        if norm.startswith("guad_"):
+                            aliases.add(norm[5:])
 
             self.basins[basin_id] = {
                 "id": basin_id,
@@ -221,10 +226,26 @@ class BasinHydrologyService:
                 except Exception as e:
                     logger.warning(f"BasinHydrology: Error leyendo GeoJSON Segura ({p}): {e}")
 
-        # 4. Cualquier otro archivo *cuencas*.geojson en data_dir
+        # 4. CHGuadalquivir: Subcuencas
+        guadalquivir_candidates = [
+            data_dir / "guadalquivir_subcuencas.geojson",
+            BASE_DIR / "backend" / "data" / "guadalquivir_subcuencas.geojson",
+            BASE_DIR / "guadalquivir_subcuencas.geojson",
+        ]
+        for p in guadalquivir_candidates:
+            if p and p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation="Demarcación Hidrográfica del Guadalquivir (CHG)")
+                    break
+                except Exception as e:
+                    logger.warning(f"BasinHydrology: Error leyendo GeoJSON Guadalquivir ({p}): {e}")
+
+        # 5. Cualquier otro archivo *cuencas*.geojson en data_dir
         try:
             for p in data_dir.glob("*cuencas*.geojson"):
-                if "ebro" in p.name or "segura" in p.name:
+                if "ebro" in p.name or "segura" in p.name or "guadalquivir" in p.name:
                     continue
                 try:
                     with open(p, "r", encoding="utf-8") as f:

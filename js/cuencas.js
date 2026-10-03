@@ -158,6 +158,24 @@ export class CuencasLayer {
       }
     }
 
+    // Cargar cuencas y subcuencas del Guadalquivir (CHGuadalquivir) dinámicamente desde el backend
+    if (CONFIG.dataSources.guadalquivirCuencasGeoJson) {
+      for (const url of CONFIG.dataSources.guadalquivirCuencasGeoJson) {
+        try {
+          const chgRes = await fetch(url);
+          if (chgRes.ok) {
+            const chgData = await chgRes.json();
+            if (chgData && Array.isArray(chgData.features)) {
+              allFeatures.push(...chgData.features);
+            }
+            break;
+          }
+        } catch (err) {
+          console.warn('No se pudo cargar la capa de cuencas del Guadalquivir:', err);
+        }
+      }
+    }
+
     this.featuresData = allFeatures;
     this._createLayer({ type: 'FeatureCollection', features: allFeatures });
 
@@ -384,7 +402,8 @@ export class CuencasLayer {
     const basinId = String(feature.id || props.id || props.cod_subse || props.cod_sisexp || props.codigo_saih || '').trim();
     const isEbro = (props.Demarcacion && props.Demarcacion.includes('Ebro')) || (props.demarcacion === 'Ebro');
     const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
-    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (props.NomSistExp || 'Demarcación CHJ')));
+    const isGuadalquivir = (props.Demarcacion && props.Demarcacion.includes('Guadalquivir')) || (props.demarcacion === 'Guadalquivir');
+    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (isGuadalquivir ? 'Demarcación Hidrográfica del Guadalquivir (CHG)' : (props.NomSistExp || 'Demarcación CHJ'))));
     const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${basinId || 'N/D'}`;
     const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
     const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;
