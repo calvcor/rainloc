@@ -1137,21 +1137,27 @@ export class MultiLayerInspector {
           if (closestStation) {
             const rawCaudal = closestStation.ultimo_caudal !== undefined ? closestStation.ultimo_caudal : (closestStation.caudal !== undefined ? closestStation.caudal : closestStation.lastValue);
             const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
+            const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : closestStation.nivel;
+            const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
+
+            const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR';
+            const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
+
             const umbrales = closestStation.umbrales || {};
-            const uAmarillo = umbrales.amarillo ? Number(umbrales.amarillo) : null;
-            const uNaranja = umbrales.naranja ? Number(umbrales.naranja) : null;
-            const uRojo = umbrales.rojo ? Number(umbrales.rojo) : null;
+            const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
+            const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
+            const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
 
             let badgeBg = "#10b981";
             let alertLevel = "Normal";
-            if (caudal !== null) {
-              if (uRojo !== null && caudal >= uRojo) {
+            if (compareVal !== null) {
+              if (uRojo !== null && compareVal >= uRojo) {
                 badgeBg = "#ef4444";
                 alertLevel = "🔴 Umbral Rojo";
-              } else if (uNaranja !== null && caudal >= uNaranja) {
+              } else if (uNaranja !== null && compareVal >= uNaranja) {
                 badgeBg = "#f97316";
                 alertLevel = "🟠 Umbral Naranja";
-              } else if (uAmarillo !== null && caudal >= uAmarillo) {
+              } else if (uAmarillo !== null && compareVal >= uAmarillo) {
                 badgeBg = "#f59e0b";
                 alertLevel = "🟡 Umbral Amarillo";
               }
@@ -1161,12 +1167,14 @@ export class MultiLayerInspector {
             }
 
             const caudalText = caudal !== null ? `${caudal.toFixed(2)} m³/s` : "-- m³/s";
+            const nivelText = nivel !== null ? `${nivel.toFixed(2)} m` : '';
             const horaText = closestStation.ultima_hora ? `· ${closestStation.ultima_hora}` : '';
             const thList = [];
             if (uAmarillo) thList.push(`🟡 ${uAmarillo}`);
             if (uNaranja) thList.push(`🟠 ${uNaranja}`);
             if (uRojo) thList.push(`🔴 ${uRojo}`);
-            const thText = thList.length > 0 ? thList.join(' · ') + ' m³/s' : 'En estudio';
+            const thUnit = isNivelThreshold ? 'm' : 'm³/s';
+            const thText = thList.length > 0 ? thList.join(' · ') + ' ' + thUnit : 'En estudio';
             const metaLoc = `${closestStation.poblacion || '--'} (${closestStation.provincia || ''}) · ${closestStation.subcuenca || ''}`;
 
             sections.push({
@@ -1182,7 +1190,7 @@ export class MultiLayerInspector {
               details: `
                 <div class="unified-caudal-block">
                   <div style="color:#cbd5e1; font-size:0.75rem;">${closestStation.variable || 'Caudal'}</div>
-                  <div style="margin-top:2px; font-size:0.82rem;">Caudal: <strong style="color:${badgeBg}; font-size:1.08em;">${caudalText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">${horaText}</span></div>
+                  <div style="margin-top:2px; font-size:0.82rem;">Caudal: <strong style="color:${badgeBg}; font-size:1.08em;">${caudalText}</strong> ${nivelText ? `<span style="color:#cbd5e1; font-size:0.75rem; margin-left:4px;">(Nivel: ${nivelText})</span>` : ''} <span style="color:#94a3b8; font-size:0.72rem;">${horaText}</span></div>
                   <div style="font-size:0.72rem; color:#cbd5e1; margin-top:2px;">Umbrales: <span>${thText}</span></div>
                   <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestStation.codigo || '--'}</div>
                 </div>

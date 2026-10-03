@@ -481,6 +481,8 @@ class HidrosurService:
                     "ultimo_nivel": nivel,
                     "caudal": caudal,
                     "nivel": nivel,
+                    "unidad_umbrales": "m",
+                    "tipo_umbral": "nivel",
                     "umbrales": {
                         "amarillo": meta.get("aviso") or 0.0,
                         "naranja": meta.get("prealerta") or 0.0,
@@ -489,7 +491,8 @@ class HidrosurService:
                     "max_historico_nivel": meta.get("max_nivel"),
                     "ultima_hora": now_iso,
                     "fecha_comunicacion": now_iso,
-                    "unidad": "m³/s"
+                    "unidad": "m³/s",
+                    "unidad_grafica": "m"
                 }
                 aforos_list.append(st_dict)
 
@@ -752,7 +755,7 @@ class HidrosurService:
         # Localizar el sensor_code
         sensor_code = None
         station_name = str(id_or_code)
-        unidad = "hm³" if is_embalse else "m³/s"
+        unidad = "hm³" if is_embalse else "m"
 
         if is_embalse:
             await self.get_embalses()

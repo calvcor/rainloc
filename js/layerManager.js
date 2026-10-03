@@ -4333,26 +4333,32 @@ export class LayerManager {
         props.lon = latlng.lng;
         const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : props.lastValue);
         const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
+        const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : props.nivel;
+        const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
+
+        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
+        const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
+
         const umbrales = props.umbrales || {};
-        const uAmarillo = umbrales.amarillo ? Number(umbrales.amarillo) : null;
-        const uNaranja = umbrales.naranja ? Number(umbrales.naranja) : null;
-        const uRojo = umbrales.rojo ? Number(umbrales.rojo) : null;
+        const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
+        const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
+        const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
 
         // Determinar nivel de alerta y color
         let color = '#10b981'; // Normal (Verde)
         let alertClass = 'caudal-status-normal';
         let alertLevelText = 'Normal';
 
-        if (caudal !== null) {
-          if (uRojo !== null && caudal >= uRojo) {
+        if (compareVal !== null) {
+          if (uRojo !== null && compareVal >= uRojo) {
             color = '#ef4444';
             alertClass = 'caudal-status-red caudal-pulse';
             alertLevelText = 'Umbral Rojo (Desbordamiento)';
-          } else if (uNaranja !== null && caudal >= uNaranja) {
+          } else if (uNaranja !== null && compareVal >= uNaranja) {
             color = '#f97316';
             alertClass = 'caudal-status-orange caudal-pulse';
             alertLevelText = 'Umbral Naranja (Muy Alto)';
-          } else if (uAmarillo !== null && caudal >= uAmarillo) {
+          } else if (uAmarillo !== null && compareVal >= uAmarillo) {
             color = '#f59e0b';
             alertClass = 'caudal-status-yellow';
             alertLevelText = 'Umbral Amarillo (Precaución)';
@@ -4440,24 +4446,29 @@ export class LayerManager {
 
     // Umbrales
     const umbrales = props.umbrales || {};
-    const uAmarillo = umbrales.amarillo ? Number(umbrales.amarillo) : null;
-    const uNaranja = umbrales.naranja ? Number(umbrales.naranja) : null;
-    const uRojo = umbrales.rojo ? Number(umbrales.rojo) : null;
+    const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : null;
+    const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : null;
+    const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : null;
 
     // Calcular estado
     const rawCaudal = props.ultimo_caudal !== undefined ? props.ultimo_caudal : (props.caudal !== undefined ? props.caudal : props.lastValue);
     const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
+    const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : props.nivel;
+    const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
+
+    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
+    const compareVal = (isNivelThreshold && nivel !== null) ? nivel : caudal;
 
     let alertColor = '#10b981';
     let alertText = 'Caudal Normal';
-    if (caudal !== null) {
-      if (uRojo !== null && caudal >= uRojo) {
+    if (compareVal !== null) {
+      if (uRojo !== null && compareVal >= uRojo) {
         alertColor = '#ef4444';
         alertText = '🔴 Umbral Rojo (Desbordamiento)';
-      } else if (uNaranja !== null && caudal >= uNaranja) {
+      } else if (uNaranja !== null && compareVal >= uNaranja) {
         alertColor = '#f97316';
         alertText = '🟠 Umbral Naranja (Peligro)';
-      } else if (uAmarillo !== null && caudal >= uAmarillo) {
+      } else if (uAmarillo !== null && compareVal >= uAmarillo) {
         alertColor = '#f59e0b';
         alertText = '🟡 Umbral Amarillo (Aviso)';
       }
@@ -4482,11 +4493,18 @@ export class LayerManager {
     if (subtitleEl) {
       const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
       const netName = isHidro ? 'SAIH Hidrosur' : 'SAIH CHJ';
-      subtitleEl.textContent = `${props.variable || 'Caudal'} · ${props.poblacion || '--'} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
+      const varDesc = isHidro ? (nivel !== null ? `Nivel: ${nivel.toFixed(2)} m · Caudal: ${caudal !== null ? caudal.toFixed(2) + ' m³/s' : '--'}` : 'Caudal en Río') : (props.variable || 'Caudal');
+      subtitleEl.textContent = `${varDesc} · ${props.poblacion || '--'} (${props.provincia || ''}) · ${netName}: ${props.codigo || '--'}`;
     }
 
     if (statCurrent) {
-      statCurrent.textContent = caudal !== null ? `${caudal.toFixed(2)} m³/s` : '-- m³/s';
+      if (caudal !== null) {
+        statCurrent.textContent = `${caudal.toFixed(2)} m³/s`;
+      } else if (nivel !== null) {
+        statCurrent.textContent = `${nivel.toFixed(2)} m`;
+      } else {
+        statCurrent.textContent = '-- m³/s';
+      }
       statCurrent.style.color = alertColor;
     }
     if (statTime) {
@@ -4500,12 +4518,13 @@ export class LayerManager {
     }
 
     // Chips de umbrales
+    const thUnit = isNivelThreshold ? 'm' : 'm³/s';
     const chipY = document.getElementById('th-chip-yellow');
     const chipO = document.getElementById('th-chip-orange');
     const chipR = document.getElementById('th-chip-red');
-    if (chipY) chipY.textContent = `🟡 Amarillo: ${uAmarillo ? uAmarillo + ' m³/s' : '--'}`;
-    if (chipO) chipO.textContent = `🟠 Naranja: ${uNaranja ? uNaranja + ' m³/s' : '--'}`;
-    if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' m³/s' : '--'}`;
+    if (chipY) chipY.textContent = `🟡 Amarillo: ${uAmarillo ? uAmarillo + ' ' + thUnit : '--'}`;
+    if (chipO) chipO.textContent = `🟠 Naranja: ${uNaranja ? uNaranja + ' ' + thUnit : '--'}`;
+    if (chipR) chipR.textContent = `🔴 Rojo: ${uRojo ? uRojo + ' ' + thUnit : '--'}`;
 
     if (saihLink) {
       const isHidro = props.red === 'HIDROSUR' || (props.id_variable && String(props.id_variable).startsWith('hidrosur_'));
@@ -4598,6 +4617,9 @@ export class LayerManager {
         return;
       }
 
+      const chartUnit = data.unidad || (this._currentModalStationProps && this._currentModalStationProps.unidad_grafica) || 'm³/s';
+      const isLevelChart = chartUnit === 'm';
+
       const values = validPoints.map(s => Number(s.valor));
 
       // Sincronizar lectura del instante actual y estadísticas
@@ -4606,7 +4628,11 @@ export class LayerManager {
       const statTime = document.getElementById('caudal-stat-time');
       if (latestPoint && statCurrent) {
         const latestVal = Number(latestPoint.valor);
-        statCurrent.textContent = `${latestVal.toFixed(2)} m³/s`;
+        if (this._currentModalStationProps && this._currentModalStationProps.caudal !== undefined && this._currentModalStationProps.caudal !== null && isLevelChart) {
+          statCurrent.textContent = `${Number(this._currentModalStationProps.caudal).toFixed(2)} m³/s`;
+        } else {
+          statCurrent.textContent = `${latestVal.toFixed(2)} ${chartUnit}`;
+        }
       }
       if (latestPoint && latestPoint.fecha && statTime) {
         statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(latestPoint.fecha))}`;
@@ -4620,14 +4646,14 @@ export class LayerManager {
         const maxPoint = validPoints.find(p => Number(p.valor) === maxVal);
         const maxTimeStr = maxPoint && maxPoint.fecha ? formatMadridDateTime(new Date(maxPoint.fecha)) : '';
 
-        if (statMax) statMax.textContent = `${maxVal.toFixed(2)} m³/s`;
+        if (statMax) statMax.textContent = `${maxVal.toFixed(2)} ${chartUnit}`;
         if (statMaxTime) statMaxTime.textContent = maxTimeStr ? `Registrado: ${maxTimeStr}` : 'Pico del periodo';
-        if (statMin) statMin.textContent = `${minVal.toFixed(2)} m³/s`;
-        if (statAvg) statAvg.textContent = `Media: ${avgVal.toFixed(2)} m³/s`;
+        if (statMin) statMin.textContent = `${minVal.toFixed(2)} ${chartUnit}`;
+        if (statAvg) statAvg.textContent = `Media: ${avgVal.toFixed(2)} ${chartUnit}`;
       }
 
       // Renderizar gráfica SVG de alta resolución con líneas de aviso horizontales
-      this._renderCaudalSvgChart(validPoints, umbrales, container);
+      this._renderCaudalSvgChart(validPoints, umbrales, container, chartUnit);
 
     } catch (err) {
       console.warn('Error al obtener histórico de caudal:', err);
@@ -4643,7 +4669,7 @@ export class LayerManager {
   /**
    * Genera el SVG interactivo con curva de caudal y líneas horizontales de avisos
    */
-  _renderCaudalSvgChart(points, umbrales, containerEl) {
+  _renderCaudalSvgChart(points, umbrales, containerEl, unit = 'm³/s') {
     if (!points || points.length === 0) return;
 
     // Asegurar orden cronológico de los puntos
@@ -4706,15 +4732,15 @@ export class LayerManager {
           <!-- Etiqueta sobre la línea -->
           <rect x="${pad.left + 8}" y="${(y - 14).toFixed(1)}" width="140" height="15" rx="3" fill="rgba(15,23,42,0.85)" stroke="${color}" stroke-width="0.8"/>
           <text x="${pad.left + 14}" y="${(y - 3).toFixed(1)}" fill="${color}" font-size="10" font-weight="700">
-            ${name}: ${val} m³/s
+            ${name}: ${val} ${unit}
           </text>
         </g>
       `;
     };
 
-    if (uA) thresholdLines.push(makeThresholdLine(uA, '#f59e0b', '🟡 Aviso Amarillo'));
-    if (uN) thresholdLines.push(makeThresholdLine(uN, '#f97316', '🟠 Aviso Naranja'));
-    if (uR) thresholdLines.push(makeThresholdLine(uR, '#ef4444', '🔴 Umbral Rojo'));
+    if (uA) thresholdLines.push(makeThresholdLine(uA, '#f59e0b', '🟡 Aviso'));
+    if (uN) thresholdLines.push(makeThresholdLine(uN, '#f97316', '🟠 Prealerta'));
+    if (uR) thresholdLines.push(makeThresholdLine(uR, '#ef4444', '🔴 Alerta'));
 
     // Cuadrícula y Ejes Y (4 divisiones)
     const gridLines = [];
@@ -4765,7 +4791,7 @@ export class LayerManager {
 
           <!-- Eje Y etiquetas -->
           ${yLabels.join('')}
-          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">m³/s</text>
+          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">${unit}</text>
 
           <!-- Eje X etiquetas -->
           ${xLabels.join('')}
@@ -4803,7 +4829,7 @@ export class LayerManager {
             <span id="caudal-tt-time">--:--</span>
           </div>
           <div class="caudal-chart-tooltip-val-row">
-            <span id="caudal-tt-val" class="caudal-chart-tooltip-val" style="color: #38bdf8;">-- m³/s</span>
+            <span id="caudal-tt-val" class="caudal-chart-tooltip-val" style="color: #38bdf8;">-- ${unit}</span>
             <span id="caudal-tt-badge" class="caudal-chart-tooltip-badge" style="display: none;"></span>
           </div>
         </div>
@@ -4888,7 +4914,7 @@ export class LayerManager {
 
       // Actualizar contenido del tooltip con color de aviso en el número
       ttTime.textContent = formatMadridDateTime(fecha);
-      ttVal.textContent = `${val.toFixed(2)} m³/s`;
+      ttVal.textContent = `${val.toFixed(2)} ${unit}`;
       ttVal.style.color = pointColor;
 
       // Si está en umbral de aviso mostrar el badge correspondiente, si es normal no mostrar ningún badge
