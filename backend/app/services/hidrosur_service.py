@@ -750,12 +750,12 @@ class HidrosurService:
     ) -> Dict[str, Any]:
         """
         Consulta la serie temporal histórica para un aforo o embalse de Hidrosur.
-        Devuelve el formato idéntico al del SAIH CHJ.
+        Devuelve el formato estándar compatible con RainLoc y SAIH CHJ/Guadalquivir.
         """
-        # Localizar el sensor_code
         sensor_code = None
         station_name = str(id_or_code)
         unidad = "hm³" if is_embalse else "m"
+        station_obj = None
 
         if is_embalse:
             await self.get_embalses()
@@ -763,23 +763,25 @@ class HidrosurService:
             if emb:
                 sensor_code = emb.get("sensor_code")
                 station_name = emb.get("nombre", station_name)
+                station_obj = emb
         else:
             await self.get_caudales()
             aforo = self._aforos_by_id.get(str(id_or_code).upper()) or self._aforos_by_id.get(str(id_or_code))
             if aforo:
                 sensor_code = aforo.get("sensor_code")
                 station_name = aforo.get("nombre", station_name)
+                station_obj = aforo
 
         if not sensor_code:
-            # Intentar extraer número si viene en formato hidrosur_9 o 009R02
             clean_digits = re.sub(r"\D", "", str(id_or_code))
             if clean_digits:
                 sensor_code = f"{clean_digits.zfill(3)}{'E01' if is_embalse else 'R02'}"
             else:
                 sensor_code = str(id_or_code)
 
+        req_hours = int(hours) if isinstance(hours, (int, float)) and hours > 0 else 24
         cache_key = f"{sensor_code}_{'emb' if is_embalse else 'aforo'}"
-        now = datetime.now()
+        now = datetime.now(MADRID_TZ)
 
         # Caché de 5 minutos para series temporales
         cached = self._history_series_cache.get(cache_key)
@@ -790,10 +792,13 @@ class HidrosurService:
             if full_series:
                 self._history_series_cache[cache_key] = {"ts": now, "data": full_series}
 
-        # Filtrar por el rango de horas solicitado (máximo disponible: 48h)
-        if len(full_series) > 0 and hours and hours < len(full_series):
-            filtered_series = full_series[-int(hours):]
-        else:
+        cutoff = now - timedelta(hours=req_hours)
+        filtered_series = [
+            p for p in full_series
+            if datetime.strptime(p["fecha"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=MADRID_TZ) >= cutoff
+        ] if full_series else []
+
+        if not filtered_series and full_series:
             filtered_series = full_series
 
         valid_vals = [p["valor"] for p in filtered_series if p["valor"] is not None]
@@ -804,12 +809,19 @@ class HidrosurService:
 
         return {
             "id_variable": str(id_or_code),
+            "estacion": station_obj,
             "nombre": station_name,
             "sensor_code": sensor_code,
             "red": "HIDROSUR",
             "fuente": "S.A.I.H. Hidrosur (Junta de Andalucía)",
             "total_puntos": len(filtered_series),
-            "horas_solicitadas": hours,
+            "puntos_totales": len(filtered_series),
+            "horas_solicitadas": req_hours,
+            "rango": {
+                "desde": cutoff.strftime("%Y-%m-%d %H:%M:%S"),
+                "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "horas": req_hours,
+            },
             "serie": filtered_series,
             "datos": filtered_series,
             "min_valor": min_val,
