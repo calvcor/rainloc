@@ -451,7 +451,7 @@ class PlacesService:
             except Exception as e:
                 logger.error(f"Error procesando subsistemas.geojson: {e}")
 
-        # 2. Embalses locales (saih_embalses, ebro_embalses, etc.)
+        # 2. Embalses locales (saih_embalses, ebro_embalses, aca_embalses, etc.)
         embalse_files = list(DATA_DIR.glob("*_embalses.geojson"))
         for emb_file in embalse_files:
             try:
@@ -465,8 +465,9 @@ class PlacesService:
                         continue
                     lon, lat = coords[0], coords[1]
                     name = props.get("nombre") or props.get("name") or "Embalse"
-                    pob = props.get("poblacion") or ""
-                    prov = props.get("provincia") or ""
+                    pob = props.get("poblacion") or props.get("municipio") or ""
+                    prov = props.get("provincia") or props.get("province") or ""
+                    cuenca = props.get("subcuenca") or props.get("cuenca") or ""
                     code = props.get("codigo") or props.get("id_estacion") or ""
 
                     eid = f"emb_{normalize_text(name).replace(' ', '_')}_{code}"
@@ -474,13 +475,14 @@ class PlacesService:
                         continue
                     inserted_ids.add(eid)
 
-                    norm = normalize_text(f"{name} embalse panta presa {pob} {prov} {code}")
+                    alt_info = f"{pob} ({prov})" if pob and prov else (pob or prov or cuenca)
+                    norm = normalize_text(f"{name} {pob} {prov} {cuenca} embalse panta presa pantano embassament {code}")
                     places_to_insert.append((
-                        eid, name.title(), f"{pob} ({prov})" if pob else prov,
+                        eid, name.title(), alt_info,
                         norm, 'reservoir', 'embalse_saih', prov, '', lat, lon, 14, 80,
                         json.dumps(props)
                     ))
-                    fts_to_insert.append((name.title(), pob, norm, 'reservoir', prov, ''))
+                    fts_to_insert.append((name.title(), alt_info, norm, 'reservoir', prov, ''))
             except Exception as e:
                 logger.error(f"Error leyendo {emb_file.name}: {e}")
 
@@ -500,7 +502,8 @@ class PlacesService:
                     name = props.get("nombre") or props.get("name") or "Aforo"
                     variable = props.get("variable") or ""
                     cuenca = props.get("subcuenca") or props.get("cuenca") or ""
-                    prov = props.get("provincia") or ""
+                    pob = props.get("poblacion") or props.get("municipio") or ""
+                    prov = props.get("provincia") or props.get("province") or ""
                     code = props.get("codigo") or props.get("id_estacion") or ""
 
                     aid = f"afo_{normalize_text(name).replace(' ', '_')}_{code}"
@@ -508,17 +511,18 @@ class PlacesService:
                         continue
                     inserted_ids.add(aid)
 
-                    norm = normalize_text(f"{name} {variable} {cuenca} {prov} {code} aforo caudal rio")
+                    alt_info = f"{pob} ({cuenca})" if pob and cuenca else (pob or cuenca or variable)
+                    norm = normalize_text(f"{name} {pob} {variable} {cuenca} {prov} {code} aforo caudal rio riera barranc")
                     places_to_insert.append((
-                        aid, name.title(), f"Aforo en {cuenca}" if cuenca else variable,
+                        aid, name.title(), alt_info,
                         norm, 'river', 'aforo', prov, '', lat, lon, 14, 75,
                         json.dumps(props)
                     ))
-                    fts_to_insert.append((name.title(), variable, norm, 'river', prov, ''))
+                    fts_to_insert.append((name.title(), alt_info, norm, 'river', prov, ''))
             except Exception as e:
                 logger.error(f"Error leyendo {afo_file.name}: {e}")
 
-        # 4. Estaciones de Lluvia de RainLoc (AVAMET, AEMET, SAIH, Meteocat...)
+        # 4. Estaciones de Lluvia de RainLoc (AVAMET, AEMET, SAIH, Meteocat, ACA...)
         pluvio_files = list(DATA_DIR.glob("*_lluvias.geojson"))
         for pluv_file in pluvio_files:
             network = pluv_file.stem.split('_')[0].upper()
@@ -533,6 +537,7 @@ class PlacesService:
                         continue
                     lon, lat = coords[0], coords[1]
                     name = props.get("nombre") or props.get("name") or props.get("station_name") or "Estación"
+                    pob = props.get("poblacion") or props.get("municipio") or props.get("comarca") or props.get("location") or ""
                     prov = props.get("provincia") or props.get("province") or ""
                     code = props.get("id") or props.get("codigo") or props.get("indicativo") or ""
 
@@ -542,13 +547,14 @@ class PlacesService:
                     inserted_ids.add(pid)
 
                     display_name = f"{name} ({network})"
-                    norm = normalize_text(f"{name} {network} estacion pluvio {prov} {code}")
+                    alt_info = f"{pob} ({prov})" if pob and prov else (pob or f"Estación {network} - {prov}")
+                    norm = normalize_text(f"{name} {pob} {prov} {network} estacion pluvio lluvia pluviometro {code}")
                     places_to_insert.append((
-                        pid, display_name, f"Estación {network} - {prov}",
+                        pid, display_name, alt_info,
                         norm, 'station', network.lower(), prov, '', lat, lon, 14, 60,
                         json.dumps({"network": network, "code": code})
                     ))
-                    fts_to_insert.append((display_name, prov, norm, 'station', prov, ''))
+                    fts_to_insert.append((display_name, alt_info, norm, 'station', prov, ''))
             except Exception as e:
                 logger.error(f"Error leyendo {pluv_file.name}: {e}")
 
@@ -704,8 +710,12 @@ class PlacesService:
                 lat_r = round(r['lat'], 3)
                 lon_r = round(r['lon'], 3)
 
-                # Deduplicación de puntos casi idénticos con el mismo nombre y categoría
-                coord_key = (name.lower(), cat, lat_r, lon_r)
+                # Deduplicación inteligente de lugares con el mismo nombre y categoría
+                if cat in ('municipality', 'region', 'province'):
+                    coord_key = (name.lower(), cat, r['community'] or r['province'])
+                else:
+                    coord_key = (name.lower(), cat, round(lat_r, 2), round(lon_r, 2))
+
                 if coord_key in seen_coords:
                     continue
                 seen_coords.add(coord_key)
