@@ -5934,8 +5934,30 @@ export class LayerManager {
     if (statPctSub) statPctSub.textContent = pct !== null ? `Reserva: ${pct.toFixed(1)}%` : 'Reserva: --%';
     if (statCota) statCota.textContent = cota !== null ? `${cota.toFixed(2)} m` : '-- m';
     if (statCotaVert) statCotaVert.textContent = cotaV !== null ? `Vertido: ${cotaV.toFixed(2)} m` : 'Vertido: -- m';
-    if (statCaudalIn) statCaudalIn.textContent = caudalIn !== null ? `⬇ Entrada: ${caudalIn.toFixed(2)} m³/s` : '⬇ Entrada: -- m³/s';
-    if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
+
+    const caudalLabel = document.getElementById('embalse-stat-caudal-label');
+    const varSem = props.variacion_semana !== undefined && props.variacion_semana !== null ? Number(props.variacion_semana) : (props.variacion_24h !== undefined && props.variacion_24h !== null ? Number(props.variacion_24h) : null);
+    const pluvAno = props.pluviometria_anual !== undefined && props.pluviometria_anual !== null ? Number(props.pluviometria_anual) : null;
+
+    if (caudalIn !== null || caudalOut !== null) {
+      if (caudalLabel) caudalLabel.textContent = 'Caudales (Entrada / Aliviado)';
+      if (statCaudalIn) statCaudalIn.textContent = caudalIn !== null ? `⬇ Entrada: ${caudalIn.toFixed(2)} m³/s` : '⬇ Entrada: -- m³/s';
+      if (statCaudalOut) statCaudalOut.textContent = caudalOut !== null ? `⬆ Aliviado: ${caudalOut.toFixed(2)} m³/s` : '⬆ Aliviado: -- m³/s';
+    } else if (varSem !== null || pluvAno !== null || isHidro) {
+      if (caudalLabel) caudalLabel.textContent = 'Dinámica y Aportación';
+      if (statCaudalIn) {
+        const sign = (varSem !== null && varSem > 0) ? '+' : '';
+        const varText = varSem !== null ? `${sign}${varSem.toFixed(2)} hm³/sem` : 'Estable';
+        statCaudalIn.textContent = `📊 Var. semana: ${varText}`;
+      }
+      if (statCaudalOut) {
+        statCaudalOut.textContent = pluvAno !== null ? `🌧️ Pluv. presa: ${pluvAno.toFixed(1)} mm` : '🌊 Ver aforos en pestañas';
+      }
+    } else {
+      if (caudalLabel) caudalLabel.textContent = 'Caudales (Entrada / Aliviado)';
+      if (statCaudalIn) statCaudalIn.textContent = '⬇ Entrada: -- m³/s';
+      if (statCaudalOut) statCaudalOut.textContent = '⬆ Aliviado: -- m³/s';
+    }
 
     if (saihLink) {
       if (isHidro) {

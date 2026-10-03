@@ -50,24 +50,31 @@ SYNC_TTL_SECONDS = 300
 def _parse_num(val_str: Optional[str]) -> float:
     if not val_str:
         return 0.0
-    val_clean = (
-        val_str.replace("mm", "")
+    s = (
+        str(val_str)
+        .replace("*", "")
+        .replace("mm", "")
         .replace("m³/s", "")
         .replace("m3/s", "")
         .replace("m", "")
         .replace("%", "")
         .replace("hm³", "")
         .replace("hm3", "")
-        .replace(",", ".")
         .strip()
-        .lower()
     )
-    if val_clean in ("n/d", "-", "", "null", "none"):
+    if s.lower() in ("n/d", "-", "--", "", "null", "none", "\xa0"):
         return 0.0
-    try:
-        return round(float(val_clean), 3)
-    except:
-        return 0.0
+    if "." in s and "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        s = s.replace(",", ".")
+    m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
+    if m:
+        try:
+            return round(float(m.group(0)), 3)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 class HidrosurService:
@@ -552,17 +559,55 @@ class HidrosurService:
         emb_list = []
         for r in rows:
             cols = [html.unescape(re.sub(r"<[^>]+>", "", c).strip()) for c in re.findall(r"<td[^>]*>(.*?)</td>", r, re.DOTALL)]
-            if len(cols) >= 10:
+            if len(cols) >= 6:
                 cod = cols[0].strip()
                 nombre_tbl = cols[1].strip()
                 pct = _parse_num(cols[2])
                 capacidad = _parse_num(cols[3])
-                volumen = _parse_num(cols[5])
-                var24h = _parse_num(cols[6])
+                pluv_ano = _parse_num(cols[4]) if len(cols) > 4 else None
+                volumen = _parse_num(cols[5]) if len(cols) > 5 else None
+                var_semana = _parse_num(cols[6]) if len(cols) > 6 else 0.0
+                vol_sem_ant = _parse_num(cols[7]) if len(cols) > 7 else None
+                var_ano = _parse_num(cols[8]) if len(cols) > 8 else None
+                vol_ano_ant = _parse_num(cols[9]) if len(cols) > 9 else None
+
                 chart_m = re.search(r"grafica/([a-zA-Z0-9_]+)", r)
                 sensor_code = chart_m.group(1) if chart_m else f"{cod.zfill(3)}E01"
 
-                meta = metadata.get(cod) or {}
+                meta = metadata.get(cod)
+                if not meta:
+                    clean_target = (
+                        re.sub(r"\s*\(.*?\)\s*", "", nombre_tbl)
+                        .replace("EMBALSE", "")
+                        .replace("DE", "")
+                        .replace("DEL", "")
+                        .replace("LA", "")
+                        .replace("LOS", "")
+                        .replace("EL", "")
+                        .replace("-", " ")
+                        .strip()
+                        .upper()
+                    )
+                    for m_cod, m_val in metadata.items():
+                        m_name_clean = (
+                            re.sub(r"\s*\(.*?\)\s*", "", m_val["nombre"])
+                            .replace("EMBALSE", "")
+                            .replace("DE", "")
+                            .replace("DEL", "")
+                            .replace("LA", "")
+                            .replace("LOS", "")
+                            .replace("EL", "")
+                            .replace("-", " ")
+                            .strip()
+                            .upper()
+                        )
+                        if clean_target and (clean_target == m_name_clean or clean_target in m_name_clean or m_name_clean in clean_target):
+                            meta = m_val
+                            break
+
+                if not meta:
+                    meta = {}
+
                 lat = meta.get("lat")
                 lon = meta.get("lon")
 
@@ -585,7 +630,12 @@ class HidrosurService:
                     "capacidad_nmn": capacidad,
                     "volumen_actual": volumen,
                     "porcentaje_llenado": pct,
-                    "variacion_24h": var24h,
+                    "variacion_24h": var_semana,
+                    "variacion_semana": var_semana,
+                    "pluviometria_anual": pluv_ano,
+                    "volumen_semana_ant": vol_sem_ant,
+                    "variacion_ano": var_ano,
+                    "volumen_ano_ant": vol_ano_ant,
                     "municipio": meta.get("municipio", ""),
                     "poblacion": meta.get("municipio") or meta.get("nombre", ""),
                     "provincia": meta.get("provincia", ""),

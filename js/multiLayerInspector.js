@@ -1257,8 +1257,10 @@ export class MultiLayerInspector {
             const capText = cap !== null ? `${cap.toFixed(2)} hm³` : "-- hm³";
             const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
             const horaText = closestEmbalse.ultima_hora ? `· ${String(closestEmbalse.ultima_hora).replace('T', ' ').substring(0, 16)}` : '';
-            const cotaText = cota !== null ? `Cota: ${cota.toFixed(2)} m` : '';
-            const metaLoc = `${closestEmbalse.poblacion || '--'} (${closestEmbalse.provincia || ''}) · ${closestEmbalse.subcuenca || ''}`;
+            const varSem = closestEmbalse.variacion_semana !== undefined && closestEmbalse.variacion_semana !== null
+              ? Number(closestEmbalse.variacion_semana)
+              : (closestEmbalse.variacion_24h !== undefined && closestEmbalse.variacion_24h !== null ? Number(closestEmbalse.variacion_24h) : null);
+            const varSemText = varSem !== null ? `Var: ${varSem >= 0 ? '+' : ''}${varSem.toFixed(2)} hm³` : '';
 
             sections.push({
               type: "embalse",
@@ -1276,10 +1278,10 @@ export class MultiLayerInspector {
                     <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
                     <div style="font-weight:700; color:${pctColor}; font-size:0.95rem;">${pctText}</div>
                   </div>
-                  ${cotaText || qIn !== null || qOut !== null ? `
+                  ${cotaText || qIn !== null || qOut !== null || varSemText ? `
                     <div style="font-size:0.72rem; color:#94a3b8; margin-top:2px; display:flex; justify-content:space-between;">
-                      <span>${cotaText}</span>
-                      ${qIn !== null || qOut !== null ? `<span>Entrada: ${qIn !== null ? qIn.toFixed(2) : '--'} | Salida: ${qOut !== null ? qOut.toFixed(2) : '--'} m³/s</span>` : ''}
+                      <span>${cotaText || varSemText}</span>
+                      ${qIn !== null || qOut !== null ? `<span>Entrada: ${qIn !== null ? qIn.toFixed(2) : '--'} | Salida: ${qOut !== null ? qOut.toFixed(2) : '--'} m³/s</span>` : (cotaText && varSemText ? `<span>${varSemText}</span>` : '')}
                     </div>
                   ` : ''}
                   <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestEmbalse.codigo || '--'} ${horaText}</div>
