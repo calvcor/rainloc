@@ -4,7 +4,7 @@
  * y genera un tooltip unificado consolidado por secciones.
  */
 
-import { CONFIG } from "./config.js";
+import { CONFIG, formatMadridDateTime, formatMadridTime } from "./config.js";
 import { StorageManager } from "./storage.js";
 
 export class MultiLayerInspector {
@@ -1376,7 +1376,11 @@ export class MultiLayerInspector {
               if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
               const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
               const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
-              const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
+              let horaText = '';
+              if (horaRaw) {
+                const formatted = formatMadridDateTime(horaRaw);
+                horaText = formatted ? `· ${formatted}` : `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}`;
+              }
 
               // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET / Meteocat
               let extraMeteoHtml = '';
