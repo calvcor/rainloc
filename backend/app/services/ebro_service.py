@@ -7,6 +7,7 @@ Implementa modo dual de bajo consumo (Zero Waste):
 """
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import re
 import ssl
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -894,6 +896,70 @@ class EbroService:
             logger.warning(f"Error descargando serie Open Data Ebro ({tag}): {e}")
         return []
 
+    def _fetch_history_csv(self, tag: str, start_dt: datetime, end_dt: datetime) -> List[Dict[str, Any]]:
+        """
+        Descarga la serie histórica quinceminutal completa desde el endpoint oficial
+        de datos históricos de la CHE para el intervalo de tiempo exacto solicitado.
+        """
+        if not tag:
+            return []
+
+        ctx = self._get_ssl_context()
+        ini_str = start_dt.strftime("%d/%m/%Y %H:%M")
+        fin_str = end_dt.strftime("%d/%m/%Y %H:%M")
+
+        url = (
+            f"{EBRO_BASE_URL}/api/datos-historicos/obtenerDatosHistoricos"
+            f"?tipoConsolidado=quinceminutal"
+            f"&senalesSeleccionadas={urllib.parse.quote(tag)}"
+            f"&fechaIni={urllib.parse.quote(ini_str)}"
+            f"&fechaFin={urllib.parse.quote(fin_str)}"
+            f"&formato=csv"
+        )
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "*/*",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+                content = resp.read()
+
+            if content and content[:2] == b"PK":
+                z = zipfile.ZipFile(io.BytesIO(content))
+                if z.namelist():
+                    first_file = z.namelist()[0]
+                    csv_text = z.read(first_file).decode("utf-8", errors="ignore")
+                    points = []
+                    for line in csv_text.splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("FECHA_GRUPO") or ";" not in line:
+                            continue
+                        parts = line.split(";")
+                        if len(parts) >= 2:
+                            f_str = parts[0].strip()
+                            v_str = parts[1].strip()
+                            try:
+                                dt_p = datetime.strptime(f_str, "%d/%m/%Y %H:%M")
+                                iso_f = dt_p.strftime("%Y-%m-%d %H:%M:%S")
+                                v_num = _parse_num(v_str)
+                                points.append({
+                                    "fecha": iso_f,
+                                    "valor": v_num,
+                                    "estado": 1,
+                                    "caudal": v_num,
+                                })
+                            except Exception:
+                                pass
+                    points.sort(key=lambda x: str(x.get("fecha") or ""))
+                    return points
+        except Exception as e:
+            logger.warning(f"Error descargando histórico CSV Ebro ({tag}): {e}")
+        return []
+
     def _fetch_sparkline_series(self, tag: str, tipo_tag: str = "QRIO") -> List[Dict[str, Any]]:
         """
         Descarga la minigráfica quinceminutal de tendencia rápida (últimas 24h)
@@ -969,6 +1035,8 @@ class EbroService:
         hours: int = 24,
         is_embalse: bool = False,
         variable_type: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Consulta la serie temporal para una estación de caudal o embalse de SAIH Ebro.
@@ -1031,13 +1099,36 @@ class EbroService:
                         tipo_tag = "QRIO"
 
         now = datetime.now(MADRID_TZ)
-        start_dt = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
-        start_date_str = start_dt.strftime("%Y-%m-%d")
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(str(end_date).replace(" ", "T"))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=MADRID_TZ)
+            except Exception:
+                end_dt = now
+        else:
+            end_dt = now
+
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(str(start_date).replace(" ", "T"))
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=MADRID_TZ)
+            except Exception:
+                start_dt = end_dt - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
+        else:
+            start_dt = end_dt - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
 
         points = []
         if self._api_key and tag:
+            start_date_str = start_dt.strftime("%Y-%m-%d")
             points = await asyncio.to_thread(self._fetch_series_with_key, tag, start_date_str)
 
+        # 1. Intentar descargar serie completa desde el endpoint oficial de datos históricos
+        if not points and tag:
+            points = await asyncio.to_thread(self._fetch_history_csv, tag, start_dt, end_dt)
+
+        # 2. Fallback a minigráfica si fuera necesario
         if not points and tag:
             points = await asyncio.to_thread(self._fetch_sparkline_series, tag, tipo_tag)
 
@@ -1063,7 +1154,7 @@ class EbroService:
             "unidad": unit_str,
             "rango": {
                 "desde": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "hasta": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "horas": hours,
             },
             "puntos_totales": len(points),

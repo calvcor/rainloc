@@ -780,7 +780,14 @@ class SAIHService:
                 or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
                 or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
-            return await ebro_service.get_history(id_str, hours=hours, is_embalse=is_emb, variable_type=variable_type)
+            return await ebro_service.get_history(
+                id_str,
+                hours=hours,
+                is_embalse=is_emb,
+                variable_type=variable_type,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
         if (
             id_str.startswith("segura_")
