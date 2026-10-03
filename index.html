@@ -36,7 +36,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.26">
+  <link rel="stylesheet" href="styles.css?v=3.27">
 </head>
 <body>
 
@@ -54,7 +54,6 @@
         </div>
         <div class="brand-titles">
           <h1 class="brand-title">RainLoc GIS</h1>
-          <span class="brand-subtitle">Monitorización de Cuencas &bull; Comunitat Valenciana (CHJ)</span>
         </div>
       </div>
 
@@ -158,6 +157,20 @@
 
     <!-- Visor de Mapa Cartográfico -->
     <main id="map" role="region" aria-label="Visor de mapa"></main>
+
+    <!-- Pantalla / Indicador de Carga del Mapa (Efecto Blur y Spinner para Modelos y Radar) -->
+    <div id="map-loading-overlay" class="map-loading-overlay" style="display: none;" aria-hidden="true">
+      <div class="map-loading-card">
+        <div class="map-loading-spinner-ring"></div>
+        <div class="map-loading-text-group">
+          <div class="map-loading-title-row">
+            <span class="map-loading-title" id="map-loading-title">Cargando modelo...</span>
+            <span class="map-loading-step-tag" id="map-loading-step" style="display: none;">+0h</span>
+          </div>
+          <span class="map-loading-subtitle" id="map-loading-subtitle">Descargando predicción</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Banner Flotante Superior: Instante Exacto de la Predicción (A la derecha del menú de capas) -->
     <div id="prediction-time-banner" class="prediction-time-banner" style="display: none;" aria-live="polite">

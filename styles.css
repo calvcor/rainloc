@@ -106,7 +106,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 18px;
-  z-index: 1000;
+  z-index: 2100;
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
 }
@@ -115,6 +115,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .brand-icon {
@@ -132,21 +133,22 @@ body {
 .brand-titles {
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .brand-title {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   background: linear-gradient(90deg, #ffffff 0%, #e0f2fe 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .brand-subtitle {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+  display: none;
 }
 
 .header-status-area {
@@ -413,6 +415,118 @@ body {
   height: 100%;
   z-index: 1;
   background-color: #0b1120;
+}
+
+/* Efecto suave de desenfoque cuando se carga un modelo de predicción o radar */
+#map .leaflet-map-pane {
+  transition: filter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#map.map-loading-active .leaflet-map-pane {
+  filter: blur(5px) saturate(0.88) brightness(0.92);
+}
+
+/* Pantalla / Indicador Flotante de Carga del Mapa */
+.map-loading-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  z-index: 1050;
+  pointer-events: none;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.map-loading-overlay.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.map-loading-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 9999px;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.65), 0 0 24px rgba(2, 132, 199, 0.3);
+  color: #f8fafc;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.map-loading-spinner-ring {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: mapLoadingSpin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes mapLoadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.map-loading-text-group {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 1px;
+}
+
+.map-loading-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-loading-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.map-loading-step-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.16);
+  padding: 1.5px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  line-height: 1.2;
+}
+
+.map-loading-subtitle {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .map-loading-card {
+    padding: 8px 14px;
+    gap: 10px;
+  }
+  .map-loading-title {
+    font-size: 12.5px;
+  }
+  .map-loading-subtitle {
+    display: none;
+  }
 }
 
 .leaflet-container {
@@ -5328,7 +5442,7 @@ body {
   max-width: 380px;
   min-width: 200px;
   margin: 0 16px;
-  z-index: 1050;
+  z-index: 2200;
 }
 
 .header-search-input-box {
@@ -5407,7 +5521,7 @@ body {
 
 .header-search-dropdown {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 12px);
   left: 0;
   right: 0;
   width: 100%;
@@ -5418,7 +5532,7 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  z-index: 2000;
+  z-index: 2600;
   overflow: hidden;
   animation: placesDropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
