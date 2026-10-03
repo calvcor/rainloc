@@ -36,7 +36,7 @@
         crossorigin="">
 
   <!-- Estilos de la aplicación con versionado -->
-  <link rel="stylesheet" href="styles.css?v=3.24">
+  <link rel="stylesheet" href="styles.css?v=3.25">
 </head>
 <body>
 
@@ -55,6 +55,39 @@
         <div class="brand-titles">
           <h1 class="brand-title">RainLoc GIS</h1>
           <span class="brand-subtitle">Monitorización de Cuencas &bull; Comunitat Valenciana (CHJ)</span>
+        </div>
+      </div>
+
+      <!-- Buscador de Lugares Integrado en Header (Desktop / iPad) -->
+      <div class="header-search-container" id="header-search-container">
+        <div class="header-search-input-box">
+          <div class="header-search-icon" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <input 
+            type="text" 
+            id="header-search-input" 
+            class="header-search-input" 
+            placeholder="Buscar municipio, río, embalse, comarca..." 
+            autocomplete="off" 
+            spellcheck="false"
+            aria-label="Buscar lugar o municipio"
+          >
+          <div class="header-search-spinner" id="header-search-spinner" style="display: none;">
+            <div class="places-spinner-dot"></div>
+          </div>
+          <button type="button" class="header-search-clear" id="btn-header-search-clear" style="display: none;" title="Borrar búsqueda">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="header-search-dropdown" id="header-search-dropdown" style="display: none;" role="listbox">
+          <div class="header-search-results" id="header-search-results"></div>
         </div>
       </div>
 

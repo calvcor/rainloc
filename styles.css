@@ -5314,9 +5314,133 @@ body {
 }
 
 /* -------------------------------------------------------------
-   Buscador Geográfico de Lugares y Toponimia (Leaflet Control)
+   Buscador Geográfico de Lugares y Toponimia
+   1. Header Search (Desktop / iPad >= 768px)
+   2. Mobile Search (Móvil < 768px con control Leaflet)
 ------------------------------------------------------------- */
-.leaflet-control-places-search {
+
+/* --- 1. Buscador Integrado en Header (Desktop / iPad) --- */
+.header-search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 340px;
+  max-width: 380px;
+  min-width: 200px;
+  margin: 0 16px;
+  z-index: 1050;
+}
+
+.header-search-input-box {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0 8px 0 10px;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.header-search-input-box:hover,
+.header-search-input-box:focus-within {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.header-search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.header-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.header-search-input::placeholder {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.header-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.header-search-clear:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.header-search-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.header-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-width: 340px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 2000;
+  overflow: hidden;
+  animation: placesDropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.header-search-results {
+  max-height: 400px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+.header-search-results::-webkit-scrollbar {
+  width: 5px;
+}
+
+.header-search-results::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+/* --- 2. Buscador en Mapa para Móvil (< 768px) --- */
+.leaflet-control-places-search.mobile-search-control {
   position: relative;
   z-index: 800;
   margin-right: 0 !important;
@@ -5339,13 +5463,6 @@ body {
   width: 36px;
 }
 
-.leaflet-control-places-search.is-expanded .places-search-box {
-  width: 320px;
-  border-color: var(--border-focus);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(56, 189, 248, 0.25);
-}
-
-/* Botón Lupa (Colapsado) */
 .places-search-toggle {
   display: flex;
   align-items: center;
@@ -5357,7 +5474,7 @@ body {
   border: none;
   color: var(--text-primary);
   cursor: pointer;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition: color 0.15s ease;
   padding: 0;
 }
 
@@ -5366,21 +5483,20 @@ body {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.leaflet-control-places-search.is-expanded .places-search-toggle {
-  display: none;
-}
-
-/* Wrapper del campo de texto cuando está expandido */
 .places-search-input-wrapper {
   display: none;
   align-items: center;
   width: 100%;
   height: 100%;
-  padding: 0 4px 0 10px;
-  gap: 6px;
+  padding: 0 6px 0 10px;
+  gap: 8px;
 }
 
-.leaflet-control-places-search.is-expanded .places-search-input-wrapper {
+.mobile-search-control.is-expanded .places-search-toggle {
+  display: none;
+}
+
+.mobile-search-control.is-expanded .places-search-input-wrapper {
   display: flex;
 }
 
@@ -5398,7 +5514,7 @@ body {
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14px;
   font-family: inherit;
   font-weight: 500;
   padding: 4px 0;
@@ -5407,26 +5523,25 @@ body {
 
 .places-search-input::placeholder {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
 }
 
-/* Botones de acción dentro del input (Limpiar y Cerrar) */
 .places-search-clear,
 .places-search-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
   padding: 0;
+  transition: all 0.15s ease;
 }
 
 .places-search-clear:hover,
@@ -5435,13 +5550,12 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Spinner de carga */
 .places-search-spinner {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
 }
 
@@ -5458,24 +5572,98 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* -------------------------------------------------------------
-   Desplegable de Resultados
-------------------------------------------------------------- */
-.places-search-dropdown {
+.mobile-places-dropdown {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 340px;
-  max-width: min(340px, calc(100vw - 32px));
-  background: rgba(15, 23, 42, 0.94);
+  width: 100%;
+  background: rgba(15, 23, 42, 0.96);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 16px 32px -6px rgba(0, 0, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
-  z-index: 1000;
+  z-index: 2000;
   animation: placesDropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mobile-places-dropdown .places-search-results {
+  max-height: min(420px, calc(100vh - 200px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+/* Ocultar / Bajar controles de mapa cuando la búsqueda móvil está activa */
+body.rainloc-mobile-search-active .leaflet-control-zoom,
+body.rainloc-mobile-search-active .leaflet-control-layers {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(20px) !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Transición suave para restaurar controles */
+.leaflet-control-zoom,
+.leaflet-control-layers {
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease !important;
+}
+
+/* --- Reglas Responsive por tamaño de pantalla --- */
+
+/* En Desktop y Tablets grandes (>= 768px): Mostrar buscador en Header, Ocultar botón flotante de mapa */
+@media (min-width: 768px) {
+  .header-search-container {
+    display: flex;
+  }
+  .leaflet-control-places-search.mobile-search-control {
+    display: none !important;
+  }
+}
+
+/* En Móviles (< 768px): Ocultar buscador del header, Mostrar botón en mapa y expandir a ancho completo */
+@media (max-width: 767px) {
+  .header-search-container {
+    display: none !important;
+  }
+  .leaflet-control-places-search.mobile-search-control {
+    display: block;
+  }
+
+  /* Al expandir el buscador en móvil: cubrir todo el ancho superior de forma elegante */
+  .mobile-search-control.is-expanded {
+    position: fixed !important;
+    top: calc(58px + env(safe-area-inset-top, 0px)) !important;
+    left: 10px !important;
+    right: 10px !important;
+    margin: 0 !important;
+    z-index: 1500 !important;
+  }
+
+  .mobile-search-control.is-expanded .places-search-box {
+    width: 100% !important;
+    height: 42px !important;
+    border-radius: var(--radius-md) !important;
+    border-color: var(--border-focus) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(56, 189, 248, 0.3) !important;
+  }
+
+  .mobile-places-dropdown {
+    position: fixed !important;
+    top: calc(108px + env(safe-area-inset-top, 0px)) !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(100vh - 190px) !important;
+    z-index: 1500 !important;
+  }
+
+  .mobile-places-dropdown .places-search-results {
+    max-height: calc(100vh - 200px) !important;
+  }
 }
 
 @keyframes placesDropdownSlide {
@@ -5489,27 +5677,11 @@ body {
   }
 }
 
-.places-search-results {
-  max-height: 380px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 4px;
-}
-
-.places-search-results::-webkit-scrollbar {
-  width: 5px;
-}
-
-.places-search-results::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-}
-
 /* Elemento de resultado individual */
 .places-result-item {
   display: flex;
   align-items: flex-start;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   gap: 10px;
@@ -5778,12 +5950,3 @@ body {
   font-family: monospace;
 }
 
-/* Adaptación responsive para pantallas móviles (< 600px) */
-@media (max-width: 600px) {
-  .leaflet-control-places-search.is-expanded .places-search-box {
-    width: min(280px, calc(100vw - 80px));
-  }
-  .places-search-dropdown {
-    width: min(290px, calc(100vw - 40px));
-  }
-}
