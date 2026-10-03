@@ -5910,14 +5910,36 @@ export class LayerManager {
       btn.type = 'button';
       btn.className = `saih-proximity-tab-btn ${isSelected ? 'active' : ''}`;
       
-      const icon = isCaudal ? '💧' : '🌊';
-      const typeLabel = isCaudal ? 'Caudal' : 'Embalse';
+      const rawCaudal = p.ultimo_caudal !== undefined ? p.ultimo_caudal : (p.caudal !== undefined ? p.caudal : p.caudal_actual);
+      const rawNivel = p.ultimo_nivel !== undefined ? p.ultimo_nivel : (p.nivel !== undefined ? p.nivel : (p.nivel_actual !== undefined ? p.nivel_actual : (p.cota_actual !== undefined ? p.cota_actual : p.cota)));
+      const hasCaudal = rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal));
+      const hasNivel = rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel));
+      const isCota = isCaudal && (Number(rawNivel) > 20 || (p.cota_actual !== undefined && p.cota_actual !== null));
+
+      let icon = '💧';
+      let typeLabel = 'Caudal';
+      if (!isCaudal) {
+        icon = '🌊';
+        typeLabel = 'Embalse';
+      } else if (isCota) {
+        icon = '📏';
+        typeLabel = 'Cota';
+      } else if (!hasCaudal && hasNivel) {
+        icon = '💧';
+        typeLabel = 'Nivel';
+      }
+
       const shortName = p.nombre || (isCaudal ? 'Estación' : 'Embalse');
 
       let valText = '';
       if (isCaudal) {
-        const val = p.ultimo_caudal !== undefined ? p.ultimo_caudal : p.caudal;
-        valText = (val !== null && val !== undefined && val !== '') ? `${Number(val).toFixed(1)} m³/s` : 'm³/s';
+        if (hasCaudal) {
+          valText = `${Number(rawCaudal).toFixed(1)} m³/s`;
+        } else if (hasNivel) {
+          valText = `${Number(rawNivel).toFixed(1)} ${isCota ? 'm.s.n.m.' : 'm'}`;
+        } else {
+          valText = '--';
+        }
       } else {
         const vol = p.volumen_actual;
         const pct = p.porcentaje_llenado;

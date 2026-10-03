@@ -1169,8 +1169,6 @@ export class MultiLayerInspector {
             const isCota = (nivel !== null && nivel > 20) || (closestStation.cota_actual !== undefined && closestStation.cota_actual !== null);
             const nivelUnit = isCota ? 'm.s.n.m.' : 'm';
             const nivelLabel = isCota ? 'Cota' : 'Nivel';
-            const caudalText = caudal !== null ? `${caudal.toFixed(2)} m³/s` : "-- m³/s";
-            const nivelText = nivel !== null ? `${nivelLabel}: ${nivel.toFixed(2)} ${nivelUnit}` : '';
             const horaText = closestStation.ultima_hora ? `· ${closestStation.ultima_hora}` : '';
             const thList = [];
             if (uAmarillo) thList.push(`🟡 ${uAmarillo}`);
@@ -1180,11 +1178,24 @@ export class MultiLayerInspector {
             const thText = thList.length > 0 ? thList.join(' · ') + ' ' + thUnit : 'En estudio';
             const metaLoc = `${closestStation.poblacion || '--'} (${closestStation.provincia || ''}) · ${closestStation.subcuenca || ''}`;
 
+            let valueLineHtml = '';
+            if (caudal !== null) {
+              const extraNivel = nivel !== null ? `<span style="color:#cbd5e1; font-size:0.75rem; margin-left:4px;">(${nivelLabel}: ${nivel.toFixed(2)} ${nivelUnit})</span>` : '';
+              valueLineHtml = `Caudal: <strong style="color:${badgeBg}; font-size:1.08em;">${caudal.toFixed(2)} m³/s</strong> ${extraNivel}`;
+            } else if (nivel !== null) {
+              valueLineHtml = `${nivelLabel}: <strong style="color:${badgeBg}; font-size:1.08em;">${nivel.toFixed(2)} ${nivelUnit}</strong>`;
+            } else {
+              valueLineHtml = `Caudal: <strong style="color:${badgeBg}; font-size:1.08em;">-- m³/s</strong>`;
+            }
+
+            const sectionTitle = isCota ? "Cota de Agua (SAIH)" : (caudal !== null ? "Caudal en Río (SAIH)" : "Nivel de Río (SAIH)");
+            const varSubtitle = closestStation.variable || (isCota ? 'Cota lámina de agua' : (caudal !== null ? 'Caudal circulante' : 'Nivel de agua'));
+
             sections.push({
               type: "caudal",
-              title: "Caudal en Río (SAIH)",
+              title: sectionTitle,
               headerColor: "#0284c7",
-              icon: "💧",
+              icon: isCota ? "📏" : "💧",
               name: `${closestStation.nombre}`,
               badge: `${alertLevel}`,
               badgeBg: badgeBg,
@@ -1192,8 +1203,8 @@ export class MultiLayerInspector {
               station: closestStation,
               details: `
                 <div class="unified-caudal-block">
-                  <div style="color:#cbd5e1; font-size:0.75rem;">${closestStation.variable || 'Caudal'}</div>
-                  <div style="margin-top:2px; font-size:0.82rem;">Caudal: <strong style="color:${badgeBg}; font-size:1.08em;">${caudalText}</strong> ${nivelText ? `<span style="color:#cbd5e1; font-size:0.75rem; margin-left:4px;">(Nivel: ${nivelText})</span>` : ''} <span style="color:#94a3b8; font-size:0.72rem;">${horaText}</span></div>
+                  <div style="color:#cbd5e1; font-size:0.75rem;">${varSubtitle}</div>
+                  <div style="margin-top:2px; font-size:0.82rem;">${valueLineHtml} <span style="color:#94a3b8; font-size:0.72rem;">${horaText}</span></div>
                   <div style="font-size:0.72rem; color:#cbd5e1; margin-top:2px;">Umbrales: <span>${thText}</span></div>
                   <div style="font-size:0.70rem; color:#94a3b8; margin-top:2px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestStation.codigo || '--'}</div>
                 </div>
