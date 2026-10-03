@@ -10,6 +10,7 @@ import { LayerManager } from './layerManager.js';
 import { StorageManager } from './storage.js';
 import { MultiLayerInspector } from './multiLayerInspector.js';
 import { PwaManager } from './pwa.js';
+import { PlacesSearchControl } from './search.js';
 
 class RainLocApp {
   constructor() {
@@ -17,6 +18,7 @@ class RainLocApp {
     this.uiManager = null;
     this.cuencasLayer = null;
     this.layerManager = null;
+    this.searchControl = null;
   }
 
   /**
@@ -39,6 +41,10 @@ class RainLocApp {
       // 3. Inicializar Gestor de Capas Temáticas (Tiempo Real & Predicción)
       this.layerManager = new LayerManager(this.mapManager);
       this.layerManager.init();
+
+      // 3.1 Inicializar Buscador Geográfico de Lugares
+      this.searchControl = new PlacesSearchControl(this.mapManager);
+      this.searchControl.init();
 
       // 4. Conectar UI con el Mapa y el Gestor de Capas
       this.uiManager.init(this.mapManager, null, this.layerManager);
@@ -74,6 +80,7 @@ class RainLocApp {
         mapManager: this.mapManager,
         cuencasLayer: this.cuencasLayer,
         layerManager: this.layerManager,
+        searchControl: this.searchControl,
         multiInspector: this.multiInspector,
         uiManager: this.uiManager,
         storageManager: StorageManager,

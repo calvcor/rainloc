@@ -5313,6 +5313,477 @@ body {
   }
 }
 
+/* -------------------------------------------------------------
+   Buscador Geográfico de Lugares y Toponimia (Leaflet Control)
+------------------------------------------------------------- */
+.leaflet-control-places-search {
+  position: relative;
+  z-index: 800;
+  margin-right: 0 !important;
+  margin-top: 10px !important;
+  font-family: inherit;
+}
 
+.places-search-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-lg);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  height: 36px;
+  width: 36px;
+}
 
+.leaflet-control-places-search.is-expanded .places-search-box {
+  width: 320px;
+  border-color: var(--border-focus);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
 
+/* Botón Lupa (Colapsado) */
+.places-search-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+  padding: 0;
+}
+
+.places-search-toggle:hover {
+  color: var(--accent-cyan);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.leaflet-control-places-search.is-expanded .places-search-toggle {
+  display: none;
+}
+
+/* Wrapper del campo de texto cuando está expandido */
+.places-search-input-wrapper {
+  display: none;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px 0 10px;
+  gap: 6px;
+}
+
+.leaflet-control-places-search.is-expanded .places-search-input-wrapper {
+  display: flex;
+}
+
+.places-search-leading-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.places-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.places-search-input::placeholder {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+/* Botones de acción dentro del input (Limpiar y Cerrar) */
+.places-search-clear,
+.places-search-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.places-search-clear:hover,
+.places-search-close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Spinner de carga */
+.places-search-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.places-spinner-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.2);
+  border-top-color: var(--accent-cyan);
+  border-radius: 50%;
+  animation: placesSpin 0.7s linear infinite;
+}
+
+@keyframes placesSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* -------------------------------------------------------------
+   Desplegable de Resultados
+------------------------------------------------------------- */
+.places-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  max-width: min(340px, calc(100vw - 32px));
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 16px 32px -6px rgba(0, 0, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 1000;
+  animation: placesDropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes placesDropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.places-search-results {
+  max-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+.places-search-results::-webkit-scrollbar {
+  width: 5px;
+}
+
+.places-search-results::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+/* Elemento de resultado individual */
+.places-result-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  gap: 10px;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.places-result-item:hover,
+.places-result-item.is-active {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.places-item-icon {
+  font-size: 16px;
+  line-height: 1.2;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.places-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.places-item-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.places-item-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.places-item-subtitle {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* Badges por Categoría */
+.places-item-badge,
+.places-popup-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.places-badge-municipality {
+  background: rgba(2, 132, 199, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.places-badge-river {
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+}
+
+.places-badge-reservoir {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.places-badge-region,
+.places-badge-cuenca {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.3);
+}
+
+.places-badge-station {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.places-badge-mountain {
+  background: rgba(100, 116, 139, 0.25);
+  color: #cbd5e1;
+  border: 1px solid rgba(203, 213, 225, 0.3);
+}
+
+.places-badge-place,
+.places-badge-province {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+  border: 1px solid rgba(226, 232, 240, 0.3);
+}
+
+/* Resaltado de texto coincidente */
+.places-highlight {
+  background: transparent;
+  color: var(--accent-cyan);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(56, 189, 248, 0.4);
+}
+
+/* Sin resultados / Error */
+.places-no-results {
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.places-no-results-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  opacity: 0.8;
+}
+
+.places-no-results-text {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.places-no-results-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.places-error .places-no-results-text {
+  color: #f87171;
+}
+
+/* -------------------------------------------------------------
+   Marcador de Destacado en el Mapa (Pulse Pin & Popup)
+------------------------------------------------------------- */
+.places-highlight-pin-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.places-pulse-ring {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.8);
+  animation: placesPulseRing 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes placesPulseRing {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.places-pin-core {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  background: #0f172a;
+  border: 2px solid var(--accent-cyan);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 8px rgba(56, 189, 248, 0.6);
+  z-index: 2;
+}
+
+.places-pin-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Popup personalizado del lugar */
+.places-custom-popup .leaflet-popup-content-wrapper {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7) !important;
+  padding: 0 !important;
+  color: var(--text-primary) !important;
+}
+
+.places-custom-popup .leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid var(--border-color) !important;
+  border-top: none !important;
+  border-left: none !important;
+}
+
+.places-popup-card {
+  padding: 12px 14px;
+  min-width: 220px;
+}
+
+.places-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.places-popup-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.places-popup-close-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.places-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.places-popup-alt {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+
+.places-popup-location {
+  font-size: 12px;
+  color: var(--accent-cyan);
+  margin-top: 4px;
+}
+
+.places-popup-coords {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: monospace;
+}
+
+/* Adaptación responsive para pantallas móviles (< 600px) */
+@media (max-width: 600px) {
+  .leaflet-control-places-search.is-expanded .places-search-box {
+    width: min(280px, calc(100vw - 80px));
+  }
+  .places-search-dropdown {
+    width: min(290px, calc(100vw - 40px));
+  }
+}
