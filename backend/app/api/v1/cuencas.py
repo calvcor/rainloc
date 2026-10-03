@@ -12,6 +12,13 @@ from app.services.guadalquivir_service import guadalquivir_service
 
 router = APIRouter(prefix="/cuencas", tags=["Cuencas y Subsistemas"])
 
+# Cabeceras de caché HTTP y CDN (Cloudflare Edge) para cuencas estáticas/demarcaciones
+CUENCAS_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
+    "CDN-Cache-Control": "public, max-age=604800",
+    "Cloudflare-CDN-Cache-Control": "max-age=604800",
+}
+
 # Cache en memoria del GeoJSON procesado y optimizado
 _cuencas_cache: Optional[Dict[str, Any]] = None
 
@@ -82,7 +89,7 @@ async def get_ccaa_boundaries():
         content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
         media_type="application/geo+json",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            **CUENCAS_CACHE_HEADERS,
             "X-Feature-Count": str(len(data.get("features", [])))
         }
     )
@@ -91,14 +98,14 @@ async def get_ccaa_boundaries():
 async def get_all_cuencas():
     """
     Devuelve la FeatureCollection con geometrías optimizadas y propiedades de los 
-    subsistemas de explotación de la CHJ, comprimible vía gzip.
+    subsistemas de explotación de la CHJ, comprimible vía gzip y cacheada en CDN.
     """
     data = get_cuencas_data()
     return Response(
         content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
         media_type="application/geo+json",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            **CUENCAS_CACHE_HEADERS,
             "X-Feature-Count": str(len(data.get("features", [])))
         }
     )
@@ -122,7 +129,7 @@ async def get_ebro_cuencas():
             content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
             media_type="application/geo+json",
             headers={
-                "Cache-Control": "public, max-age=86400",
+                **CUENCAS_CACHE_HEADERS,
                 "X-Feature-Count": str(len(data.get("features", []))),
             },
         )
@@ -146,7 +153,7 @@ async def get_segura_cuencas():
             content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
             media_type="application/geo+json",
             headers={
-                "Cache-Control": "public, max-age=86400",
+                **CUENCAS_CACHE_HEADERS,
                 "X-Feature-Count": str(len(data.get("features", []))),
             },
         )
@@ -170,7 +177,7 @@ async def get_guadalquivir_cuencas():
             content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
             media_type="application/geo+json",
             headers={
-                "Cache-Control": "public, max-age=86400",
+                **CUENCAS_CACHE_HEADERS,
                 "X-Feature-Count": str(len(data.get("features", []))),
             },
         )
@@ -205,7 +212,12 @@ async def get_sistemas_summary():
             "superficie_km2": area
         })
 
-    return {"total_sistemas": len(sistemas), "sistemas": list(sistemas.values())}
+    payload = {"total_sistemas": len(sistemas), "sistemas": list(sistemas.values())}
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        media_type="application/json",
+        headers=CUENCAS_CACHE_HEADERS
+    )
 
 @router.get("/{feature_id}", summary="Obtener una cuenca específica por su identificador")
 async def get_cuenca_by_id(feature_id: str):
@@ -213,6 +225,10 @@ async def get_cuenca_by_id(feature_id: str):
     data = get_cuencas_data()
     for f in data.get("features", []):
         if str(f.get("id")) == str(feature_id):
-            return f
+            return Response(
+                content=json.dumps(f, ensure_ascii=False, separators=(",", ":")),
+                media_type="application/geo+json",
+                headers=CUENCAS_CACHE_HEADERS
+            )
 
     raise HTTPException(status_code=404, detail=f"Cuenca con ID {feature_id} no encontrada")

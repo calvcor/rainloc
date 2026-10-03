@@ -784,16 +784,24 @@ async def sync_harmonie_forecast(
 # =========================================================================
 
 @router.get("/basins", summary="Catálogo de cuencas y subsistemas precalculados")
-async def list_model_basins() -> Dict[str, Any]:
+async def list_model_basins():
     """
     Devuelve la lista de cuencas y subsistemas hidrográficos precomputados con su ID,
-    nombre oficial, sistema de explotación y superficie oficial en km².
+    nombre oficial, sistema de explotación y superficie oficial en km², cacheado en Cloudflare.
     """
     basins = basin_hydrology_service.list_basins()
-    return {
+    payload = {
         "count": len(basins),
         "basins": basins
     }
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400",
+            "CDN-Cache-Control": "public, max-age=604800",
+            "Cloudflare-CDN-Cache-Control": "max-age=604800",
+        }
+    )
 
 
 @router.get("/{model}/basin-hydrograph", summary="Hidrograma y volumen acumulado al vuelo para una cuenca")
