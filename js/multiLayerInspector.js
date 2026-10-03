@@ -1140,7 +1140,7 @@ export class MultiLayerInspector {
             const rawNivel = closestStation.ultimo_nivel !== undefined ? closestStation.ultimo_nivel : (closestStation.nivel !== undefined ? closestStation.nivel : (closestStation.nivel_actual !== undefined ? closestStation.nivel_actual : (closestStation.cota_actual !== undefined ? closestStation.cota_actual : closestStation.cota)));
             const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-            const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.unidad_grafica === 'm';
+            const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.red === 'EBRO' || closestStation.unidad_grafica === 'm';
             const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
             const umbrales = closestStation.umbrales || {};

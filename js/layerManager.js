@@ -4336,7 +4336,7 @@ export class LayerManager {
         const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
         const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.unidad_grafica === 'm';
+        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.red === 'EBRO' || props.unidad_grafica === 'm';
         const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
         const umbrales = props.umbrales || {};
@@ -4456,7 +4456,7 @@ export class LayerManager {
     const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
     const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.unidad_grafica === 'm';
+    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR' || props.red === 'GUADALQUIVIR' || props.red === 'EBRO' || props.unidad_grafica === 'm';
     const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
 
     let alertColor = '#10b981';

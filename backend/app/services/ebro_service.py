@@ -584,6 +584,40 @@ class EbroService:
         ctx = self._get_ssl_context()
         aforos_list = []
 
+        # Descargar umbrales de aviso oficiales de la CHE
+        umbrales_by_station = {}
+        try:
+            url_umb = f"{EBRO_BASE_URL}/api/info/getTablaUmbrales"
+            req_umb = urllib.request.Request(
+                url_umb,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json, text/plain, */*",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+            with urllib.request.urlopen(req_umb, context=ctx, timeout=10) as resp_umb:
+                raw_umb = json.loads(resp_umb.read().decode("utf-8"))
+            if isinstance(raw_umb, list):
+                for u in raw_umb:
+                    cod_u = u.get("codigo", "")
+                    m_code = re.match(r"^([A-Z][0-9]{3})", cod_u)
+                    if m_code:
+                        c_id = m_code.group(1)
+                        col1 = _parse_num(u.get("col1"))
+                        col2 = _parse_num(u.get("col2"))
+                        col3 = _parse_num(u.get("col3"))
+                        umbrales_by_station[c_id] = {
+                            "amarillo": col1,
+                            "naranja": col2,
+                            "rojo": col3,
+                            "aviso": col1,
+                            "prealerta": col2,
+                            "alerta": col3,
+                        }
+        except Exception as e:
+            logger.warning(f"Error descargando tabla de umbrales de Ebro: {e}")
+
         # Opción B: Con API Key Open Data (2 peticiones: QRIO y NRIO)
         if self._api_key:
             try:
@@ -639,6 +673,7 @@ class EbroService:
 
                     clean_name = meta.get("nombre") or code
                     rio = meta.get("rio") or ""
+                    umb = umbrales_by_station.get(code, {})
 
                     st_dict = {
                         "id_estacion": f"ebro_aforo_{code}",
@@ -662,6 +697,13 @@ class EbroService:
                         "nivel": nivel_val,
                         "ultimo_nivel": nivel_val,
                         "nivel_actual": nivel_val,
+                        "umbrales": umb,
+                        "aviso": umb.get("amarillo"),
+                        "prealerta": umb.get("naranja"),
+                        "alerta": umb.get("rojo"),
+                        "tipo_umbral": "nivel",
+                        "unidad_umbrales": "m",
+                        "unidad_grafica": "m",
                         "ultima_hora": q_info.get("fecha") or n_info.get("fecha") or now_iso,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
@@ -718,6 +760,8 @@ class EbroService:
                             fecha_val = t.get("ULTIMA_FECHA", fecha_val)
 
                     clean_name = meta.get("nombre") or item.get("LR_NOMBRE_CORTO") or code
+                    umb = umbrales_by_station.get(code, {})
+
                     st_dict = {
                         "id_estacion": f"ebro_aforo_{code}",
                         "codigo": f"EBRO_{code}",
@@ -740,6 +784,13 @@ class EbroService:
                         "nivel": nivel_val,
                         "ultimo_nivel": nivel_val,
                         "nivel_actual": nivel_val,
+                        "umbrales": umb,
+                        "aviso": umb.get("amarillo"),
+                        "prealerta": umb.get("naranja"),
+                        "alerta": umb.get("rojo"),
+                        "tipo_umbral": "nivel",
+                        "unidad_umbrales": "m",
+                        "unidad_grafica": "m",
                         "ultima_hora": fecha_val,
                         "fecha_comunicacion": now_iso,
                         "fuente": "SAIH Ebro (Confederación Hidrográfica del Ebro - CHE)",
