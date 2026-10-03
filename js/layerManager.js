@@ -5595,35 +5595,37 @@ export class LayerManager {
             ? Number(props.lluvia_24h)
             : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
+          const refRain = Math.max(r24h, r12h, r4h, r1h, Number(props.lluvia_hoy || 0));
+
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
           let alertClass = 'pluvio-status-zero';
           let alertLevelText = 'Sin lluvia acumulada';
 
-          if (r24h >= 100 || r1h >= 20) {
+          if (refRain >= 100 || r1h >= 20) {
             color = '#ef4444'; // Rojo / Torrencial
             alertClass = 'pluvio-status-extreme caudal-pulse';
             alertLevelText = 'Lluvia Torrencial';
-          } else if (r24h >= 60 || r1h >= 10) {
+          } else if (refRain >= 60 || r1h >= 10) {
             color = '#f97316'; // Naranja / Muy fuerte
             alertClass = 'pluvio-status-heavy';
             alertLevelText = 'Lluvia Muy Fuerte';
-          } else if (r24h >= 30 || r1h >= 5) {
+          } else if (refRain >= 30 || r1h >= 5) {
             color = '#eab308'; // Amarillo / Fuerte
             alertClass = 'pluvio-status-mod';
             alertLevelText = 'Lluvia Fuerte';
-          } else if (r24h >= 10) {
+          } else if (refRain >= 10) {
             color = '#0284c7'; // Azul / Moderada
             alertClass = 'pluvio-status-light';
             alertLevelText = 'Lluvia Moderada';
-          } else if (r24h > 0 || r1h > 0) {
+          } else if (refRain > 0 || r1h > 0) {
             color = '#38bdf8'; // Celeste / Débil
             alertClass = 'pluvio-status-light';
             alertLevelText = 'Lluvia Débil';
           }
 
           // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
-          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+          const radius = (refRain >= 30 || r1h >= 5) ? 5.0 : 3.8;
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
