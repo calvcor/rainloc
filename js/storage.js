@@ -66,7 +66,11 @@ export class StorageManager {
       radarStationId: 'esbnv', // Estación por defecto
       showRadarCoverage: false, // Mostrar áreas de cobertura de radar en mapa
       autoRefreshInterval: 180, // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
-      aemetPeriod: 'now' // 'now' | 'today' | 'tomorrow' | 'after_tomorrow'
+      aemetPeriod: 'now', // 'now' | 'today' | 'tomorrow' | 'after_tomorrow'
+      pluvioRenderMode: 'points', // 'points' | 'mesh'
+      pluvioMeshPeriod: '24h', // '1h' | '4h' | '12h' | '24h'
+      pluvioMeshLabels: true, // Mostrar etiquetas de valor numérico sobre la malla
+      pluvioMeshOpacity: 0.85
     };
   }
 
@@ -223,6 +227,38 @@ export class StorageManager {
    */
   static setAemetPeriod(period) {
     return this.save({ aemetPeriod: period });
+  }
+
+  /**
+   * Guarda el modo de renderizado de pluviómetros ('points' | 'mesh')
+   * @param {string} mode
+   */
+  static setPluvioRenderMode(mode) {
+    return this.save({ pluvioRenderMode: mode });
+  }
+
+  /**
+   * Guarda el periodo temporal de la malla de lluvia ('1h' | '4h' | '12h' | '24h')
+   * @param {string} period
+   */
+  static setPluvioMeshPeriod(period) {
+    return this.save({ pluvioMeshPeriod: period });
+  }
+
+  /**
+   * Guarda la preferencia de mostrar etiquetas numéricas en la malla de lluvia
+   * @param {boolean} show
+   */
+  static setPluvioMeshLabels(show) {
+    return this.save({ pluvioMeshLabels: Boolean(show) });
+  }
+
+  /**
+   * Guarda la opacidad de la malla de acumulados
+   * @param {number} opacity
+   */
+  static setPluvioMeshOpacity(opacity) {
+    return this.save({ pluvioMeshOpacity: parseFloat(opacity) });
   }
 
   /**

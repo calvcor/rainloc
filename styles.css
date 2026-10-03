@@ -1054,6 +1054,228 @@ body {
   color: #94a3b8;
 }
 
+/* Selector de Modo de Visualización de Pluviometría (Puntos vs Malla Suave) */
+.pluvio-mode-control-group {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 2px 0;
+}
+
+.pluvio-mode-segmented {
+  display: flex;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 2.5px;
+  gap: 3px;
+}
+
+.pluvio-mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.70rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.pluvio-mode-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pluvio-mode-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  box-shadow: 0 1px 6px rgba(2, 132, 199, 0.45);
+  font-weight: 700;
+}
+
+/* Panel de Opciones Avanzadas de Malla Continua de Acumulados */
+.pluvio-mesh-options-panel {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pluvio-period-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pluvio-period-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pluvio-period-chips {
+  display: flex;
+  gap: 4px;
+}
+
+.pluvio-period-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  font-size: 0.70rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pluvio-period-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.pluvio-period-chip.active {
+  background: #38bdf8;
+  color: #0b1120;
+  border-color: #38bdf8;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.pluvio-labels-row {
+  display: flex;
+  align-items: center;
+}
+
+.pluvio-labels-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pluvio-labels-toggle-label input[type="checkbox"] {
+  accent-color: #38bdf8;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.pluvio-labels-toggle-label:hover {
+  color: var(--text-primary);
+}
+
+/* Leyenda de la Malla de Acumulados (Estilo AVAMET) */
+.pluvio-mesh-legend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.mesh-legend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mesh-legend-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.mesh-legend-unit {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.mesh-legend-colorbar {
+  width: 100%;
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    rgba(224, 244, 252, 0.3) 0%,
+    #e0f4fc 3%,
+    #b9e5fb 6%,
+    #7ecbf8 10%,
+    #38b6f4 16%,
+    #0298e8 24%,
+    #0165b8 32%,
+    #01358d 40%,
+    #3d0c72 48%,
+    #681699 56%,
+    #9b21c4 64%,
+    #c92bb9 72%,
+    #f45695 78%,
+    #f86c7d 84%,
+    #f77b42 89%,
+    #e6381e 94%,
+    #8f0417 97%,
+    #100002 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.mesh-legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.56rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  padding: 0 1px;
+}
+
+/* Etiquetas numéricas renderizadas sobre el mapa continuo */
+.pluvio-mesh-val-label {
+  background: rgba(11, 17, 32, 0.72) !important;
+  color: #ffffff !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  text-align: center !important;
+  line-height: 14px !important;
+  border-radius: 3px !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+}
+
+.pluvio-mesh-raster-overlay {
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}
+
 .saih-sublayers-list {
   display: flex;
   flex-direction: column;

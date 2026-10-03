@@ -789,7 +789,7 @@ export class UIManager {
                 </div>
               </div>
 
-              <!-- Sección Red Pluviométrica con Toggle General -->
+              <!-- Sección Red Pluviométrica con Selector de Modo y Periodos -->
               <div class="saih-sublayers-section pluvio-sublayers-section">
                 <div class="saih-sublayers-header pluvio-header-row">
                   <span class="saih-sublayers-header-title">Red de Pluviometría</span>
@@ -799,6 +799,61 @@ export class UIManager {
                     <span class="pluvio-master-count-badge" id="pluvio-active-count">${activePluvioCount}/${pluvioSubLayers.length}</span>
                   </label>
                 </div>
+
+                <!-- Selector de Modo de Visualización (Puntos vs Malla Suave Continua) -->
+                <div class="pluvio-mode-control-group">
+                  <div class="pluvio-mode-segmented">
+                    <button type="button" class="pluvio-mode-btn ${((this.layerManager && this.layerManager.pluvioRenderMode) || prefs.pluvioRenderMode || 'points') === 'points' ? 'active' : ''}" data-pluvio-mode="points" title="Mostrar estaciones individuales como puntos interactivos">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+                      Puntos
+                    </button>
+                    <button type="button" class="pluvio-mode-btn ${((this.layerManager && this.layerManager.pluvioRenderMode) || prefs.pluvioRenderMode || 'points') === 'mesh' ? 'active' : ''}" data-pluvio-mode="mesh" title="Generar mapa suave y continuo de acumulados interpolado en el navegador">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M16 14v6"></path><path d="M8 14v6"></path><path d="M12 16v6"></path></svg>
+                      Malla Suave
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Opciones avanzadas de Malla Continua de Acumulados -->
+                <div class="pluvio-mesh-options-panel" id="pluvio-mesh-options-panel" style="${((this.layerManager && this.layerManager.pluvioRenderMode) || prefs.pluvioRenderMode || 'points') === 'mesh' ? '' : 'display: none;'}">
+                  <div class="pluvio-period-row">
+                    <span class="pluvio-period-label">Acumulado:</span>
+                    <div class="pluvio-period-chips">
+                      <button type="button" class="pluvio-period-chip ${((this.layerManager && this.layerManager.pluvioMeshPeriod) || prefs.pluvioMeshPeriod || '24h') === '1h' ? 'active' : ''}" data-period="1h" title="Lluvia acumulada en la última 1 hora">1h</button>
+                      <button type="button" class="pluvio-period-chip ${((this.layerManager && this.layerManager.pluvioMeshPeriod) || prefs.pluvioMeshPeriod || '24h') === '4h' ? 'active' : ''}" data-period="4h" title="Lluvia acumulada en las últimas 4 horas">4h</button>
+                      <button type="button" class="pluvio-period-chip ${((this.layerManager && this.layerManager.pluvioMeshPeriod) || prefs.pluvioMeshPeriod || '24h') === '12h' ? 'active' : ''}" data-period="12h" title="Lluvia acumulada en las últimas 12 horas">12h</button>
+                      <button type="button" class="pluvio-period-chip ${((this.layerManager && this.layerManager.pluvioMeshPeriod) || prefs.pluvioMeshPeriod || '24h') === '24h' ? 'active' : ''}" data-period="24h" title="Lluvia acumulada en las últimas 24 horas">24h</button>
+                    </div>
+                  </div>
+
+                  <div class="pluvio-labels-row">
+                    <label class="pluvio-labels-toggle-label" title="Mostrar valores numéricos en estaciones sobre el mapa suave">
+                      <input type="checkbox" id="toggle-pluvio-mesh-labels" ${((this.layerManager && this.layerManager.pluvioMeshLabels !== undefined) ? this.layerManager.pluvioMeshLabels : (prefs.pluvioMeshLabels !== undefined ? prefs.pluvioMeshLabels : true)) ? 'checked' : ''}>
+                      <span class="pluvio-labels-toggle-text">Valores en estaciones (mm)</span>
+                    </label>
+                  </div>
+
+                  <!-- Leyenda de colores cromáticos de lluvia acumulada estilo AVAMET -->
+                  <div class="pluvio-mesh-legend-card">
+                    <div class="mesh-legend-header">
+                      <span class="mesh-legend-title">Escala de Acumulado (${((this.layerManager && this.layerManager.pluvioMeshPeriod) || prefs.pluvioMeshPeriod || '24h').toUpperCase()})</span>
+                      <span class="mesh-legend-unit">mm</span>
+                    </div>
+                    <div class="mesh-legend-colorbar"></div>
+                    <div class="mesh-legend-ticks">
+                      <span>0</span>
+                      <span>2</span>
+                      <span>10</span>
+                      <span>30</span>
+                      <span>60</span>
+                      <span>100</span>
+                      <span>150</span>
+                      <span>250</span>
+                      <span>500</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="saih-sublayers-list">
                   ${pluvioListHtml}
                 </div>
@@ -1179,6 +1234,53 @@ export class UIManager {
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.togglePluvioGroup) {
           this.layerManager.togglePluvioGroup(isChecked);
+        }
+      });
+    }
+
+    // Modo de renderizado de Pluviómetros (Puntos vs Malla Suave Continua)
+    document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const mode = e.currentTarget.getAttribute('data-pluvio-mode');
+        document.querySelectorAll('.pluvio-mode-btn').forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+
+        const meshPanel = document.getElementById('pluvio-mesh-options-panel');
+        if (meshPanel) {
+          meshPanel.style.display = (mode === 'mesh') ? 'block' : 'none';
+        }
+
+        if (this.layerManager && this.layerManager.setPluvioRenderMode) {
+          this.layerManager.setPluvioRenderMode(mode);
+        }
+      });
+    });
+
+    // Selector de periodo de acumulación de Malla de Lluvia (1h, 4h, 12h, 24h)
+    document.querySelectorAll('.pluvio-period-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        const period = e.currentTarget.getAttribute('data-period');
+        document.querySelectorAll('.pluvio-period-chip').forEach(c => c.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+
+        const legendTitle = document.querySelector('.pluvio-mesh-legend-card .mesh-legend-title');
+        if (legendTitle) {
+          legendTitle.textContent = `Escala de Acumulado (${period.toUpperCase()})`;
+        }
+
+        if (this.layerManager && this.layerManager.setPluvioMeshPeriod) {
+          this.layerManager.setPluvioMeshPeriod(period);
+        }
+      });
+    });
+
+    // Toggle de etiquetas numéricas sobre la malla
+    const meshLabelsToggle = document.getElementById('toggle-pluvio-mesh-labels');
+    if (meshLabelsToggle) {
+      meshLabelsToggle.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        if (this.layerManager && this.layerManager.setPluvioMeshLabels) {
+          this.layerManager.setPluvioMeshLabels(isChecked);
         }
       });
     }
@@ -2485,6 +2587,49 @@ export class UIManager {
   setLoadedState(count) {
     const isVisible = this.cuencasLayer ? this.cuencasLayer.isVisible : true;
     this._updateCuencasUIState(isVisible);
+  }
+
+  /**
+   * Actualiza el estado visual de los controles de la malla de lluvia
+   */
+  updatePluvioMeshUI() {
+    if (!this.layerManager) return;
+    const mode = this.layerManager.pluvioRenderMode;
+    const period = this.layerManager.pluvioMeshPeriod;
+    const labels = this.layerManager.pluvioMeshLabels;
+
+    document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-pluvio-mode') === mode);
+    });
+
+    const meshPanel = document.getElementById('pluvio-mesh-options-panel');
+    if (meshPanel) {
+      meshPanel.style.display = (mode === 'mesh') ? 'block' : 'none';
+    }
+
+    document.querySelectorAll('.pluvio-period-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.getAttribute('data-period') === period);
+    });
+
+    const legendTitle = document.querySelector('.pluvio-mesh-legend-card .mesh-legend-title');
+    if (legendTitle) {
+      legendTitle.textContent = `Escala de Acumulado (${period.toUpperCase()})`;
+    }
+
+    const meshLabelsToggle = document.getElementById('toggle-pluvio-mesh-labels');
+    if (meshLabelsToggle) {
+      meshLabelsToggle.checked = labels;
+    }
+  }
+
+  /**
+   * Actualiza la leyenda y los datos resumen de la malla
+   */
+  updatePluvioMeshLegend(period, maxVal, pointsCount) {
+    const legendTitle = document.querySelector('.pluvio-mesh-legend-card .mesh-legend-title');
+    if (legendTitle) {
+      legendTitle.textContent = `Acumulado ${period.toUpperCase()}${maxVal !== undefined && maxVal > 0 ? ` · Máx: ${maxVal.toFixed(1)} mm` : ''}`;
+    }
   }
 
   /**

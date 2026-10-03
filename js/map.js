@@ -77,10 +77,21 @@ export class MapManager {
       this.map.getPane('ccaaPane').style.pointerEvents = 'none';
     }
 
+    // 5.1. Malla Continua de Acumulados de Lluvia Interpolada (520)
+    if (!this.map.getPane('pluvioMeshPane')) {
+      this.map.createPane('pluvioMeshPane');
+      this.map.getPane('pluvioMeshPane').style.zIndex = 520;
+    }
+
     // 6. Redes de Observación y Estaciones en Tiempo Real (SAIH Júcar) -> Máxima prioridad
     if (!this.map.getPane('lluviasPane')) {
       this.map.createPane('lluviasPane');
       this.map.getPane('lluviasPane').style.zIndex = 580;
+    }
+    if (!this.map.getPane('pluvioLabelsPane')) {
+      this.map.createPane('pluvioLabelsPane');
+      this.map.getPane('pluvioLabelsPane').style.zIndex = 585;
+      this.map.getPane('pluvioLabelsPane').style.pointerEvents = 'none';
     }
     if (!this.map.getPane('caudalesPane')) {
       this.map.createPane('caudalesPane');
@@ -236,6 +247,7 @@ export class MapManager {
     }
 
     if (geojsonData && geojsonData.features) {
+      this.ccaaGeoJson = geojsonData;
       this.ccaaLayer = L.geoJSON(geojsonData, {
         pane: 'ccaaPane',
         interactive: false,

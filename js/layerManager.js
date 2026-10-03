@@ -5,6 +5,7 @@
 
 import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatHarmonieTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
 import { StorageManager } from './storage.js';
+import { rainInterpolator } from './rainInterpolator.js';
 
 // Renderizado vectorial ultrarrápido acelerado por GPU sobre Canvas para rayos
 if (typeof L !== 'undefined' && L.Canvas && !L.Canvas.prototype._updateLightning) {
@@ -91,6 +92,14 @@ export class LayerManager {
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
     this.currentAemetPeriod = prefs.aemetPeriod || 'now';
+
+    // Estado del Mapa Suave de Acumulados de Lluvia (Interpolación en Navegador)
+    this.pluvioRenderMode = prefs.pluvioRenderMode || 'points'; // 'points' | 'mesh'
+    this.pluvioMeshPeriod = prefs.pluvioMeshPeriod || '24h'; // '1h' | '4h' | '12h' | '24h'
+    this.pluvioMeshLabels = (prefs.pluvioMeshLabels !== undefined) ? Boolean(prefs.pluvioMeshLabels) : true;
+    this.pluvioMeshOpacity = prefs.pluvioMeshOpacity !== undefined ? parseFloat(prefs.pluvioMeshOpacity) : 0.85;
+    this.pluvioMeshOverlay = null;
+    this.pluvioLabelsGroup = L.layerGroup();
 
     // Radar 24h Timeline & Player State
     this.radarTimeline = [];
@@ -405,6 +414,12 @@ export class LayerManager {
       if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
         this.map.removeLayer(this.radarCoverageGroup);
       }
+      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      if (this.pluvioLabelsGroup && this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
 
       // 2. Mostrar la capa de predicción activa (garantizando exclusividad de una única predicción)
       let activePredId = null;
@@ -465,6 +480,9 @@ export class LayerManager {
         const state = this.layerStates[def.id];
         if (def.type === 'saih_group') {
           if (state && state.active && Array.isArray(def.subLayers)) {
+            if (this.pluvioRenderMode === 'mesh') {
+              this.updatePluvioMesh();
+            }
             def.subLayers.forEach(sub => {
               const subState = this.layerStates[sub.id];
               if (subState && subState.active) {
@@ -4237,6 +4255,240 @@ export class LayerManager {
   }
 
   /**
+   * Cambia el modo de visualización de pluviómetros: 'points' (puntos) o 'mesh' (malla suave continua)
+   * @param {'points' | 'mesh'} mode
+   */
+  setPluvioRenderMode(mode) {
+    if (this.pluvioRenderMode === mode) return;
+    this.pluvioRenderMode = mode;
+    StorageManager.setPluvioRenderMode(mode);
+
+    if (mode === 'mesh') {
+      // Limpiar puntos individuales de todas las subcapas de pluviometría
+      const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+      pluvioIds.forEach(id => {
+        if (this.layers[id]) this.layers[id].clearLayers();
+      });
+      this._ensureAllPluvioFeaturesLoaded().then(() => {
+        this.updatePluvioMesh();
+      });
+    } else {
+      // Ocultar malla y etiquetas
+      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      this.pluvioLabelsGroup.clearLayers();
+      if (this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
+      // Restaurar puntos individuales
+      this._reloadActivePluvioPointLayers();
+    }
+
+    if (this.uiManager && this.uiManager.updatePluvioMeshUI) {
+      this.uiManager.updatePluvioMeshUI();
+    }
+  }
+
+  /**
+   * Cambia el intervalo temporal de acumulación de lluvia para la malla continua
+   * @param {'1h' | '4h' | '12h' | '24h'} period
+   */
+  setPluvioMeshPeriod(period) {
+    if (this.pluvioMeshPeriod === period) return;
+    this.pluvioMeshPeriod = period;
+    StorageManager.setPluvioMeshPeriod(period);
+
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    }
+
+    if (this.uiManager && this.uiManager.updatePluvioMeshUI) {
+      this.uiManager.updatePluvioMeshUI();
+    }
+  }
+
+  /**
+   * Activa o desactiva las etiquetas numéricas de precipitación sobre la malla
+   * @param {boolean} show
+   */
+  setPluvioMeshLabels(show) {
+    this.pluvioMeshLabels = Boolean(show);
+    StorageManager.setPluvioMeshLabels(this.pluvioMeshLabels);
+
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    }
+  }
+
+  /**
+   * Ajusta la opacidad de la malla continua de precipitación
+   * @param {number} opacity
+   */
+  setPluvioMeshOpacity(opacity) {
+    this.pluvioMeshOpacity = parseFloat(opacity);
+    StorageManager.setPluvioMeshOpacity(this.pluvioMeshOpacity);
+
+    if (this.pluvioMeshOverlay) {
+      this.pluvioMeshOverlay.setOpacity(this.pluvioMeshOpacity);
+    }
+  }
+
+  /**
+   * Recopila todas las estaciones pluviométricas disponibles de todas las redes activas
+   */
+  getAllActivePluvioFeatures() {
+    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+    const allFeatures = [];
+    const masterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+
+    pluvioIds.forEach(id => {
+      const isSubActive = this.layerStates[id] ? Boolean(this.layerStates[id].active) : true;
+      if (masterActive && isSubActive) {
+        if (id === 'saih_lluvias' && this._lluviasFeatures) allFeatures.push(...this._lluviasFeatures);
+        if (id === 'aemet_lluvias' && this._aemetLluviasFeatures) allFeatures.push(...this._aemetLluviasFeatures);
+        if (id === 'avamet_lluvias' && this._avametLluviasFeatures) allFeatures.push(...this._avametLluviasFeatures);
+        if (id === 'meteocat_lluvias' && this._meteocatLluviasFeatures) allFeatures.push(...this._meteocatLluviasFeatures);
+        if (id === 'hidrosur_lluvias' && this._hidrosurLluviasFeatures) allFeatures.push(...this._hidrosurLluviasFeatures);
+      }
+    });
+
+    if (allFeatures.length === 0 && masterActive) {
+      if (this._lluviasFeatures) allFeatures.push(...this._lluviasFeatures);
+      if (this._aemetLluviasFeatures) allFeatures.push(...this._aemetLluviasFeatures);
+      if (this._avametLluviasFeatures) allFeatures.push(...this._avametLluviasFeatures);
+      if (this._meteocatLluviasFeatures) allFeatures.push(...this._meteocatLluviasFeatures);
+      if (this._hidrosurLluviasFeatures) allFeatures.push(...this._hidrosurLluviasFeatures);
+    }
+
+    return allFeatures;
+  }
+
+  /**
+   * Asegura que los datos de las distintas redes pluviométricas estén precargados en memoria
+   */
+  async _ensureAllPluvioFeaturesLoaded() {
+    const promises = [];
+    const dummyGroup = { clearLayers: () => {}, addLayer: () => {} };
+
+    if (!this._lluviasFeatures) promises.push(this._loadLluviasLayer(this.layers['saih_lluvias'] || dummyGroup, 0.95));
+    if (!this._aemetLluviasFeatures) promises.push(this._loadAemetLluviasLayer(this.layers['aemet_lluvias'] || dummyGroup, 0.95));
+    if (!this._avametLluviasFeatures) promises.push(this._loadAvametLluviasLayer(this.layers['avamet_lluvias'] || dummyGroup, 0.95));
+    if (!this._meteocatLluviasFeatures) promises.push(this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'] || dummyGroup, 0.95));
+    if (!this._hidrosurLluviasFeatures) promises.push(this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'] || dummyGroup, 0.95));
+
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
+  }
+
+  /**
+   * Actualiza y re-renderiza la malla continua de acumulados de precipitación en cliente
+   */
+  updatePluvioMesh() {
+    const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+    if (!isMasterActive || this.pluvioRenderMode !== 'mesh') {
+      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      this.pluvioLabelsGroup.clearLayers();
+      if (this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
+      return;
+    }
+
+    const allFeatures = this.getAllActivePluvioFeatures();
+    if (!allFeatures || allFeatures.length === 0) {
+      this._ensureAllPluvioFeaturesLoaded().then(() => {
+        if (this.pluvioRenderMode === 'mesh') this.updatePluvioMesh();
+      });
+      return;
+    }
+
+    const points = rainInterpolator.extractStationPoints(allFeatures, this.pluvioMeshPeriod);
+    if (!points || points.length === 0) {
+      return;
+    }
+
+    const maskGeoJson = this.mapManager.ccaaGeoJson || null;
+    const result = rainInterpolator.generateInterpolatedGrid(points, {
+      maskGeoJson: maskGeoJson,
+      width: 580
+    });
+
+    if (!result || !result.dataUrl) return;
+
+    if (!this.pluvioMeshOverlay) {
+      this.pluvioMeshOverlay = L.imageOverlay(result.dataUrl, result.bounds, {
+        pane: 'pluvioMeshPane',
+        opacity: this.pluvioMeshOpacity,
+        interactive: false,
+        className: 'pluvio-mesh-raster-overlay'
+      });
+    } else {
+      this.pluvioMeshOverlay.setUrl(result.dataUrl);
+      this.pluvioMeshOverlay.setBounds(result.bounds);
+      this.pluvioMeshOverlay.setOpacity(this.pluvioMeshOpacity);
+    }
+
+    if (!this.map.hasLayer(this.pluvioMeshOverlay)) {
+      this.pluvioMeshOverlay.addTo(this.map);
+    }
+
+    // Actualizar capa de etiquetas numéricas sobre el mapa
+    this.pluvioLabelsGroup.clearLayers();
+    if (this.pluvioMeshLabels) {
+      // Filtrar estaciones con precipitación significativa (>= 0.5 mm) para máxima claridad visual
+      const labeledPoints = points.filter(p => p.val >= 0.5);
+      labeledPoints.forEach(pt => {
+        const valText = pt.val >= 10 ? Math.round(pt.val) : pt.val.toFixed(1);
+        const labelIcon = L.divIcon({
+          className: 'pluvio-mesh-val-label',
+          html: `<span>${valText}</span>`,
+          iconSize: [26, 14],
+          iconAnchor: [13, 7]
+        });
+        L.marker([pt.lat, pt.lon], {
+          icon: labelIcon,
+          pane: 'pluvioLabelsPane',
+          interactive: false
+        }).addTo(this.pluvioLabelsGroup);
+      });
+
+      if (!this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.pluvioLabelsGroup.addTo(this.map);
+      }
+    } else {
+      if (this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
+    }
+
+    if (this.uiManager && this.uiManager.updatePluvioMeshLegend) {
+      this.uiManager.updatePluvioMeshLegend(this.pluvioMeshPeriod, result.maxObsVal, points.length);
+    }
+  }
+
+  /**
+   * Re-renderiza los puntos individuales para todas las subcapas de pluviometría activas
+   */
+  _reloadActivePluvioPointLayers() {
+    const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+    pluvioIds.forEach(id => {
+      const state = this.layerStates[id];
+      if (state && state.active && this.layers[id]) {
+        const op = state.opacity || 0.95;
+        if (id === 'saih_lluvias') this._loadLluviasLayer(this.layers[id], op);
+        else if (id === 'aemet_lluvias') this._loadAemetLluviasLayer(this.layers[id], op);
+        else if (id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers[id], op);
+        else if (id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers[id], op);
+        else if (id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(this.layers[id], op);
+      }
+    });
+  }
+
+  /**
    * Configura e inicializa el autorrefresco en segundo plano para avisos AEMET, caudales, embalses y lluvias
    */
   startAutoRefresh(intervalSec = 300) {
@@ -5280,72 +5532,76 @@ export class LayerManager {
     this._lluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    const lluviasGeoJSON = L.geoJSON(geojson, {
-      pane: 'lluviasPane',
-      pointToLayer: (feature, latlng) => {
-        const props = feature.properties || {};
-        props.lat = latlng.lat;
-        props.lon = latlng.lng;
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    } else {
+      const lluviasGeoJSON = L.geoJSON(geojson, {
+        pane: 'lluviasPane',
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties || {};
+          props.lat = latlng.lat;
+          props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-          ? Number(props.lluvia_1h)
-          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-          ? Number(props.lluvia_4h)
-          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-          ? Number(props.lluvia_12h)
-          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-          ? Number(props.lluvia_24h)
-          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+            ? Number(props.lluvia_1h)
+            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+            ? Number(props.lluvia_4h)
+            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+            ? Number(props.lluvia_12h)
+            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+            ? Number(props.lluvia_24h)
+            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
-        // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra)
-        let alertClass = 'pluvio-status-zero';
-        let alertLevelText = 'Sin lluvia acumulada';
+          // Escala de colores según precipitación acumulada
+          let color = '#64748b'; // 0 mm (gris pizarra)
+          let alertClass = 'pluvio-status-zero';
+          let alertLevelText = 'Sin lluvia acumulada';
 
-        if (r24h >= 100 || r1h >= 20) {
-          color = '#ef4444'; // Rojo / Torrencial
-          alertClass = 'pluvio-status-extreme caudal-pulse';
-          alertLevelText = 'Lluvia Torrencial';
-        } else if (r24h >= 60 || r1h >= 10) {
-          color = '#f97316'; // Naranja / Muy fuerte
-          alertClass = 'pluvio-status-heavy';
-          alertLevelText = 'Lluvia Muy Fuerte';
-        } else if (r24h >= 30 || r1h >= 5) {
-          color = '#eab308'; // Amarillo / Fuerte
-          alertClass = 'pluvio-status-mod';
-          alertLevelText = 'Lluvia Fuerte';
-        } else if (r24h >= 10) {
-          color = '#0284c7'; // Azul / Moderada
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Moderada';
-        } else if (r24h > 0 || r1h > 0) {
-          color = '#38bdf8'; // Celeste / Débil
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Débil';
+          if (r24h >= 100 || r1h >= 20) {
+            color = '#ef4444'; // Rojo / Torrencial
+            alertClass = 'pluvio-status-extreme caudal-pulse';
+            alertLevelText = 'Lluvia Torrencial';
+          } else if (r24h >= 60 || r1h >= 10) {
+            color = '#f97316'; // Naranja / Muy fuerte
+            alertClass = 'pluvio-status-heavy';
+            alertLevelText = 'Lluvia Muy Fuerte';
+          } else if (r24h >= 30 || r1h >= 5) {
+            color = '#eab308'; // Amarillo / Fuerte
+            alertClass = 'pluvio-status-mod';
+            alertLevelText = 'Lluvia Fuerte';
+          } else if (r24h >= 10) {
+            color = '#0284c7'; // Azul / Moderada
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Moderada';
+          } else if (r24h > 0 || r1h > 0) {
+            color = '#38bdf8'; // Celeste / Débil
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Débil';
+          }
+
+          // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
+          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+          const marker = L.circleMarker(latlng, {
+            pane: 'lluviasPane',
+            radius: radius,
+            color: '#ffffff',
+            weight: 1.2,
+            fillColor: color,
+            fillOpacity: Math.min(1.0, opacity * 0.92),
+            className: `pluvio-marker ${alertClass}`,
+            interactive: false
+          });
+
+          return marker;
         }
+      });
 
-        // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
-        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
-
-        const marker = L.circleMarker(latlng, {
-          pane: 'lluviasPane',
-          radius: radius,
-          color: '#ffffff',
-          weight: 1.2,
-          fillColor: color,
-          fillOpacity: Math.min(1.0, opacity * 0.92),
-          className: `pluvio-marker ${alertClass}`,
-          interactive: false
-        });
-
-        return marker;
-      }
-    });
-
-    layerGroup.addLayer(lluviasGeoJSON);
+      layerGroup.addLayer(lluviasGeoJSON);
+    }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
@@ -5395,72 +5651,76 @@ export class LayerManager {
     this._aemetLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    const aemetLluviasGeoJSON = L.geoJSON(geojson, {
-      pane: 'lluviasPane',
-      pointToLayer: (feature, latlng) => {
-        const props = feature.properties || {};
-        props.lat = latlng.lat;
-        props.lon = latlng.lng;
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    } else {
+      const aemetLluviasGeoJSON = L.geoJSON(geojson, {
+        pane: 'lluviasPane',
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties || {};
+          props.lat = latlng.lat;
+          props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-          ? Number(props.lluvia_1h)
-          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-          ? Number(props.lluvia_4h)
-          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-          ? Number(props.lluvia_12h)
-          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-          ? Number(props.lluvia_24h)
-          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+            ? Number(props.lluvia_1h)
+            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+            ? Number(props.lluvia_4h)
+            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+            ? Number(props.lluvia_12h)
+            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+            ? Number(props.lluvia_24h)
+            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
-        // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra)
-        let alertClass = 'pluvio-status-zero';
-        let alertLevelText = 'Sin lluvia acumulada';
+          // Escala de colores según precipitación acumulada
+          let color = '#64748b'; // 0 mm (gris pizarra)
+          let alertClass = 'pluvio-status-zero';
+          let alertLevelText = 'Sin lluvia acumulada';
 
-        if (r24h >= 100 || r1h >= 20) {
-          color = '#ef4444'; // Rojo / Torrencial
-          alertClass = 'pluvio-status-extreme caudal-pulse';
-          alertLevelText = 'Lluvia Torrencial';
-        } else if (r24h >= 60 || r1h >= 10) {
-          color = '#f97316'; // Naranja / Muy fuerte
-          alertClass = 'pluvio-status-heavy';
-          alertLevelText = 'Lluvia Muy Fuerte';
-        } else if (r24h >= 30 || r1h >= 5) {
-          color = '#eab308'; // Amarillo / Fuerte
-          alertClass = 'pluvio-status-mod';
-          alertLevelText = 'Lluvia Fuerte';
-        } else if (r24h >= 10) {
-          color = '#0284c7'; // Azul / Moderada
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Moderada';
-        } else if (r24h > 0 || r1h > 0) {
-          color = '#38bdf8'; // Celeste / Débil
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Débil';
+          if (r24h >= 100 || r1h >= 20) {
+            color = '#ef4444'; // Rojo / Torrencial
+            alertClass = 'pluvio-status-extreme caudal-pulse';
+            alertLevelText = 'Lluvia Torrencial';
+          } else if (r24h >= 60 || r1h >= 10) {
+            color = '#f97316'; // Naranja / Muy fuerte
+            alertClass = 'pluvio-status-heavy';
+            alertLevelText = 'Lluvia Muy Fuerte';
+          } else if (r24h >= 30 || r1h >= 5) {
+            color = '#eab308'; // Amarillo / Fuerte
+            alertClass = 'pluvio-status-mod';
+            alertLevelText = 'Lluvia Fuerte';
+          } else if (r24h >= 10) {
+            color = '#0284c7'; // Azul / Moderada
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Moderada';
+          } else if (r24h > 0 || r1h > 0) {
+            color = '#38bdf8'; // Celeste / Débil
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Débil';
+          }
+
+          // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
+          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+          const marker = L.circleMarker(latlng, {
+            pane: 'lluviasPane',
+            radius: radius,
+            color: '#ffffff',
+            weight: 1.2,
+            fillColor: color,
+            fillOpacity: Math.min(1.0, opacity * 0.92),
+            className: `pluvio-marker ${alertClass}`,
+            interactive: false
+          });
+
+          return marker;
         }
+      });
 
-        // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
-        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
-
-        const marker = L.circleMarker(latlng, {
-          pane: 'lluviasPane',
-          radius: radius,
-          color: '#ffffff',
-          weight: 1.2,
-          fillColor: color,
-          fillOpacity: Math.min(1.0, opacity * 0.92),
-          className: `pluvio-marker ${alertClass}`,
-          interactive: false
-        });
-
-        return marker;
-      }
-    });
-
-    layerGroup.addLayer(aemetLluviasGeoJSON);
+      layerGroup.addLayer(aemetLluviasGeoJSON);
+    }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
@@ -5509,72 +5769,76 @@ export class LayerManager {
     this._avametLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    const avametLluviasGeoJSON = L.geoJSON(geojson, {
-      pane: 'lluviasPane',
-      pointToLayer: (feature, latlng) => {
-        const props = feature.properties || {};
-        props.lat = latlng.lat;
-        props.lon = latlng.lng;
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    } else {
+      const avametLluviasGeoJSON = L.geoJSON(geojson, {
+        pane: 'lluviasPane',
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties || {};
+          props.lat = latlng.lat;
+          props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-          ? Number(props.lluvia_1h)
-          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-          ? Number(props.lluvia_4h)
-          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-          ? Number(props.lluvia_12h)
-          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-          ? Number(props.lluvia_24h)
-          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+            ? Number(props.lluvia_1h)
+            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+            ? Number(props.lluvia_4h)
+            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+            ? Number(props.lluvia_12h)
+            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+            ? Number(props.lluvia_24h)
+            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
-        // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra)
-        let alertClass = 'pluvio-status-zero';
-        let alertLevelText = 'Sin lluvia acumulada';
+          // Escala de colores según precipitación acumulada
+          let color = '#64748b'; // 0 mm (gris pizarra)
+          let alertClass = 'pluvio-status-zero';
+          let alertLevelText = 'Sin lluvia acumulada';
 
-        if (r24h >= 100 || r1h >= 20) {
-          color = '#ef4444'; // Rojo / Torrencial
-          alertClass = 'pluvio-status-extreme caudal-pulse';
-          alertLevelText = 'Lluvia Torrencial';
-        } else if (r24h >= 60 || r1h >= 10) {
-          color = '#f97316'; // Naranja / Muy fuerte
-          alertClass = 'pluvio-status-heavy';
-          alertLevelText = 'Lluvia Muy Fuerte';
-        } else if (r24h >= 30 || r1h >= 5) {
-          color = '#eab308'; // Amarillo / Fuerte
-          alertClass = 'pluvio-status-mod';
-          alertLevelText = 'Lluvia Fuerte';
-        } else if (r24h >= 10) {
-          color = '#0284c7'; // Azul / Moderada
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Moderada';
-        } else if (r24h > 0 || r1h > 0) {
-          color = '#38bdf8'; // Celeste / Débil
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Débil';
+          if (r24h >= 100 || r1h >= 20) {
+            color = '#ef4444'; // Rojo / Torrencial
+            alertClass = 'pluvio-status-extreme caudal-pulse';
+            alertLevelText = 'Lluvia Torrencial';
+          } else if (r24h >= 60 || r1h >= 10) {
+            color = '#f97316'; // Naranja / Muy fuerte
+            alertClass = 'pluvio-status-heavy';
+            alertLevelText = 'Lluvia Muy Fuerte';
+          } else if (r24h >= 30 || r1h >= 5) {
+            color = '#eab308'; // Amarillo / Fuerte
+            alertClass = 'pluvio-status-mod';
+            alertLevelText = 'Lluvia Fuerte';
+          } else if (r24h >= 10) {
+            color = '#0284c7'; // Azul / Moderada
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Moderada';
+          } else if (r24h > 0 || r1h > 0) {
+            color = '#38bdf8'; // Celeste / Débil
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Débil';
+          }
+
+          // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
+          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+          const marker = L.circleMarker(latlng, {
+            pane: 'lluviasPane',
+            radius: radius,
+            color: '#ffffff',
+            weight: 1.2,
+            fillColor: color,
+            fillOpacity: Math.min(1.0, opacity * 0.92),
+            className: `pluvio-marker ${alertClass}`,
+            interactive: false
+          });
+
+          return marker;
         }
+      });
 
-        // Tamaño uniforme de bola pequeña para todos los pluviómetros (puntos no invasivos)
-        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
-
-        const marker = L.circleMarker(latlng, {
-          pane: 'lluviasPane',
-          radius: radius,
-          color: '#ffffff',
-          weight: 1.2,
-          fillColor: color,
-          fillOpacity: Math.min(1.0, opacity * 0.92),
-          className: `pluvio-marker ${alertClass}`,
-          interactive: false
-        });
-
-        return marker;
-      }
-    });
-
-    layerGroup.addLayer(avametLluviasGeoJSON);
+      layerGroup.addLayer(avametLluviasGeoJSON);
+    }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
@@ -5623,71 +5887,75 @@ export class LayerManager {
     this._meteocatLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    const meteocatLluviasGeoJSON = L.geoJSON(geojson, {
-      pane: 'lluviasPane',
-      pointToLayer: (feature, latlng) => {
-        const props = feature.properties || {};
-        props.lat = latlng.lat;
-        props.lon = latlng.lng;
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    } else {
+      const meteocatLluviasGeoJSON = L.geoJSON(geojson, {
+        pane: 'lluviasPane',
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties || {};
+          props.lat = latlng.lat;
+          props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-          ? Number(props.lluvia_1h)
-          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-          ? Number(props.lluvia_4h)
-          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-          ? Number(props.lluvia_12h)
-          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-          ? Number(props.lluvia_24h)
-          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+            ? Number(props.lluvia_1h)
+            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+            ? Number(props.lluvia_4h)
+            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+            ? Number(props.lluvia_12h)
+            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+            ? Number(props.lluvia_24h)
+            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
-        // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra)
-        let alertClass = 'pluvio-status-zero';
-        let alertLevelText = 'Sin lluvia acumulada';
+          // Escala de colores según precipitación acumulada
+          let color = '#64748b'; // 0 mm (gris pizarra)
+          let alertClass = 'pluvio-status-zero';
+          let alertLevelText = 'Sin lluvia acumulada';
 
-        if (r24h >= 100 || r1h >= 20) {
-          color = '#ef4444'; // Rojo / Torrencial
-          alertClass = 'pluvio-status-extreme caudal-pulse';
-          alertLevelText = 'Lluvia Torrencial';
-        } else if (r24h >= 60 || r1h >= 10) {
-          color = '#f97316'; // Naranja / Muy fuerte
-          alertClass = 'pluvio-status-heavy';
-          alertLevelText = 'Lluvia Muy Fuerte';
-        } else if (r24h >= 30 || r1h >= 5) {
-          color = '#eab308'; // Amarillo / Fuerte
-          alertClass = 'pluvio-status-mod';
-          alertLevelText = 'Lluvia Fuerte';
-        } else if (r24h >= 10) {
-          color = '#0284c7'; // Azul / Moderada
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Moderada';
-        } else if (r24h > 0 || r1h > 0) {
-          color = '#38bdf8'; // Celeste / Débil
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Débil';
+          if (r24h >= 100 || r1h >= 20) {
+            color = '#ef4444'; // Rojo / Torrencial
+            alertClass = 'pluvio-status-extreme caudal-pulse';
+            alertLevelText = 'Lluvia Torrencial';
+          } else if (r24h >= 60 || r1h >= 10) {
+            color = '#f97316'; // Naranja / Muy fuerte
+            alertClass = 'pluvio-status-heavy';
+            alertLevelText = 'Lluvia Muy Fuerte';
+          } else if (r24h >= 30 || r1h >= 5) {
+            color = '#eab308'; // Amarillo / Fuerte
+            alertClass = 'pluvio-status-mod';
+            alertLevelText = 'Lluvia Fuerte';
+          } else if (r24h >= 10) {
+            color = '#0284c7'; // Azul / Moderada
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Moderada';
+          } else if (r24h > 0 || r1h > 0) {
+            color = '#38bdf8'; // Celeste / Débil
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Débil';
+          }
+
+          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+          const marker = L.circleMarker(latlng, {
+            pane: 'lluviasPane',
+            radius: radius,
+            color: '#ffffff',
+            weight: 1.2,
+            fillColor: color,
+            fillOpacity: Math.min(1.0, opacity * 0.92),
+            className: `pluvio-marker ${alertClass}`,
+            interactive: false
+          });
+
+          return marker;
         }
+      });
 
-        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
-
-        const marker = L.circleMarker(latlng, {
-          pane: 'lluviasPane',
-          radius: radius,
-          color: '#ffffff',
-          weight: 1.2,
-          fillColor: color,
-          fillOpacity: Math.min(1.0, opacity * 0.92),
-          className: `pluvio-marker ${alertClass}`,
-          interactive: false
-        });
-
-        return marker;
-      }
-    });
-
-    layerGroup.addLayer(meteocatLluviasGeoJSON);
+      layerGroup.addLayer(meteocatLluviasGeoJSON);
+    }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
@@ -5736,71 +6004,75 @@ export class LayerManager {
     this._hidrosurLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    const hidrosurLluviasGeoJSON = L.geoJSON(geojson, {
-      pane: 'lluviasPane',
-      pointToLayer: (feature, latlng) => {
-        const props = feature.properties || {};
-        props.lat = latlng.lat;
-        props.lon = latlng.lng;
+    if (this.pluvioRenderMode === 'mesh') {
+      this.updatePluvioMesh();
+    } else {
+      const hidrosurLluviasGeoJSON = L.geoJSON(geojson, {
+        pane: 'lluviasPane',
+        pointToLayer: (feature, latlng) => {
+          const props = feature.properties || {};
+          props.lat = latlng.lat;
+          props.lon = latlng.lng;
 
-        const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-          ? Number(props.lluvia_1h)
-          : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-        const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-          ? Number(props.lluvia_4h)
-          : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-        const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-          ? Number(props.lluvia_12h)
-          : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-        const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-          ? Number(props.lluvia_24h)
-          : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
+            ? Number(props.lluvia_1h)
+            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
+          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
+            ? Number(props.lluvia_4h)
+            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
+          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
+            ? Number(props.lluvia_12h)
+            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
+          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
+            ? Number(props.lluvia_24h)
+            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
 
-        // Escala de colores según precipitación acumulada
-        let color = '#64748b'; // 0 mm (gris pizarra)
-        let alertClass = 'pluvio-status-zero';
-        let alertLevelText = 'Sin lluvia acumulada';
+          // Escala de colores según precipitación acumulada
+          let color = '#64748b'; // 0 mm (gris pizarra)
+          let alertClass = 'pluvio-status-zero';
+          let alertLevelText = 'Sin lluvia acumulada';
 
-        if (r24h >= 100 || r1h >= 20) {
-          color = '#ef4444'; // Rojo / Torrencial
-          alertClass = 'pluvio-status-extreme caudal-pulse';
-          alertLevelText = 'Lluvia Torrencial';
-        } else if (r24h >= 60 || r1h >= 10) {
-          color = '#f97316'; // Naranja / Muy fuerte
-          alertClass = 'pluvio-status-heavy';
-          alertLevelText = 'Lluvia Muy Fuerte';
-        } else if (r24h >= 30 || r1h >= 5) {
-          color = '#eab308'; // Amarillo / Fuerte
-          alertClass = 'pluvio-status-mod';
-          alertLevelText = 'Lluvia Fuerte';
-        } else if (r24h >= 10) {
-          color = '#0284c7'; // Azul / Moderada
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Moderada';
-        } else if (r24h > 0 || r1h > 0) {
-          color = '#38bdf8'; // Celeste / Débil
-          alertClass = 'pluvio-status-light';
-          alertLevelText = 'Lluvia Débil';
+          if (r24h >= 100 || r1h >= 20) {
+            color = '#ef4444'; // Rojo / Torrencial
+            alertClass = 'pluvio-status-extreme caudal-pulse';
+            alertLevelText = 'Lluvia Torrencial';
+          } else if (r24h >= 60 || r1h >= 10) {
+            color = '#f97316'; // Naranja / Muy fuerte
+            alertClass = 'pluvio-status-heavy';
+            alertLevelText = 'Lluvia Muy Fuerte';
+          } else if (r24h >= 30 || r1h >= 5) {
+            color = '#eab308'; // Amarillo / Fuerte
+            alertClass = 'pluvio-status-mod';
+            alertLevelText = 'Lluvia Fuerte';
+          } else if (r24h >= 10) {
+            color = '#0284c7'; // Azul / Moderada
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Moderada';
+          } else if (r24h > 0 || r1h > 0) {
+            color = '#38bdf8'; // Celeste / Débil
+            alertClass = 'pluvio-status-light';
+            alertLevelText = 'Lluvia Débil';
+          }
+
+          const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
+
+          const marker = L.circleMarker(latlng, {
+            pane: 'lluviasPane',
+            radius: radius,
+            color: '#ffffff',
+            weight: 1.2,
+            fillColor: color,
+            fillOpacity: Math.min(1.0, opacity * 0.92),
+            className: `pluvio-marker ${alertClass}`,
+            interactive: false
+          });
+
+          return marker;
         }
+      });
 
-        const radius = (r24h >= 30 || r1h >= 5) ? 5.0 : 3.8;
-
-        const marker = L.circleMarker(latlng, {
-          pane: 'lluviasPane',
-          radius: radius,
-          color: '#ffffff',
-          weight: 1.2,
-          fillColor: color,
-          fillOpacity: Math.min(1.0, opacity * 0.92),
-          className: `pluvio-marker ${alertClass}`,
-          interactive: false
-        });
-
-        return marker;
-      }
-    });
-
-    layerGroup.addLayer(hidrosurLluviasGeoJSON);
+      layerGroup.addLayer(hidrosurLluviasGeoJSON);
+    }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
       const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
