@@ -1799,14 +1799,44 @@ export class MultiLayerInspector {
       }
     }
 
+    // Deduplicar secciones para evitar que la misma estación aparezca repetida (ej. si está presente en saih_lluvias e hidrosur_lluvias)
+    const uniqueSections = [];
+    const seenSectionKeys = new Set();
+
+    for (const sec of sections) {
+      let key = null;
+      if (sec.station) {
+        const st = sec.station;
+        const code = st.codigo || st.id_variable || st.id_estacion || st.id || (st.nombre ? String(st.nombre).trim().toLowerCase() : null);
+        key = `${sec.type}_${code}`;
+      } else if (sec.type === 'cuenca') {
+        key = `cuenca_${sec.basinId || sec.name}`;
+      } else if (sec.type === 'radar') {
+        key = `radar_${sec.name}`;
+      } else if (sec.type === 'lightning') {
+        key = `lightning_${sec.name}`;
+      } else {
+        key = `${sec.type}_${sec.title}_${sec.name}`;
+      }
+
+      if (key) {
+        if (!seenSectionKeys.has(key)) {
+          seenSectionKeys.add(key);
+          uniqueSections.push(sec);
+        }
+      } else {
+        uniqueSections.push(sec);
+      }
+    }
+
     // Si hay secciones coincidentes, renderizar tooltip unificado (PC) o tarjeta persistente (Táctil)
-    if (sections.length > 0) {
+    if (uniqueSections.length > 0) {
       if (this._isTouchDevice()) {
-        this._renderMobileInspectorSheet(latlng, sections);
+        this._renderMobileInspectorSheet(latlng, uniqueSections);
         this._setInspectionMarker(latlng);
         this._closeTooltip();
       } else {
-        this._renderUnifiedTooltip(latlng, sections);
+        this._renderUnifiedTooltip(latlng, uniqueSections);
       }
     } else {
       this._closeTooltip();
