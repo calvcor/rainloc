@@ -640,35 +640,41 @@ export class LayerManager {
       }
 
       // Precargar también el punto máximo en memoria si es un modelo numérico
-      if (modelKey !== 'radar' && !this._modelMaxStore.has(cacheKey)) {
-        const maxPreloadKey = `max_${cacheKey}`;
-        if (!this._preloadInFlight.has(maxPreloadKey)) {
-          this._preloadInFlight.add(maxPreloadKey);
-          const maxUrl = `${CONFIG.apiBaseUrl}/models/${modelKey}/max-at?step=${step}&type=${type}`;
-          const delay = priorityOrder < 8 ? 0 : Math.min((priorityOrder - 8) * 50, 900);
-          setTimeout(() => {
-            fetch(maxUrl)
-              .then(r => r.ok ? r.json() : null)
-              .then(data => {
-                if (data && data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
-                  this._modelMaxStore.set(cacheKey, {
-                    lat: Number(data.lat),
-                    lon: Number(data.lon),
-                    value_mm: Number(data.value_mm),
-                    modelKey: modelKey,
-                    modelName: data.model || modelKey.toUpperCase(),
-                    step: step,
-                    type: type
-                  });
-                } else {
-                  this._modelMaxStore.set(cacheKey, null);
-                }
-              })
-              .catch(() => {})
-              .finally(() => {
-                if (this._preloadInFlight) this._preloadInFlight.delete(maxPreloadKey);
-              });
-          }, delay);
+      if (modelKey !== 'radar') {
+        const maxUrl = this._getModelMaxUrl(modelKey, step, type);
+        const cached = this._modelMaxStore.get(cacheKey);
+        if (!cached || cached.maxUrl !== maxUrl) {
+          const maxPreloadKey = `max_${cacheKey}`;
+          if (!this._preloadInFlight.has(maxPreloadKey)) {
+            this._preloadInFlight.add(maxPreloadKey);
+            const delay = priorityOrder < 8 ? 0 : Math.min((priorityOrder - 8) * 50, 900);
+            setTimeout(() => {
+              fetch(maxUrl)
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                  if (data && data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
+                    this._modelMaxStore.set(cacheKey, {
+                      data: {
+                        lat: Number(data.lat),
+                        lon: Number(data.lon),
+                        value_mm: Number(data.value_mm),
+                        modelKey: modelKey,
+                        modelName: data.model || modelKey.toUpperCase(),
+                        step: step,
+                        type: type
+                      },
+                      maxUrl: maxUrl
+                    });
+                  } else if (data) {
+                    this._modelMaxStore.set(cacheKey, { data: null, maxUrl: maxUrl });
+                  }
+                })
+                .catch(() => {})
+                .finally(() => {
+                  if (this._preloadInFlight) this._preloadInFlight.delete(maxPreloadKey);
+                });
+            }, delay);
+          }
         }
       }
     });
@@ -3001,6 +3007,27 @@ export class LayerManager {
   }
 
   /**
+   * Genera la URL versionada para consultar el punto de máxima precipitación de un modelo
+   */
+  _getModelMaxUrl(modelKey, step, type) {
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    let meta = null;
+    if (cleanModel === 'ecmwf') meta = this.ecmwfMetadata;
+    else if (cleanModel === 'gfs') meta = this.gfsMetadata;
+    else if (cleanModel === 'arome') meta = this.aromeMetadata;
+    else if (cleanModel === 'harmonie') meta = this.harmonieMetadata;
+    else if (cleanModel === 'icon') meta = this.iconMetadata;
+    else if (cleanModel === 'gem') meta = this.gemMetadata;
+
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/${cleanModel}/max-at?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
+  }
+
+  /**
    * Consulta el punto de máxima precipitación de un modelo numérico y actualiza su marcador en el mapa
    */
   async _updateModelMaxMarker(modelKey, step, type) {
@@ -3018,31 +3045,35 @@ export class LayerManager {
       return;
     }
 
-    const cacheKey = `${modelKey}_${type}_${step}`;
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    const cacheKey = `${cleanModel}_${type}_${step}`;
+    const maxUrl = this._getModelMaxUrl(cleanModel, step, type);
     if (!this._modelMaxStore) this._modelMaxStore = new Map();
 
     if (this._modelMaxStore.has(cacheKey)) {
-      const data = this._modelMaxStore.get(cacheKey);
-      if (data) {
-        if (!this.currentMaxPoints) this.currentMaxPoints = {};
-        this.currentMaxPoints[modelKey] = data;
-      } else {
-        if (this.currentMaxPoints) delete this.currentMaxPoints[modelKey];
+      const cached = this._modelMaxStore.get(cacheKey);
+      if (cached && cached.maxUrl === maxUrl) {
+        if (cached.data) {
+          if (!this.currentMaxPoints) this.currentMaxPoints = {};
+          this.currentMaxPoints[cleanModel] = cached.data;
+        } else {
+          if (this.currentMaxPoints) delete this.currentMaxPoints[cleanModel];
+        }
+        this._refreshMaxMarkers();
+        return;
       }
-      this._refreshMaxMarkers();
-      return;
+      this._modelMaxStore.delete(cacheKey);
     }
 
     if (!this._modelMaxAbortControllers) this._modelMaxAbortControllers = {};
-    if (this._modelMaxAbortControllers[modelKey]) {
-      this._modelMaxAbortControllers[modelKey].abort();
+    if (this._modelMaxAbortControllers[cleanModel]) {
+      this._modelMaxAbortControllers[cleanModel].abort();
     }
-    this._modelMaxAbortControllers[modelKey] = new AbortController();
-    const signal = this._modelMaxAbortControllers[modelKey].signal;
+    this._modelMaxAbortControllers[cleanModel] = new AbortController();
+    const signal = this._modelMaxAbortControllers[cleanModel].signal;
 
     try {
-      const url = `${CONFIG.apiBaseUrl}/models/${modelKey}/max-at?step=${step}&type=${type}`;
-      const resp = await fetch(url, { signal });
+      const resp = await fetch(maxUrl, { signal });
       if (resp.ok) {
         const data = await resp.json();
         if (data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
@@ -3050,17 +3081,17 @@ export class LayerManager {
             lat: Number(data.lat),
             lon: Number(data.lon),
             value_mm: Number(data.value_mm),
-            modelKey: modelKey,
-            modelName: data.model || modelKey.toUpperCase(),
+            modelKey: cleanModel,
+            modelName: data.model || cleanModel.toUpperCase(),
             step: step,
             type: type
           };
-          this._modelMaxStore.set(cacheKey, pointData);
+          this._modelMaxStore.set(cacheKey, { data: pointData, maxUrl: maxUrl });
           if (!this.currentMaxPoints) this.currentMaxPoints = {};
-          this.currentMaxPoints[modelKey] = pointData;
+          this.currentMaxPoints[cleanModel] = pointData;
         } else {
-          this._modelMaxStore.set(cacheKey, null);
-          if (this.currentMaxPoints) delete this.currentMaxPoints[modelKey];
+          this._modelMaxStore.set(cacheKey, { data: null, maxUrl: maxUrl });
+          if (this.currentMaxPoints) delete this.currentMaxPoints[cleanModel];
         }
         this._refreshMaxMarkers();
       }
