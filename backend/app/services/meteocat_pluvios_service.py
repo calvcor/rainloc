@@ -77,7 +77,10 @@ class MeteocatPluviosService:
                 return self._metadata_by_id
 
         try:
-            params = {"$limit": 1000}
+            params = {
+                "$limit": 1000,
+                "$where": "codi_estat_ema = '2' or nom_estat_ema = 'Operativa'"
+            }
             url = f"{GENCAT_METADATA_URL}?{urllib.parse.urlencode(params)}"
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -95,7 +98,7 @@ class MeteocatPluviosService:
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
                 with open(METEOCAT_METADATA_FILE, "w", encoding="utf-8") as f:
                     json.dump(meta_map, f, ensure_ascii=False, indent=2)
-                logger.info(f"Metadatos de {len(meta_map)} estaciones XEMA actualizados.")
+                logger.info(f"Metadatos de {len(meta_map)} estaciones XEMA operativas actualizados.")
         except Exception as e:
             logger.warning(f"No se pudieron descargar metadatos de Meteocat: {e}. Usando metadatos en caché.")
 
@@ -169,6 +172,11 @@ class MeteocatPluviosService:
                 if lat is None or lon is None or (lat == 0 and lon == 0):
                     continue
 
+                st_precs = prec_by_st.get(st_id, [])
+                if not st_precs:
+                    # Descartar estaciones sin sensor pluviométrico o sin lecturas activas en 24h
+                    continue
+
                 st_name = (meta.get("nom_estacio") or st_id).strip()
                 municipi = (meta.get("nom_municipi") or "").strip()
                 comarca = (meta.get("nom_comarca") or "").strip()
@@ -181,7 +189,6 @@ class MeteocatPluviosService:
                     except (ValueError, TypeError):
                         altitud = None
 
-                st_precs = prec_by_st.get(st_id, [])
                 prec_1h = 0.0
                 prec_4h = 0.0
                 prec_12h = 0.0
@@ -189,43 +196,42 @@ class MeteocatPluviosService:
                 prec_hoy = 0.0
                 ultima_hora_raw = ""
 
-                if st_precs:
-                    st_precs.sort(key=lambda x: x["data_lectura"])
-                    last_dt_str = st_precs[-1]["data_lectura"]
-                    ultima_hora_raw = last_dt_str
+                st_precs.sort(key=lambda x: x["data_lectura"])
+                last_dt_str = st_precs[-1]["data_lectura"]
+                ultima_hora_raw = last_dt_str
 
-                    try:
-                        last_dt = datetime.fromisoformat(last_dt_str.replace("Z", ""))
-                        if last_dt.tzinfo is None:
-                            last_dt = last_dt.replace(tzinfo=timezone.utc)
+                try:
+                    last_dt = datetime.fromisoformat(last_dt_str.replace("Z", ""))
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
 
-                        for p in st_precs:
-                            p_dt_str = p.get("data_lectura", "")
-                            p_dt = datetime.fromisoformat(p_dt_str.replace("Z", ""))
-                            if p_dt.tzinfo is None:
-                                p_dt = p_dt.replace(tzinfo=timezone.utc)
+                    for p in st_precs:
+                        p_dt_str = p.get("data_lectura", "")
+                        p_dt = datetime.fromisoformat(p_dt_str.replace("Z", ""))
+                        if p_dt.tzinfo is None:
+                            p_dt = p_dt.replace(tzinfo=timezone.utc)
 
-                            try:
-                                val = float(p.get("valor_lectura", 0.0))
-                            except (ValueError, TypeError):
-                                val = 0.0
+                        try:
+                            val = float(p.get("valor_lectura", 0.0))
+                        except (ValueError, TypeError):
+                            val = 0.0
 
-                            diff_sec = (last_dt - p_dt).total_seconds()
-                            if 0 <= diff_sec <= 3600:
-                                prec_1h += val
-                            if 0 <= diff_sec <= 4 * 3600:
-                                prec_4h += val
-                            if 0 <= diff_sec <= 12 * 3600:
-                                prec_12h += val
-                            if 0 <= diff_sec <= 24 * 3600:
-                                prec_24h += val
+                        diff_sec = (last_dt - p_dt).total_seconds()
+                        if 0 <= diff_sec <= 3600:
+                            prec_1h += val
+                        if 0 <= diff_sec <= 4 * 3600:
+                            prec_4h += val
+                        if 0 <= diff_sec <= 12 * 3600:
+                            prec_12h += val
+                        if 0 <= diff_sec <= 24 * 3600:
+                            prec_24h += val
 
-                            # Lluvia de hoy según fecha local Madrid
-                            p_dt_madrid = p_dt.astimezone(MADRID_TZ)
-                            if p_dt_madrid.strftime("%Y-%m-%d") == today_str_madrid:
-                                prec_hoy += val
-                    except Exception as err:
-                        logger.warning(f"Error procesando acumulados para estación Meteocat {st_id}: {err}")
+                        # Lluvia de hoy según fecha local Madrid
+                        p_dt_madrid = p_dt.astimezone(MADRID_TZ)
+                        if p_dt_madrid.strftime("%Y-%m-%d") == today_str_madrid:
+                            prec_hoy += val
+                except Exception as err:
+                    logger.warning(f"Error procesando acumulados para estación Meteocat {st_id}: {err}")
 
                 formatted_last_hora = ""
                 if ultima_hora_raw:
