@@ -5632,10 +5632,10 @@ body.rainloc-mobile-search-active .leaflet-control-layers {
     display: block;
   }
 
-  /* Al expandir el buscador en móvil: cubrir todo el ancho superior de forma elegante */
+  /* Al expandir el buscador en móvil: cubrir todo el ancho superior con separación respecto al header */
   .mobile-search-control.is-expanded {
     position: fixed !important;
-    top: calc(58px + env(safe-area-inset-top, 0px)) !important;
+    top: calc(68px + env(safe-area-inset-top, 0px)) !important;
     left: 10px !important;
     right: 10px !important;
     margin: 0 !important;
@@ -5652,17 +5652,17 @@ body.rainloc-mobile-search-active .leaflet-control-layers {
 
   .mobile-places-dropdown {
     position: fixed !important;
-    top: calc(108px + env(safe-area-inset-top, 0px)) !important;
+    top: calc(118px + env(safe-area-inset-top, 0px)) !important;
     left: 10px !important;
     right: 10px !important;
     width: auto !important;
     max-width: none !important;
-    max-height: calc(100vh - 190px) !important;
+    max-height: calc(100vh - 200px) !important;
     z-index: 1500 !important;
   }
 
   .mobile-places-dropdown .places-search-results {
-    max-height: calc(100vh - 200px) !important;
+    max-height: calc(100vh - 210px) !important;
   }
 }
 
