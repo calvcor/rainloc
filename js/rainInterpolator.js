@@ -129,11 +129,14 @@ export class RainInterpolator {
     const lonSpan = maxLon - minLon;
     if (latSpan <= 0 || lonSpan <= 0) return null;
 
-    // Aspect ratio geográfico ajustado por latitud media
-    const midLatRad = ((minLat + maxLat) / 2) * (Math.PI / 180);
-    const cosLat = Math.cos(midLatRad);
-    const width = options.width || 560;
-    const height = options.height || Math.round(width * (latSpan / (lonSpan * cosLat)));
+    // Coordenadas en proyección Web Mercator (EPSG:3857) idéntica a Leaflet L.imageOverlay
+    const yMin = Math.log(Math.tan(Math.PI / 4 + (minLat * Math.PI / 360)));
+    const yMax = Math.log(Math.tan(Math.PI / 4 + (maxLat * Math.PI / 360)));
+    const ySpan = yMax - yMin;
+    const lonSpanRad = lonSpan * (Math.PI / 180);
+
+    const width = options.width || 580;
+    const height = options.height || Math.round(width * (ySpan / lonSpanRad));
 
     // Canvas de renderizado en memoria
     const canvas = document.createElement('canvas');
@@ -178,15 +181,19 @@ export class RainInterpolator {
 
     const queryRadiusCells = Math.ceil(maxInfluenceRadiusDeg / cellSize);
 
-    // Bucle píxel a píxel sobre la cuadrícula
+    // Bucle píxel a píxel sobre la cuadrícula Web Mercator
     for (let py = 0; py < height; py++) {
-      // Coordenada latitud (arriba = maxLat, abajo = minLat)
-      const lat = maxLat - (py / height) * latSpan;
+      // Coordenada latitud en proyección Web Mercator exacta
+      const t = height > 1 ? py / (height - 1) : 0;
+      const yPt = yMax - t * ySpan;
+      const latRad = 2 * Math.atan(Math.exp(yPt)) - Math.PI / 2;
+      const lat = latRad * (180 / Math.PI);
+      const cosLat = Math.cos(latRad);
       const rowOffset = py * width * 4;
 
       for (let px = 0; px < width; px++) {
-        // Coordenada longitud (izquierda = minLon, derecha = maxLon)
-        const lon = minLon + (px / width) * lonSpan;
+        // Coordenada longitud
+        const lon = minLon + (width > 1 ? px / (width - 1) : 0) * lonSpan;
 
         const cellCol = Math.floor((lon - minLon) / cellSize);
         const cellRow = Math.floor((lat - minLat) / cellSize);
@@ -283,7 +290,7 @@ export class RainInterpolator {
 
     // 3. Recorte por máscara geográfica vectorial de tierra (CCAA / Península) si está disponible
     if (options.maskGeoJson && options.maskGeoJson.features) {
-      this._applyGeoMask(ctx, options.maskGeoJson, { minLat, maxLat, minLon, maxLon, width, height });
+      this._applyGeoMask(ctx, options.maskGeoJson, { minLat, maxLat, minLon, maxLon, width, height, yMin, yMax, ySpan });
     }
 
     return {
@@ -389,11 +396,10 @@ export class RainInterpolator {
   }
 
   /**
-   * Aplica un recorte limpio sobre el Canvas usando la geometría vectorial de CCAA / España
+   * Aplica un recorte limpio sobre el Canvas usando la geometría vectorial de CCAA / España en Web Mercator
    */
   _applyGeoMask(ctx, maskGeoJson, meta) {
-    const { minLat, maxLat, minLon, maxLon, width, height } = meta;
-    const latSpan = maxLat - minLat;
+    const { minLat, maxLat, minLon, maxLon, width, height, yMin, yMax, ySpan } = meta;
     const lonSpan = maxLon - minLon;
 
     const maskCanvas = document.createElement('canvas');
@@ -408,7 +414,8 @@ export class RainInterpolator {
       const lon = coord[0];
       const lat = coord[1];
       const x = ((lon - minLon) / lonSpan) * width;
-      const y = ((maxLat - lat) / latSpan) * height;
+      const yPt = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 360)));
+      const y = ((yMax - yPt) / ySpan) * height;
       return [x, y];
     };
 
