@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -40,6 +41,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 # TTL de frescura de datos: 5 minutos (300 segundos)
 SYNC_TTL_SECONDS = 300
+HISTORY_CACHE_TTL = 300  # 5 minutos para series históricas
 
 # Transformador de coordenadas EPSG:25830 (UTM 30N) a EPSG:4326 (WGS84 lon, lat)
 transformer = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
@@ -61,6 +63,9 @@ class SAIHService:
         self._pluvios_by_id: Dict[str, Dict[str, Any]] = {}
         self._last_pluvios_sync_time: Optional[datetime] = None
         self._pluvios_sync_lock = asyncio.Lock()
+
+        self._history_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+        self._history_cache_lock = asyncio.Lock()
 
         self._load_stations_from_disk()
         self._load_embalses_from_disk()
@@ -729,9 +734,27 @@ class SAIHService:
     ) -> Dict[str, Any]:
         """
         Consulta la API temporal del SAIH para una variable dada.
-        Formato fechas API: YYYY-MM-DD HH:mm:ss (en hora oficial de España / Europe/Madrid)
+        Implementa caché en memoria compartida (TTL = 5 min) para evitar peticiones duplicadas
+        a los servidores oficiales cuando múltiples usuarios consultan la misma estación o embalse.
         """
+        cache_key = f"{id_variable}:{hours}:{start_date}:{end_date}:{variable_type}"
+        now_ts = time.time()
+
+        async with self._history_cache_lock:
+            # Purgar claves expiradas (> 1800s) si la caché crece
+            if len(self._history_cache) > 200:
+                expired_keys = [k for k, (ts, _) in self._history_cache.items() if (now_ts - ts) > 1800]
+                for k in expired_keys:
+                    self._history_cache.pop(k, None)
+
+            if cache_key in self._history_cache:
+                cached_ts, cached_res = self._history_cache[cache_key]
+                if (now_ts - cached_ts) < HISTORY_CACHE_TTL and cached_res.get("puntos_totales", 0) > 0:
+                    return cached_res
+
         id_str = str(id_variable).strip()
+        result = None
+
         if (
             id_str.startswith("hidrosur_")
             or id_str.startswith("HIDRO_")
@@ -746,9 +769,9 @@ class SAIHService:
                 or "emb" in id_str.lower()
                 or "e01" in id_str.lower()
             )
-            return await hidrosur_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+            result = await hidrosur_service.get_history(id_str, hours=hours, is_embalse=is_emb)
 
-        if (
+        elif (
             id_str.startswith("guadal_")
             or id_str.startswith("GUADAL_")
             or id_str in guadalquivir_service._aforos_by_id
@@ -763,9 +786,9 @@ class SAIHService:
                 or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
                 or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
-            return await guadalquivir_service.get_history(id_str, hours=hours, is_embalse=is_emb)
+            result = await guadalquivir_service.get_history(id_str, hours=hours, is_embalse=is_emb)
 
-        if (
+        elif (
             id_str.startswith("ebro_")
             or id_str.startswith("EBRO_")
             or id_str in ebro_service._aforos_by_id
@@ -780,7 +803,7 @@ class SAIHService:
                 or (len(id_str) >= 2 and id_str.upper().startswith("E") and id_str[1:].isdigit())
                 or (len(id_str) >= 3 and id_str.upper().startswith("E0"))
             )
-            return await ebro_service.get_history(
+            result = await ebro_service.get_history(
                 id_str,
                 hours=hours,
                 is_embalse=is_emb,
@@ -789,7 +812,7 @@ class SAIHService:
                 end_date=end_date,
             )
 
-        if (
+        elif (
             id_str.startswith("segura_")
             or id_str.startswith("SEGURA_")
             or id_str in segura_service._aforos_by_id
@@ -804,7 +827,7 @@ class SAIHService:
                 or id_str.upper() in segura_service._embalses_by_id
                 or "emb" in id_str.lower()
             )
-            return await segura_service.get_history(
+            result = await segura_service.get_history(
                 id_str,
                 hours=hours,
                 is_embalse=is_emb,
@@ -813,7 +836,7 @@ class SAIHService:
                 end_date=end_date,
             )
 
-        if (
+        elif (
             id_str.startswith("aca_")
             or id_str.startswith("ACA_")
             or id_str in aca_service._aforos_by_id
@@ -826,7 +849,7 @@ class SAIHService:
                 or id_str.upper() in aca_service._embalses_by_id
                 or "emb" in id_str.lower()
             )
-            return await aca_service.get_history(
+            result = await aca_service.get_history(
                 id_str,
                 hours=hours,
                 is_embalse=is_emb,
@@ -835,69 +858,76 @@ class SAIHService:
                 end_date=end_date,
             )
 
-        now = datetime.now(MADRID_TZ)
-        if not end_date or not isinstance(end_date, str):
-            end_dt = now
-            end_date_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            end_date_str = str(end_date)
+        if result is None:
+            now = datetime.now(MADRID_TZ)
+            if not end_date or not isinstance(end_date, str):
+                end_dt = now
+                end_date_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                end_date_str = str(end_date)
 
-        if not start_date or not isinstance(start_date, str):
-            start_dt = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
-            start_date_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            start_date_str = str(start_date)
+            if not start_date or not isinstance(start_date, str):
+                start_dt = now - timedelta(hours=int(hours) if isinstance(hours, (int, float)) else 24)
+                start_date_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                start_date_str = str(start_date)
 
-        encoded_start = urllib.parse.quote(start_date_str)
-        encoded_end = urllib.parse.quote(end_date_str)
-        url = f"{SAIH_BASE_URL}/admin/variables/valor/{id_variable}/{encoded_start}/{encoded_end}"
+            encoded_start = urllib.parse.quote(start_date_str)
+            encoded_end = urllib.parse.quote(end_date_str)
+            url = f"{SAIH_BASE_URL}/admin/variables/valor/{id_variable}/{encoded_start}/{encoded_end}"
 
-        def _fetch():
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status != 200:
-                    return None
-                return json.loads(resp.read().decode("utf-8"))
+            def _fetch():
+                req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status != 200:
+                        return None
+                    return json.loads(resp.read().decode("utf-8"))
 
-        loop = asyncio.get_running_loop()
-        try:
-            raw_series = await loop.run_in_executor(None, _fetch)
-        except Exception as e:
-            logger.error(f"Error consultando histórico para variable {id_variable}: {e}")
-            raw_series = None
+            loop = asyncio.get_running_loop()
+            try:
+                raw_series = await loop.run_in_executor(None, _fetch)
+            except Exception as e:
+                logger.error(f"Error consultando histórico para variable {id_variable}: {e}")
+                raw_series = None
 
-        station_info = self.get_station_by_id(id_variable) or self.get_embalse_by_id(id_variable)
+            station_info = self.get_station_by_id(id_variable) or self.get_embalse_by_id(id_variable)
 
-        series = []
-        if raw_series and isinstance(raw_series, list):
-            for entry in raw_series:
-                v = entry.get("valor")
-                val_float = None
-                if v is not None:
-                    try:
-                        val_float = round(float(v), 3)
-                    except (ValueError, TypeError):
-                        val_float = None
-                series.append({
-                    "fecha": entry.get("fecha"),
-                    "valor": val_float,
-                    "estado": entry.get("estado", 0),
-                })
+            series = []
+            if raw_series and isinstance(raw_series, list):
+                for entry in raw_series:
+                    v = entry.get("valor")
+                    val_float = None
+                    if v is not None:
+                        try:
+                            val_float = round(float(v), 3)
+                        except (ValueError, TypeError):
+                            val_float = None
+                    series.append({
+                        "fecha": entry.get("fecha"),
+                        "valor": val_float,
+                        "estado": entry.get("estado", 0),
+                    })
 
-            # Ordenar de forma estrictamente cronológica por timestamp ISO
-            series.sort(key=lambda x: str(x.get("fecha") or ""))
+                # Ordenar de forma estrictamente cronológica por timestamp ISO
+                series.sort(key=lambda x: str(x.get("fecha") or ""))
 
-        return {
-            "id_variable": str(id_variable),
-            "estacion": station_info,
-            "rango": {
-                "desde": start_date_str,
-                "hasta": end_date_str,
-                "horas": hours,
-            },
-            "puntos_totales": len(series),
-            "serie": series,
-        }
+            result = {
+                "id_variable": str(id_variable),
+                "estacion": station_info,
+                "rango": {
+                    "desde": start_date_str,
+                    "hasta": end_date_str,
+                    "horas": hours,
+                },
+                "puntos_totales": len(series),
+                "serie": series,
+            }
+
+        if result and isinstance(result, dict) and result.get("puntos_totales", 0) > 0:
+            async with self._history_cache_lock:
+                self._history_cache[cache_key] = (now_ts, result)
+
+        return result
 
 
 saih_service = SAIHService()
