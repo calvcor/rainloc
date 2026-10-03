@@ -449,8 +449,8 @@ class SeguraService:
                     "tipo": "Aforo",
                     "red": "CHS",
                     "cuenca": "Segura",
-                    "lat": lon,  # Corregido abajo en el geojson
-                    "lon": lat,
+                    "lat": lat,
+                    "lon": lon,
                     "poblacion": "",
                     "provincia": "Murcia / Albacete / Alicante",
                     "subcuenca": "Segura",
@@ -459,13 +459,17 @@ class SeguraService:
                     "ultimo_nivel": val_nivel,
                     "nivel": val_nivel,
                     "cota_max": cota_max,
+                    "tipo_umbral": "nivel",
+                    "unidad_umbrales": "m",
+                    "unidad_grafica": "m",
                     "tag_caudal": tag_caudal or meta.get("cod_caudal") or "",
                     "tag_nivel": tag_nivel or meta.get("cod_nivel") or "",
                     "ultima_hora": now_iso,
                     "fecha_comunicacion": now_iso,
                     "umbrales": umbrales,
-                    "unidad": "m³/s",
+                    "unidad": "m",
                     "unidad_nivel": "m",
+                    "unidad_caudal": "m³/s",
                 }
                 # Fix lat/lon mapping
                 aforo_obj["lat"] = lat
@@ -855,20 +859,33 @@ class SeguraService:
 
         target_code = raw_id
         var_type_req = (variable_type or "").lower().strip()
+        ret_unit = "m³/s"
 
         if st_info:
             if st_info.get("tipo") == "Aforo":
-                if var_type_req in ("nivel", "altura", "h"):
-                    target_code = st_info.get("tag_nivel") or st_info.get("id_variable") or target_code
+                if var_type_req in ("caudal", "q"):
+                    target_code = st_info.get("tag_caudal") or target_code
+                    ret_unit = "m³/s"
+                elif var_type_req in ("nivel", "altura", "h") or st_info.get("unidad_grafica") == "m":
+                    target_code = st_info.get("tag_nivel") or st_info.get("tag_caudal") or target_code
+                    ret_unit = "m"
                 else:
-                    target_code = st_info.get("tag_caudal") or st_info.get("id_variable") or target_code
+                    if st_info.get("tag_nivel"):
+                        target_code = st_info.get("tag_nivel")
+                        ret_unit = "m"
+                    else:
+                        target_code = st_info.get("tag_caudal") or target_code
+                        ret_unit = "m³/s"
             elif st_info.get("tipo") == "Embalse":
                 if var_type_req in ("nivel", "cota", "h"):
                     target_code = st_info.get("id_cota") or target_code
+                    ret_unit = "m"
                 else:
                     target_code = st_info.get("id_volumen") or target_code
+                    ret_unit = "hm³"
             elif st_info.get("tipo") == "Pluviómetro":
                 target_code = st_info.get("codigo_variable") or target_code
+                ret_unit = "mm"
 
         # Limpiar prefijos internos si quedaron
         target_code = (
@@ -940,6 +957,7 @@ class SeguraService:
             "id_variable": str(id_variable),
             "codigo_saih": target_code,
             "estacion": st_info,
+            "unidad": ret_unit,
             "rango": {
                 "desde": dt_start.strftime("%Y-%m-%d %H:%M:%S"),
                 "hasta": dt_end.strftime("%Y-%m-%d %H:%M:%S"),

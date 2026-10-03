@@ -4466,22 +4466,19 @@ export class LayerManager {
     const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
     const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
+    const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.unidad_grafica === 'm' || props.red === 'HIDROSUR';
+    const hasLevelThreshold = isNivelThreshold && (uAmarillo !== null || uNaranja !== null || uRojo !== null);
+    const shouldShowLevelAsPrimary = hasLevelThreshold || (caudal === null && nivel !== null);
+
     let compareVal = null;
-    if (isNivelThreshold) {
-      if (nivel !== null) {
-        compareVal = nivel;
-      }
+    if (shouldShowLevelAsPrimary) {
+      compareVal = nivel !== null ? nivel : caudal;
     } else {
-      if (caudal !== null) {
-        compareVal = caudal;
-      } else if (nivel !== null) {
-        compareVal = nivel;
-      }
+      compareVal = caudal !== null ? caudal : nivel;
     }
 
     let alertColor = '#10b981';
-    let alertText = isNivelThreshold ? 'Nivel Normal' : 'Caudal Normal';
+    let alertText = shouldShowLevelAsPrimary ? 'Nivel Normal' : 'Caudal Normal';
     if (compareVal !== null) {
       if (uRojo !== null && compareVal >= uRojo) {
         alertColor = '#ef4444';
@@ -4532,10 +4529,10 @@ export class LayerManager {
     const controlsTitle = document.getElementById('caudal-chart-controls-title');
     const sourceTag = document.getElementById('caudal-modal-source-tag');
     if (statCurrentLabel) {
-      statCurrentLabel.textContent = isCota ? 'Cota s.n.m. (Altitud)' : (caudal !== null ? 'Caudal Actual' : 'Nivel Actual');
+      statCurrentLabel.textContent = isCota ? 'Cota s.n.m. (Altitud)' : (shouldShowLevelAsPrimary ? 'Nivel Actual' : 'Caudal Actual');
     }
     if (controlsTitle) {
-      controlsTitle.textContent = isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (caudal !== null ? 'Evolución temporal del caudal:' : 'Evolución temporal del nivel:');
+      controlsTitle.textContent = isCota ? 'Evolución temporal de la cota (m.s.n.m.):' : (shouldShowLevelAsPrimary ? 'Evolución temporal del nivel (m):' : 'Evolución temporal del caudal (m³/s):');
     }
     if (sourceTag) {
       if (isSegura) {
@@ -4552,7 +4549,9 @@ export class LayerManager {
     }
 
     if (statCurrent) {
-      if (caudal !== null) {
+      if (shouldShowLevelAsPrimary) {
+        statCurrent.textContent = nivel !== null ? `${nivel.toFixed(2)} ${meterUnit}` : '-- m';
+      } else if (caudal !== null) {
         statCurrent.textContent = `${caudal.toFixed(2)} m³/s`;
       } else if (nivel !== null) {
         statCurrent.textContent = `${nivel.toFixed(2)} ${meterUnit}`;
@@ -4572,7 +4571,7 @@ export class LayerManager {
     }
 
     // Chips de umbrales
-    const thUnit = isNivelThreshold ? (isCota ? 'm.s.n.m.' : 'm (Nivel)') : 'm³/s';
+    const thUnit = shouldShowLevelAsPrimary ? (isCota ? 'm.s.n.m.' : 'm (Nivel)') : 'm³/s';
     const chipY = document.getElementById('th-chip-yellow');
     const chipO = document.getElementById('th-chip-orange');
     const chipR = document.getElementById('th-chip-red');
@@ -4652,20 +4651,26 @@ export class LayerManager {
     container.innerHTML = `
       <div class="caudal-chart-modal-loading">
         <div class="caudal-spinner"></div>
-        <span>Consultando serie temporal de caudal en la API del SAIH (últimas ${hours}h)...</span>
+        <span>Consultando serie temporal en la API del SAIH (últimas ${hours}h)...</span>
       </div>
     `;
 
+    const stationProps = this._currentModalStationProps || {};
+    const isNivelThreshold = stationProps.unidad_umbrales === 'm' || stationProps.tipo_umbral === 'nivel' || stationProps.unidad_grafica === 'm' || stationProps.red === 'HIDROSUR';
+    const hasLevelThreshold = isNivelThreshold && (umbrales && (umbrales.amarillo || umbrales.naranja || umbrales.rojo || umbrales.aviso || umbrales.prealerta || umbrales.alerta));
+    const shouldQueryLevel = hasLevelThreshold || stationProps.unidad_grafica === 'm' || (stationProps.caudal === undefined || stationProps.caudal === null);
+    const varParam = shouldQueryLevel ? '&variable_type=nivel' : '';
+
     try {
-      const resp = await fetch(`${CONFIG.apiBaseUrl}/saih/caudales/${idVariable}/history?hours=${hours}`);
+      const resp = await fetch(`${CONFIG.apiBaseUrl}/saih/caudales/${idVariable}/history?hours=${hours}${varParam}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const series = data.serie || [];
 
       if (series.length === 0) {
-        container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron lecturas de caudal registradas en las últimas ${hours} horas.</div>`;
-        if (statMax) statMax.textContent = '-- m³/s';
-        if (statMin) statMin.textContent = '-- m³/s';
+        container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron lecturas registradas en las últimas ${hours} horas.</div>`;
+        if (statMax) statMax.textContent = '--';
+        if (statMin) statMin.textContent = '--';
         return;
       }
 
@@ -4678,9 +4683,6 @@ export class LayerManager {
         container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron lecturas numéricas válidas en las últimas ${hours} horas.</div>`;
         return;
       }
-
-      const stationProps = this._currentModalStationProps || {};
-      const isNivelThreshold = stationProps.unidad_umbrales === 'm' || stationProps.tipo_umbral === 'nivel' || stationProps.red === 'HIDROSUR';
 
       const chartUnit = data.unidad || stationProps.unidad_grafica || 'm³/s';
       const isLevelChart = chartUnit === 'm';
