@@ -940,6 +940,7 @@ export class UIManager {
       case 'saih_embalses':
       case 'saih_lluvias':
       case 'aemet_lluvias':
+      case 'avamet_lluvias':
         return `Actualizado: <strong>${nowFormatted}</strong>`;
       case 'arome_precip':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+6h)</strong>`;

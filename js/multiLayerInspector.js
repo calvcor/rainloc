@@ -1290,10 +1290,11 @@ export class MultiLayerInspector {
         }
       }
 
-      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar y AEMET OpenData)
+      // 2.5 Pluviómetros / Lluvia Acumulada (SAIH Júcar, AEMET OpenData y AVAMET)
       const pluvioLayerDefs = [
         { id: "saih_lluvias", defaultSource: "SAIH CHJ", headerColor: "#0284c7" },
-        { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" }
+        { id: "aemet_lluvias", defaultSource: "AEMET", headerColor: "#2563eb" },
+        { id: "avamet_lluvias", defaultSource: "AVAMET", headerColor: "#059669" }
       ];
 
       for (const pluvioDef of pluvioLayerDefs) {
@@ -1358,36 +1359,43 @@ export class MultiLayerInspector {
                 badgeText = "0.0 mm";
               }
 
-              const isAemet = closestPluvio.red === 'AEMET' || pluvioDef.id === 'aemet_lluvias';
-              const networkLabel = isAemet ? 'AEMET' : 'SAIH CHJ';
-              const sectionHeaderColor = isAemet ? '#2563eb' : '#0284c7';
+              const network = closestPluvio.red || pluvioDef.defaultSource;
+              const isAemet = network === 'AEMET';
+              const isAvamet = network === 'AVAMET';
+              const networkLabel = isAemet ? 'AEMET' : (isAvamet ? 'AVAMET' : 'SAIH CHJ');
+              const sectionHeaderColor = isAemet ? '#2563eb' : (isAvamet ? '#059669' : '#0284c7');
+              const tagColor = isAemet ? '#60a5fa' : (isAvamet ? '#34d399' : '#38bdf8');
 
               const locParts = [];
               if (closestPluvio.poblacion) locParts.push(closestPluvio.poblacion);
               if (closestPluvio.provincia) locParts.push(`(${closestPluvio.provincia})`);
+              if (closestPluvio.comarca) locParts.push(`· ${closestPluvio.comarca}`);
               if (closestPluvio.subcuenca) locParts.push(`· ${closestPluvio.subcuenca}`);
               const metaLoc = locParts.length > 0 ? locParts.join(' ') : '--';
               const horaRaw = closestPluvio.fecha_1h || closestPluvio.fecha_24h || closestPluvio.ultima_hora || '';
               const horaText = horaRaw ? `· ${String(horaRaw).replace('T', ' ').substring(0, 16)}` : '';
 
-              // Métricas adicionales para estaciones meteorológicas de AEMET
+              // Métricas adicionales para estaciones meteorológicas de AEMET / AVAMET
               let extraMeteoHtml = '';
-              if (isAemet && (closestPluvio.temperatura !== undefined || closestPluvio.viento_vel !== undefined)) {
-                const parts = [];
-                if (closestPluvio.temperatura !== null && closestPluvio.temperatura !== undefined) {
-                  parts.push(`🌡️ ${closestPluvio.temperatura}°C`);
-                }
-                if (closestPluvio.humedad !== null && closestPluvio.humedad !== undefined) {
-                  parts.push(`💧 ${closestPluvio.humedad}%`);
-                }
-                if (closestPluvio.racha_max !== null && closestPluvio.racha_max !== undefined) {
-                  parts.push(`💨 ${(Number(closestPluvio.racha_max) * 3.6).toFixed(0)} km/h`);
-                } else if (closestPluvio.viento_vel !== null && closestPluvio.viento_vel !== undefined) {
-                  parts.push(`💨 ${(Number(closestPluvio.viento_vel) * 3.6).toFixed(0)} km/h`);
-                }
-                if (parts.length > 0) {
-                  extraMeteoHtml = `<div style="font-size:0.68rem; color:#94a3b8; margin-top:3px; display:flex; gap:8px; justify-content:center;">${parts.join(' · ')}</div>`;
-                }
+              const parts = [];
+              if (closestPluvio.temperatura !== null && closestPluvio.temperatura !== undefined && String(closestPluvio.temperatura).trim() !== '') {
+                parts.push(`🌡️ ${closestPluvio.temperatura}°C`);
+              }
+              if (closestPluvio.humedad !== null && closestPluvio.humedad !== undefined && String(closestPluvio.humedad).trim() !== '') {
+                parts.push(`💧 ${closestPluvio.humedad}%`);
+              }
+              if (closestPluvio.racha_max !== null && closestPluvio.racha_max !== undefined && String(closestPluvio.racha_max).trim() !== '') {
+                const rVal = Number(String(closestPluvio.racha_max).replace(',', '.'));
+                if (!isNaN(rVal)) parts.push(`💨 ${isAemet ? (rVal * 3.6).toFixed(0) : rVal.toFixed(0)} km/h`);
+              } else if (closestPluvio.viento_vel !== null && closestPluvio.viento_vel !== undefined && String(closestPluvio.viento_vel).trim() !== '') {
+                const vVal = Number(String(closestPluvio.viento_vel).replace(',', '.'));
+                if (!isNaN(vVal)) parts.push(`💨 ${isAemet ? (vVal * 3.6).toFixed(0) : vVal.toFixed(0)} km/h`);
+              }
+              if (isAvamet && closestPluvio.lluvia_hoy !== undefined && closestPluvio.lluvia_hoy !== null) {
+                parts.push(`📅 Hoy: <strong>${closestPluvio.lluvia_hoy} mm</strong>`);
+              }
+              if (parts.length > 0) {
+                extraMeteoHtml = `<div style="font-size:0.68rem; color:#94a3b8; margin-top:3px; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">${parts.join(' · ')}</div>`;
               }
 
               sections.push({
@@ -1422,10 +1430,14 @@ export class MultiLayerInspector {
                       </div>
                     </div>
                     ${extraMeteoHtml}
-                    <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'} · Red: <strong style="color:${isAemet ? '#60a5fa' : '#38bdf8'};">${networkLabel}</strong> ${horaText}</div>
+                    <div style="font-size:0.70rem; color:#94a3b8; margin-top:4px; border-top:1px solid rgba(255,255,255,0.08); padding-top:2px;">📍 ${metaLoc} · Cód: ${closestPluvio.codigo || '--'} · Red: <strong style="color:${tagColor};">${networkLabel}</strong> ${horaText}</div>
                   </div>
                 `
               });
+            }
+          }
+        }
+      }
             }
           }
         }

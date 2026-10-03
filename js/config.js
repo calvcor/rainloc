@@ -209,6 +209,20 @@ export const CONFIG = {
         badgeClass: 'badge-aemet',
         color: '#2563eb',
         icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"></path><path d="M8 19v2"></path><path d="M8 13v2"></path><path d="M16 19v2"></path><path d="M16 13v2"></path><path d="M12 21v2"></path><path d="M12 15v2"></path></svg>`
+      },
+      {
+        id: 'avamet_lluvias',
+        name: 'Pluviómetros AVAMET (MeteoXarxa)',
+        subtitle: '~860 estaciones Comunitat Valenciana (1h, 4h, 12h, 24h)',
+        description: 'Red de estaciones meteorológicas de la Associació Valenciana de Meteorologia (AVAMET) con precipitación acumulada en 1h, 4h, 12h y 24h.',
+        type: 'points',
+        defaultActive: false,
+        defaultOpacity: 0.95,
+        badge: 'AVAMET',
+        badgeType: 'live',
+        badgeClass: 'badge-avamet',
+        color: '#059669',
+        icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>`
       }
     ],
     prediction: [

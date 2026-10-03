@@ -1091,6 +1091,12 @@ body {
   border: 1px solid rgba(37, 99, 235, 0.35);
 }
 
+.badge-avamet {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
 /* -------------------------------------------------------------
    Barra Inferior Flotante Unificada: Reproductor Temporal (Radar / Modelos)
    Ocupa desde el menú de capas (left: 348px) hasta la leyenda (right: 248px)
