@@ -27,6 +27,7 @@ export class UIManager {
     this.predictionBannerExactTime = document.getElementById('prediction-banner-exact-time');
     this.timelineBottomPlayer = document.getElementById('timeline-bottom-player');
     this.layerManager = null;
+    this.activeTab = 'realtime';
 
     // Elementos exclusivos de la versión móvil
     this.mobileBottomBar = document.getElementById('mobile-bottom-bar');
@@ -502,6 +503,7 @@ export class UIManager {
       }
     });
 
+    this.activeTab = tabId;
     StorageManager.setActiveTab(tabId);
 
     if (this.layerManager && this.layerManager.onTabChange) {

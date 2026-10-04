@@ -201,6 +201,7 @@ export class LayerManager {
     this._currentHarmonieObjectUrl = null;
     this._currentIconObjectUrl = null;
     this._currentGemObjectUrl = null;
+    this.currentTab = 'realtime';
   }
 
   /**
@@ -208,6 +209,7 @@ export class LayerManager {
    */
   init() {
     const prefs = StorageManager.load();
+    this.currentTab = prefs.activeTab || 'realtime';
     const savedActive = prefs.activeLayers || {};
     const savedOpacities = prefs.layerOpacities || {};
 
@@ -700,6 +702,9 @@ export class LayerManager {
   }
 
   isRealtimeTabActive() {
+    if (this.currentTab) {
+      return this.currentTab === 'realtime';
+    }
     if (this.uiManager && this.uiManager.activeTab) {
       return this.uiManager.activeTab === 'realtime';
     }
@@ -906,6 +911,7 @@ export class LayerManager {
    * - Al volver a Tiempo Real: oculta la predicción y restaura todas las capas de tiempo real con su configuración previa.
    */
   onTabChange(tabId) {
+    this.currentTab = tabId;
     if (tabId === 'prediction') {
       // 1. Ocultar del mapa todo lo de Tiempo Real
       this._hideAllRealtimeLayers();

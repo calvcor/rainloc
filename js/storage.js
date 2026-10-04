@@ -145,6 +145,15 @@ export class StorageManager {
   }
 
   /**
+   * Obtiene la pestaña activa actual del menú
+   * @returns {'realtime' | 'prediction'}
+   */
+  static getActiveTab() {
+    const prefs = this.load();
+    return prefs.activeTab || 'realtime';
+  }
+
+  /**
    * Guarda la pestaña activa del menú
    * @param {string} activeTab 'realtime' | 'prediction'
    */
