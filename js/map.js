@@ -13,9 +13,12 @@ export class MapManager {
     this.layerControl = null;
     this.layerNameToId = {};
     this.ccaaLayer = null;
+    this.riosLayer = null;
+    this.riosGeoJson = null;
     this.currentBasemapId = null;
     const savedPrefs = StorageManager.load();
     this.ccaaVisible = (savedPrefs.ccaaVisible !== undefined) ? Boolean(savedPrefs.ccaaVisible) : true;
+    this.riosVisible = (savedPrefs.riosVisible !== undefined) ? Boolean(savedPrefs.riosVisible) : true;
   }
 
   /**
@@ -55,6 +58,12 @@ export class MapManager {
       this.map.createPane('cuencasHoverPane');
       this.map.getPane('cuencasHoverPane').style.zIndex = 360;
       this.map.getPane('cuencasHoverPane').style.pointerEvents = 'none';
+    }
+
+    // 1.5. Capa Vectorial de Ríos de España (358) -> Por encima de cuencas y debajo de avisos/modelos
+    if (!this.map.getPane('riosPane')) {
+      this.map.createPane('riosPane');
+      this.map.getPane('riosPane').style.zIndex = 358;
     }
 
     // 2. Modelos de Predicción Numérica (ECMWF, AROME, ICON) -> por encima de cuencas (420)
@@ -116,6 +125,9 @@ export class MapManager {
     // Cargar y superponer límites vectoriales de CCAA por encima de todo
     this._loadCcaaBoundaries();
 
+    // Cargar y superponer la red de ríos de España
+    this._loadRiosNetwork();
+
     // Guardar selección y adaptar color de límites cuando el usuario cambia el mapa base
     this.map.on('baselayerchange', (e) => {
       const basemapId = this.layerNameToId[e.name];
@@ -123,6 +135,7 @@ export class MapManager {
         this.currentBasemapId = basemapId;
         StorageManager.setBasemap(basemapId);
         this.updateCcaaStyle(basemapId);
+        this.updateRiosStyle(basemapId);
         if (this.uiManager && this.uiManager.updateActiveBasemapUI) {
           this.uiManager.updateActiveBasemapUI(basemapId);
         }
@@ -255,6 +268,132 @@ export class MapManager {
       });
       if (this.ccaaVisible) {
         this.ccaaLayer.addTo(this.map);
+      }
+    }
+  }
+
+  /**
+   * Obtiene el estilo de los ríos en función de la jerarquía hidrográfica y el mapa base activo
+   */
+  _getRiosStyle(feature, basemapId = null) {
+    const activeId = basemapId || this.currentBasemapId || StorageManager.load().basemapId || StorageManager.getDefaultBasemapId();
+    const isDarkMap = activeId === 'esriDarkCanvas';
+    const tRio = feature?.properties?.t_rio || 3;
+    const isPermanent = feature?.properties?.permanente !== false;
+
+    // Jerarquía de grosores
+    let weight = 1.2;
+    let opacity = isDarkMap ? 0.85 : 0.8;
+    if (tRio === 1) { // Ríos principales (Ebro, Tajo, Duero, Guadalquivir, etc.)
+      weight = 2.8;
+      opacity = isDarkMap ? 0.98 : 0.95;
+    } else if (tRio === 2) { // Ríos secundarios destacados
+      weight = 1.9;
+      opacity = isDarkMap ? 0.92 : 0.9;
+    } else if (tRio === 3) { // Afluentes y ríos menores
+      weight = 1.2;
+      opacity = isDarkMap ? 0.8 : 0.75;
+    } else if (tRio >= 4) { // Ramblas y cursos de agua estacionales
+      weight = 0.85;
+      opacity = isDarkMap ? 0.65 : 0.6;
+    }
+
+    // Paleta azul luminosa en mapa oscuro, azul cian/marino en mapa claro
+    let color = isDarkMap ? '#38bdf8' : '#0284c7';
+    if (tRio === 1) {
+      color = isDarkMap ? '#67e8f9' : '#0369a1';
+    }
+
+    return {
+      color: color,
+      weight: weight,
+      opacity: opacity,
+      fill: false,
+      lineCap: 'round',
+      lineJoin: 'round',
+      dashArray: isPermanent ? null : '3, 4'
+    };
+  }
+
+  /**
+   * Actualiza el estilo dinámico de la red de ríos en tiempo real
+   */
+  updateRiosStyle(basemapId = null) {
+    if (this.riosLayer) {
+      this.riosLayer.setStyle((feature) => this._getRiosStyle(feature, basemapId));
+    }
+  }
+
+  /**
+   * Conmuta o establece la visibilidad de la red de ríos de España
+   * @param {boolean} visible 
+   */
+  setRiosVisible(visible) {
+    this.riosVisible = Boolean(visible);
+    StorageManager.setRiosVisible(this.riosVisible);
+    if (this.riosLayer) {
+      if (this.riosVisible) {
+        if (!this.map.hasLayer(this.riosLayer)) {
+          this.map.addLayer(this.riosLayer);
+        }
+      } else {
+        if (this.map.hasLayer(this.riosLayer)) {
+          this.map.removeLayer(this.riosLayer);
+        }
+      }
+    }
+  }
+
+  /**
+   * Carga el GeoJSON de la red de ríos de España y lo dibuja en el panel de ríos con interactividad
+   */
+  async _loadRiosNetwork() {
+    let geojsonData = null;
+    for (const url of CONFIG.dataSources.riosGeoJson) {
+      try {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          geojsonData = await resp.json();
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (geojsonData && geojsonData.features) {
+      this.riosGeoJson = geojsonData;
+      this.riosLayer = L.geoJSON(geojsonData, {
+        pane: 'riosPane',
+        style: (feature) => this._getRiosStyle(feature),
+        onEachFeature: (feature, layer) => {
+          const nombre = feature.properties?.nombre;
+          if (nombre) {
+            layer.bindTooltip(`🌊 ${nombre}`, {
+              sticky: true,
+              direction: 'auto',
+              className: 'river-tooltip'
+            });
+          }
+
+          layer.on({
+            mouseover: (e) => {
+              const currentStyle = this._getRiosStyle(feature);
+              e.target.setStyle({
+                weight: currentStyle.weight + 1.8,
+                opacity: 1.0,
+                color: this.currentBasemapId === 'esriDarkCanvas' ? '#a5f3fc' : '#075985'
+              });
+            },
+            mouseout: (e) => {
+              if (this.riosLayer) {
+                this.riosLayer.resetStyle(e.target);
+              }
+            }
+          });
+        }
+      });
+
+      if (this.riosVisible) {
+        this.riosLayer.addTo(this.map);
       }
     }
   }

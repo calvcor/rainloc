@@ -543,6 +543,32 @@ body {
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 3px rgba(0, 0, 0, 0.7));
 }
 
+/* Red hidrográfica de ríos de España */
+.leaflet-pane.leaflet-riosPane-pane path {
+  transition: stroke 0.15s ease, stroke-width 0.15s ease, stroke-opacity 0.15s ease;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.4));
+  cursor: pointer;
+}
+
+.river-tooltip {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 8px !important;
+  color: #f8fafc !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 4px 9px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  pointer-events: none !important;
+}
+
+.river-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.92) !important;
+}
+
 /* Panel de resalte Hover/Selección de Cuencas: Máxima prioridad visual sobre todo */
 .leaflet-pane.leaflet-cuencasHoverPane-pane {
   pointer-events: none !important;

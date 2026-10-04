@@ -23,6 +23,7 @@ export class StorageManager {
       fillOpacity: 0.25,
       cuencasVisible: true,
       ccaaVisible: true,
+      riosVisible: true,
       favoriteBasinId: null,
       favoriteBasinName: null,
       activeTab: 'realtime', // 'realtime' | 'prediction'
@@ -197,6 +198,14 @@ export class StorageManager {
    */
   static setCcaaVisible(visible) {
     return this.save({ ccaaVisible: Boolean(visible) });
+  }
+
+  /**
+   * Guarda la visibilidad de los ríos de España
+   * @param {boolean} visible 
+   */
+  static setRiosVisible(visible) {
+    return this.save({ riosVisible: Boolean(visible) });
   }
 
   /**

@@ -83,6 +83,8 @@ try:
         CUENCAS_FILE: Path = BASE_DIR / "data" / "cuencas.geojson"
         CCAA_FILE: Path = BASE_DIR / "ccaa.geojson"
         CCAA_DATA_FILE: Path = BASE_DIR / "data" / "ccaa.geojson"
+        RIOS_FILE: Path = BASE_DIR / "data" / "rios.geojson"
+        RIOS_DATA_FILE: Path = DATA_DIR / "rios.geojson"
         
         # Almacenamiento del estado del tiempo y caché
         WEATHER_STATE_FILE: Path = DATA_DIR / "weather_state.json"

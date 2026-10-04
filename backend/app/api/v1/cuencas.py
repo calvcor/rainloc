@@ -9,6 +9,7 @@ from app.config import settings
 from app.services.ebro_service import ebro_service
 from app.services.segura_service import segura_service
 from app.services.guadalquivir_service import guadalquivir_service
+from app.services.rios_service import rios_service
 
 router = APIRouter(prefix="/cuencas", tags=["Cuencas y Subsistemas"])
 
@@ -93,6 +94,25 @@ async def get_ccaa_boundaries():
             "X-Feature-Count": str(len(data.get("features", [])))
         }
     )
+
+@router.get("/rios", summary="Obtener GeoJSON de ríos y cursos fluviales de España")
+async def get_rios_network():
+    """
+    Devuelve la FeatureCollection con los ríos y cursos fluviales de España (IGN CartoBase ANE).
+    Si no existe el archivo local, se descarga automáticamente una vez desde el IGN y se almacena en caché.
+    """
+    try:
+        data = rios_service.get_rios_data()
+        return Response(
+            content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+            media_type="application/geo+json",
+            headers={
+                **CUENCAS_CACHE_HEADERS,
+                "X-Feature-Count": str(len(data.get("features", [])))
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener datos de ríos: {str(e)}")
 
 @router.get("", summary="Obtener GeoJSON de cuencas y subsistemas CHJ")
 async def get_all_cuencas():

@@ -49,6 +49,11 @@ export const CONFIG = {
       `${apiBase}/cuencas/ccaa`,
       './ccaa.geojson',
       './data/ccaa.geojson'
+    ],
+    riosGeoJson: [
+      `${apiBase}/cuencas/rios`,
+      './data/rios.geojson',
+      './rios.geojson'
     ]
   },
 

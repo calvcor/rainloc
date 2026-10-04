@@ -12,6 +12,7 @@ export class UIManager {
     this.opacityContainerEl = document.getElementById('cuencas-opacity-container');
     this.toggleCuencasEl = document.getElementById('toggle-cuencas-visibility');
     this.toggleCcaaEl = document.getElementById('toggle-ccaa-visibility');
+    this.toggleRiosEl = document.getElementById('toggle-rios-visibility');
     this.favBtnEl = document.getElementById('btn-favorite-basin');
     this.realtimeListEl = document.getElementById('realtime-layer-list');
     this.predictionListEl = document.getElementById('prediction-layer-list');
@@ -41,6 +42,7 @@ export class UIManager {
     this.btnCloseSettings = document.getElementById('btn-close-settings-drawer');
     this.toggleCuencasMobileEl = document.getElementById('toggle-cuencas-mobile');
     this.toggleCcaaMobileEl = document.getElementById('toggle-ccaa-mobile');
+    this.toggleRiosMobileEl = document.getElementById('toggle-rios-mobile');
     this.opacitySliderMobile = document.getElementById('opacity-slider-mobile');
     this.opacityValMobileEl = document.getElementById('opacity-val-mobile');
     this.cuencasOpacityContainerMobile = document.getElementById('cuencas-opacity-container-mobile');
@@ -74,6 +76,7 @@ export class UIManager {
     const savedPrefs = StorageManager.load();
     const isCuencasVisible = (savedPrefs.cuencasVisible !== undefined) ? Boolean(savedPrefs.cuencasVisible) : true;
     const isCcaaVisible = (savedPrefs.ccaaVisible !== undefined) ? Boolean(savedPrefs.ccaaVisible) : true;
+    const isRiosVisible = (savedPrefs.riosVisible !== undefined) ? Boolean(savedPrefs.riosVisible) : true;
 
     if (this.toggleCuencasEl) {
       this.toggleCuencasEl.checked = isCuencasVisible;
@@ -96,6 +99,17 @@ export class UIManager {
         if (this.toggleCcaaMobileEl) this.toggleCcaaMobileEl.checked = visible;
         if (this.mapManager) {
           this.mapManager.setCcaaVisible(visible);
+        }
+      });
+    }
+
+    if (this.toggleRiosEl) {
+      this.toggleRiosEl.checked = isRiosVisible;
+      this.toggleRiosEl.addEventListener('change', (e) => {
+        const visible = e.target.checked;
+        if (this.toggleRiosMobileEl) this.toggleRiosMobileEl.checked = visible;
+        if (this.mapManager) {
+          this.mapManager.setRiosVisible(visible);
         }
       });
     }
@@ -306,6 +320,19 @@ export class UIManager {
         if (this.toggleCcaaEl) this.toggleCcaaEl.checked = visible;
         if (this.mapManager) {
           this.mapManager.setCcaaVisible(visible);
+        }
+      });
+    }
+
+    // Toggle Ríos Móvil
+    const isRiosVisible = (savedPrefs.riosVisible !== undefined) ? Boolean(savedPrefs.riosVisible) : true;
+    if (this.toggleRiosMobileEl) {
+      this.toggleRiosMobileEl.checked = isRiosVisible;
+      this.toggleRiosMobileEl.addEventListener('change', (e) => {
+        const visible = e.target.checked;
+        if (this.toggleRiosEl) this.toggleRiosEl.checked = visible;
+        if (this.mapManager) {
+          this.mapManager.setRiosVisible(visible);
         }
       });
     }

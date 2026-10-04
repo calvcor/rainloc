@@ -134,6 +134,22 @@
           </span>
         </div>
 
+        <!-- Toggle de Visibilidad de Ríos de España -->
+        <div class="cuencas-toggle-control" title="Mostrar u ocultar la red de ríos de España en el mapa">
+          <label class="toggle-switch-ui" for="toggle-rios-visibility">
+            <input type="checkbox" id="toggle-rios-visibility" checked>
+            <span class="toggle-switch-slider"></span>
+          </label>
+          <span class="toggle-switch-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+              <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+              <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+            </svg>
+            Ríos
+          </span>
+        </div>
+
         <button id="btn-favorite-basin" class="btn-glass btn-fav-badge" style="display: none;" title="Centrar en cuenca favorita">
           <!-- Contenido generado dinámicamente -->
         </button>
@@ -447,6 +463,25 @@
               </div>
               <label class="toggle-switch-ui" for="toggle-ccaa-mobile">
                 <input type="checkbox" id="toggle-ccaa-mobile" checked>
+                <span class="toggle-switch-slider"></span>
+              </label>
+            </div>
+
+            <!-- Toggle Ríos de España -->
+            <div class="settings-row" style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; margin-top: 10px;">
+              <div class="settings-row-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+                  <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+                  <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+                </svg>
+                <div>
+                  <div class="settings-item-title">Ríos de España (IGN)</div>
+                  <div class="settings-item-sub">Red hidrográfica peninsular oficial</div>
+                </div>
+              </div>
+              <label class="toggle-switch-ui" for="toggle-rios-mobile">
+                <input type="checkbox" id="toggle-rios-mobile" checked>
                 <span class="toggle-switch-slider"></span>
               </label>
             </div>
