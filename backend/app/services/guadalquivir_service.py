@@ -942,58 +942,72 @@ class GuadalquivirService:
             records.append(row)
         return records
 
-    def _parse_shp_polygon_at(self, shp_bytes: bytes, offset: int, tolerance: float = 0.0012) -> Optional[Dict[str, Any]]:
-        """Extrae un polígono específico de un shapefile a partir de su offset de registro."""
+    def _parse_shp_polygons(self, shp_bytes: bytes, tolerance: float = 0.0008) -> List[Optional[Dict[str, Any]]]:
+        """Extrae la lista secuencial de polígonos de un shapefile completo."""
         import struct
-        rec_offset = offset + 8
-        if rec_offset + 44 > len(shp_bytes):
-            return None
-        shape_type = struct.unpack("<I", shp_bytes[rec_offset : rec_offset + 4])[0]
-        if shape_type not in (5, 15, 25):  # Polygon
-            return None
-        num_parts, num_points = struct.unpack("<II", shp_bytes[rec_offset + 36 : rec_offset + 44])
-        parts_offset = rec_offset + 44
-        parts = list(struct.unpack(f"<{num_parts}I", shp_bytes[parts_offset : parts_offset + 4 * num_parts]))
-        parts.append(num_points)
-        points_offset = parts_offset + 4 * num_parts
-        raw_pts = struct.unpack(f"<{num_points*2}d", shp_bytes[points_offset : points_offset + 16 * num_points])
+        offset = 100
+        features = []
+        shp_len = len(shp_bytes)
+        while offset < shp_len:
+            if offset + 8 > shp_len:
+                break
+            rec_id, content_len = struct.unpack(">II", shp_bytes[offset : offset + 8])
+            rec_bytes = content_len * 2
+            offset += 8
+            if rec_bytes == 0:
+                features.append(None)
+                continue
+            shape_type = struct.unpack("<I", shp_bytes[offset : offset + 4])[0]
+            if shape_type in (5, 15, 25):  # Polygon
+                num_parts, num_points = struct.unpack("<II", shp_bytes[offset + 36 : offset + 44])
+                parts_offset = offset + 44
+                parts = list(struct.unpack(f"<{num_parts}I", shp_bytes[parts_offset : parts_offset + 4 * num_parts]))
+                parts.append(num_points)
+                points_offset = parts_offset + 4 * num_parts
+                raw_pts = struct.unpack(f"<{num_points*2}d", shp_bytes[points_offset : points_offset + 16 * num_points])
 
-        coords = []
-        for p_idx in range(num_parts):
-            p_start = parts[p_idx]
-            p_end = parts[p_idx + 1]
-            ring = []
-            last_pt = None
-            for pt_i in range(p_start, p_end):
-                x = round(raw_pts[pt_i * 2], 5)
-                y = round(raw_pts[pt_i * 2 + 1], 5)
-                if last_pt != (x, y):
-                    ring.append([x, y])
-                    last_pt = (x, y)
-            if len(ring) >= 3:
-                if tolerance > 0 and len(ring) > 6:
-                    simplified = _ramer_douglas_peucker(ring[:-1], tolerance)
-                    if len(simplified) >= 3:
-                        simplified.append(simplified[0])
-                        coords.append(simplified)
-                    else:
-                        coords.append(ring)
+                coords = []
+                for p_idx in range(num_parts):
+                    p_start = parts[p_idx]
+                    p_end = parts[p_idx + 1]
+                    ring = []
+                    last_pt = None
+                    for pt_i in range(p_start, p_end):
+                        x = round(raw_pts[pt_i * 2], 5)
+                        y = round(raw_pts[pt_i * 2 + 1], 5)
+                        if last_pt != (x, y):
+                            ring.append([x, y])
+                            last_pt = (x, y)
+                    if len(ring) >= 3:
+                        if tolerance > 0 and len(ring) > 6:
+                            simplified = _ramer_douglas_peucker(ring[:-1], tolerance)
+                            if len(simplified) >= 3:
+                                simplified.append(simplified[0])
+                                coords.append(simplified)
+                            else:
+                                coords.append(ring)
+                        else:
+                            coords.append(ring)
+                if len(coords) == 1:
+                    geom = {"type": "Polygon", "coordinates": coords}
+                elif len(coords) > 1:
+                    geom = {"type": "MultiPolygon", "coordinates": [[r] for r in coords]}
                 else:
-                    coords.append(ring)
-        if len(coords) == 1:
-            return {"type": "Polygon", "coordinates": coords}
-        elif len(coords) > 1:
-            return {"type": "MultiPolygon", "coordinates": [[r] for r in coords]}
-        return None
+                    geom = None
+                features.append(geom)
+            else:
+                features.append(None)
+            offset += rec_bytes
+        return features
 
     def _download_and_process_cuencas_geojson(self) -> Dict[str, Any]:
-        """Descarga dinámicamente desde el MITECO el shapefile oficial de Subcuencas, extrae las 1.210 subcuencas del Guadalquivir (COD_DEMAR=51) y las optimiza."""
-        import hashlib, http.cookiejar, base64, struct
+        """Descarga dinámicamente desde el MITECO el shapefile oficial de Sistemas de Explotación (ES050) y los optimiza."""
+        import hashlib, http.cookiejar, base64
 
         cj = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
-        url_page = "https://gis.miteco.gob.es/descargas/app/DescargaFichero?f=Subcuencas.zip"
+        url_page = "https://gis.miteco.gob.es/descargas/app/DescargaFichero?f=sistemasexplotacion-2022_2027.zip"
         req = urllib.request.Request(url_page, headers={"User-Agent": USER_AGENT})
         res = opener.open(req)
         html_doc = res.read().decode("utf-8")
@@ -1025,7 +1039,7 @@ class GuadalquivirService:
         }).encode("utf-8")).decode("utf-8")
 
         post_data = urllib.parse.urlencode({
-            "f": "Subcuencas.zip", "altcha": altcha_payload, "__RequestVerificationToken": token
+            "f": "sistemasexplotacion-2022_2027.zip", "altcha": altcha_payload, "__RequestVerificationToken": token
         }).encode("utf-8")
 
         req_post = urllib.request.Request("https://gis.miteco.gob.es/descargas/app/DescargaFichero?handler=Download", data=post_data, headers={
@@ -1036,117 +1050,44 @@ class GuadalquivirService:
         z = zipfile.ZipFile(io.BytesIO(file_data))
         dbf_name = [n for n in z.namelist() if n.lower().endswith(".dbf")][0]
         shp_name = [n for n in z.namelist() if n.lower().endswith(".shp")][0]
-        shx_name = [n for n in z.namelist() if n.lower().endswith(".shx")][0]
 
         records = self._parse_dbf(z.read(dbf_name))
-        shp_bytes = z.read(shp_name)
-        shx_bytes = z.read(shx_name)
-
-        # 1. Extraer geometrías y clasificar en las 23 subcuencas principales
-        from collections import defaultdict
-        from shapely.geometry import shape, mapping
-        from shapely.ops import unary_union
-
-        def _classify(nom_raw: str, geom_shape) -> tuple[str, str, str]:
-            nom = nom_raw.upper().replace("RÍO ", "").replace("RIO ", "").strip()
-            lon, lat = geom_shape.centroid.x, geom_shape.centroid.y
-            if any(k in nom for k in ["MONACHIL", "DILAR", "AGUAS BLANCAS", "VALDECANALES", "MAITENA", "GENIL CABECERA"]):
-                return "Alto Genil", "Alto Genil", "CHG_ALTOGENIL"
-            if any(k in nom for k in ["GENIL", "CUBILLAS", "CACIN", "DARRO", "BEIRO", "ANZUR", "SALADO DE PRIEGO", "CABRA", "BLANQUILLO", "PESQUERA", "LANA", "ENGANHADERO", "IZBOR", "DURCAL", "TORRENTE", "ALHAMA"]):
-                return "Cuenca del Río Genil", "Regulación General", "CHG_GENIL"
-            if any(k in nom for k in ["GUADIANA MENOR", "BAZA", "FARDES", "GUARDAL", "CASTRIL", "GALERA", "ANGORILLA", "CERRO GORDO", "GUADIX", "CULLAR", "HUESCAR", "ORCE", "CASTILLEJAR", "GOR", "ALMANZORA"]):
-                return "Cuenca del Río Guadiana Menor", "Hoya de Guadix", "CHG_GUADIANAMENOR"
-            if any(k in nom for k in ["GUADALIMAR", "GUADALMENA", "DANADOR", "DAÑADOR", "ARQUILLOS", "GIRIBAILE", "TRUCHAS", "ONSARES", "ONZA", "CAMPORREDONDO", "HERMOSO", "CARRIZAS"]):
-                return "Cuenca del Río Guadalimar", "Regulación General", "CHG_GUADALIMAR"
-            if any(k in nom for k in ["GUADALEN", "GUADALÉN", "GUARRIZAS", "MARTIN MALO", "CAMPANARIO", "DESPENAPERROS", "DESPEÑAPERROS"]):
-                return "Cuenca del Río Guadalén y Guarrizas", "Regulación General", "CHG_GUADALEN"
-            if any(k in nom for k in ["JANDULA", "JÁNDULA", "FRESNEDA", "RUMBLAR", "PINEROS", "ROBLEDO", "VALDEAZORES", "ALAMO", "ÁLAMO", "SANTOS"]):
-                return "Cuenca del Río Jándula y Rumblar", "Regulación General", "CHG_JANDULA"
-            if any(k in nom for k in ["YEGUAS", "PRADILLO", "VALMAYOR", "NAVAS DEL MOLERO", "CEREZO"]):
-                return "Cuenca del Río Yeguas", "Regulación General", "CHG_YEGUAS"
-            if any(k in nom for k in ["GUADALBULLON", "GUADALBULLÓN", "JAEN", "JAÉN", "QUEBRACHO", "ESCAJUELA", "FRÍO", "FRIO", "CAMBIL"]):
-                return "Cuenca del Río Guadalbullón", "Regulación General", "CHG_GUADALBULLON"
-            if any(k in nom for k in ["GUADIEL", "CANIZAL", "CAÑIZAL", "BAÑOS", "BANOS"]):
-                return "Cuenca del Río Guadiel", "Regulación General", "CHG_GUADIEL"
-            if any(k in nom for k in ["GUADAJOZ", "SAN JUAN", "MARBALEJO", "SALADO DE CASTRO", "TORREPAREDONES", "VIBORAS", "VÍBORAS", "SALOBRAL"]):
-                return "Cuenca del Río Guadajoz", "Regulación General", "CHG_GUADAJOZ"
-            if any(k in nom for k in ["PORCUNA", "ARJONA", "ARJONILLA", "SALADO DE ARJONA", "SALADO DE PORCUNA"]):
-                return "Cuenca del Río Salado de Porcuna", "Regulación General", "CHG_PORCUNA"
-            if any(k in nom for k in ["GUADIATO", "BRENA", "BREÑA", "ZAPATEROS", "GATO", "MATABUEYES", "PASCUAL", "GUADANUNO", "GUADAÑUÑO"]):
-                return "Cuenca del Río Guadiato", "Regulación General", "CHG_GUADIATO"
-            if any(k in nom for k in ["BEMBEZAR", "BEMBÉZAR", "RETORTILLO", "SOTILLO", "BENAJARAFE", "AGUAS CLARAS", "NEGRO"]):
-                return "Cuenca de los Ríos Bembézar y Retortillo", "Bembézar-Retortillo", "CHG_BEMBEZAR"
-            if any(k in nom for k in ["HUESNA", "RIVERA DEL HUESNA", "GALAPAGAR", "SAN NICOLAS", "VIARILLO"]):
-                return "Cuenca de la Rivera del Huesna", "Regulación General", "CHG_HUESNA"
-            if any(k in nom for k in ["VIAR", "AGUA SANTA", "MONTERO", "MANZANO", "GRAFAS", "ROBLADO"]):
-                return "Cuenca del Río Viar", "Regulación General", "CHG_VIAR"
-            if any(k in nom for k in ["HUELVA", "CALA", "ALCALA", "ALCALÁ", "CALANCHA", "MINILLA", "ZUFRE", "ARACENA", "GERGAL", "MARIA"]):
-                return "Cuenca de Rivera de Huelva y Cala", "Abastecimiento de Sevilla", "CHG_HUELVA"
-            if any(k in nom for k in ["CORBONES", "SALADO DE MORON", "SALADO DE MORÓN", "PEONIA", "PEONÍA", "REDONDA"]):
-                return "Cuenca del Río Corbones", "Regulación General", "CHG_CORBONES"
-            if any(k in nom for k in ["GUADAIRA", "GUADAÍRA", "GUADAIRAJO", "SALADO DE ARAHAL", "GUADAJIRA", "ALBARRAGA", "GUADATINAJAS"]):
-                return "Cuenca del Río Guadaíra", "Regulación General", "CHG_GUADAIRA"
-            if any(k in nom for k in ["GUADIAMAR", "AGRIO", "BRAZO DE LA TORRE", "ALCARAYON", "ALCARAYÓN", "CRISPINES"]):
-                return "Cuenca del Río Guadiamar", "Guadiamar", "CHG_GUADIAMAR"
-            if lon > -3.5 or (lat > 37.7 and lon > -3.8):
-                return "Cuenca del Alto Guadalquivir", "Regulación General", "CHG_ALTOGUADALQUIVIR"
-            elif lon > -5.3:
-                if lat > 37.8:
-                    return "Cuenca del Medio Guadalquivir (Sierra Morena)", "Regulación General", "CHG_MEDGUAD_NORTE"
-                else:
-                    return "Cuenca del Medio Guadalquivir (Campiña)", "Regulación General", "CHG_MEDGUAD_SUR"
-            else:
-                return "Cuenca del Bajo Guadalquivir y Marismas", "Regulación General", "CHG_BAJOGUADALQUIVIR"
-
-        grouped = defaultdict(list)
-        for idx, rec in enumerate(records):
-            cod_demar = str(rec.get("COD_DEMAR", "")).strip()
-            if cod_demar != "51":
-                continue
-
-            shx_offset = 100 + idx * 8
-            if shx_offset + 8 > len(shx_bytes):
-                continue
-            offset_words = struct.unpack(">I", shx_bytes[shx_offset : shx_offset + 4])[0]
-            shp_offset = offset_words * 2
-
-            geom_dict = self._parse_shp_polygon_at(shp_bytes, shp_offset, tolerance=0.0012)
-            if not geom_dict:
-                continue
-
-            nom_raw = str(rec.get("NOM_CUENCA", "")).strip()
-            try:
-                area_km2 = float(rec.get("AREA_CUENC", 0.0)) / 1e6
-            except Exception:
-                area_km2 = 0.0
-
-            g_shape = shape(geom_dict)
-            b_name, sys_name, b_id = _classify(nom_raw, g_shape)
-            grouped[(b_name, sys_name, b_id)].append((g_shape, area_km2))
+        geoms = self._parse_shp_polygons(z.read(shp_name), tolerance=0.0008)
 
         features = []
-        for (b_name, sys_name, b_id), items in grouped.items():
-            geoms = [g for g, _ in items]
-            tot_area = round(sum(a for _, a in items), 2)
-            dissolved = unary_union(geoms)
-            simplified = dissolved.simplify(0.0012, preserve_topology=True)
-            features.append({
-                "type": "Feature",
-                "id": b_id,
-                "properties": {
-                    "id": b_id,
-                    "NomSistExp": sys_name,
-                    "Sistema": sys_name,
-                    "Subsistema": b_name,
-                    "nombre": b_name,
-                    "Demarcacion": "Demarcación Hidrográfica del Guadalquivir (CHG)",
-                    "demarcacion": "Guadalquivir",
-                    "cod_demar": "ES050",
-                    "Area km2": tot_area,
-                    "Superf km2": tot_area,
-                },
-                "geometry": mapping(simplified),
-            })
+        for idx, (rec, geom) in enumerate(zip(records, geoms)):
+            if rec.get("cod_demar") == "ES050" and geom:
+                nom_raw = rec.get("nom_subse") or rec.get("nom_sisexp") or ""
+                nom = (
+                    nom_raw.replace("–", "-")
+                    .replace("—", "-")
+                    .replace("Ã¡", "á")
+                    .replace("Ã©", "é")
+                    .replace("Ã­", "í")
+                    .replace("Ã³", "ó")
+                    .replace("Ãº", "ú")
+                    .replace("Ã±", "ñ")
+                    .replace("Ã\x89", "É")
+                    .strip()
+                )
+                code = rec.get("cod_subse") or rec.get("cod_sisexp") or f"ES050SE0{idx}"
+                features.append({
+                    "type": "Feature",
+                    "id": code,
+                    "properties": {
+                        "id": code,
+                        "NomSistExp": nom,
+                        "Subsistema": nom,
+                        "Sistema": nom,
+                        "nombre": nom,
+                        "Demarcacion": "Demarcación Hidrográfica del Guadalquivir (CHG)",
+                        "demarcacion": "Guadalquivir",
+                        "cod_sisexp": rec.get("cod_sisexp"),
+                        "cod_subse": rec.get("cod_subse"),
+                        "cod_demar": "ES050",
+                    },
+                    "geometry": geom,
+                })
 
         fc = {"type": "FeatureCollection", "features": features}
 
@@ -1155,9 +1096,18 @@ class GuadalquivirService:
             GUADALQUIVIR_CUENCAS_GEOJSON_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(GUADALQUIVIR_CUENCAS_GEOJSON_FILE, "w", encoding="utf-8") as f:
                 json.dump(fc, f, ensure_ascii=False, separators=(",", ":"))
-            logger.info("GeoJSON de subcuencas del Guadalquivir generado y guardado en %s (%d subcuencas principales)", GUADALQUIVIR_CUENCAS_GEOJSON_FILE, len(features))
+            logger.info("GeoJSON de sistemas del Guadalquivir generado y guardado en %s (%d sistemas oficiales)", GUADALQUIVIR_CUENCAS_GEOJSON_FILE, len(features))
         except Exception as e:
             logger.warning("No se pudo escribir archivo local guadalquivir_subcuencas.geojson: %s", e)
+
+        if PUBLIC_DATA_DIR.exists():
+            try:
+                with open(PUBLIC_DATA_DIR / "guadalquivir_subcuencas.geojson", "w", encoding="utf-8") as f:
+                    json.dump(fc, f, ensure_ascii=False, separators=(",", ":"))
+            except Exception:
+                pass
+
+        return fc
 
         if PUBLIC_DATA_DIR.exists():
             try:
