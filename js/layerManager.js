@@ -5843,35 +5843,25 @@ export class LayerManager {
     const uN = isThresholdCompatible ? rawUN : null;
     const uR = isThresholdCompatible ? rawUR : null;
 
-    // Calcular límites Y dinámicos adaptados tanto a caudal (cerca de 0) como a cotas/niveles elevados (m)
+    // Calcular límites Y centrados exactamente entre el máximo y el mínimo del periodo para apreciar la variación
     const rawMax = Math.max(...values);
     const rawMin = Math.min(...values);
-    const dataSpan = Math.max(0.08, rawMax - rawMin);
-
-    // Identificar qué umbrales son relevantes para el visor (están dentro o razonablemente por encima de la serie)
-    const validUmbrales = [uA, uN, uR].filter(u => u !== null && !isNaN(u) && u > 0);
-    const nearbyUmbrales = validUmbrales.filter(u => u >= rawMin - 1 && u <= rawMax + Math.max(dataSpan * 4, 12));
-    const highestNearbyU = nearbyUmbrales.length > 0 ? Math.max(...nearbyUmbrales) : null;
+    const span = rawMax - rawMin;
 
     let maxY, minY;
-    if (highestNearbyU !== null) {
-      const topTarget = Math.max(rawMax, highestNearbyU);
-      const topMargin = Math.max((topTarget - rawMin) * 0.12, 0.2);
-      maxY = topTarget + topMargin;
+    if (span === 0) {
+      if (rawMax === 0) {
+        minY = 0;
+        maxY = 1;
+      } else {
+        const padVal = Math.max(Math.abs(rawMax) * 0.05, 0.2);
+        minY = rawMin - padVal;
+        maxY = rawMax + padVal;
+      }
     } else {
-      const topMargin = Math.max(dataSpan * 0.25, 0.15);
-      maxY = rawMax + topMargin;
-    }
-
-    // Margen inferior
-    const bottomMargin = Math.max(dataSpan * 0.2, 0.1);
-    if (rawMin >= 20) {
-      // Para cotas elevadas (ej: 170m), conservar el piso justo bajo rawMin para que la dinámica sea visible y no una línea plana
-      minY = Math.max(0, rawMin - bottomMargin);
-    } else {
-      // Para caudales y ríos pequeños cerca de 0 m o 0 m³/s
-      minY = Math.max(0, rawMin - bottomMargin);
-      if (rawMin < 0.2) minY = 0;
+      const margin = span * 0.15;
+      minY = rawMin - margin;
+      maxY = rawMax + margin;
     }
 
     const rangeY = maxY - minY || 1;
@@ -5930,12 +5920,18 @@ export class LayerManager {
     // Cuadrícula y Ejes Y (4 divisiones)
     const gridLines = [];
     const yLabels = [];
+    const formatY = (v) => {
+      if (rangeY < 0.05) return v.toFixed(3);
+      if (rangeY < 2) return v.toFixed(2);
+      if (rangeY < 50) return v.toFixed(1);
+      return v >= 1000 ? v.toFixed(0) : v.toFixed(1);
+    };
     for (let i = 0; i <= 4; i++) {
       const val = minY + (rangeY * (i / 4));
       const y = pad.top + innerH - (innerH * (i / 4));
       const yF = y.toFixed(1);
       gridLines.push(`<line x1="${pad.left}" y1="${yF}" x2="${pad.left + innerW}" y2="${yF}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`);
-      yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
+      yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${formatY(val)}</text>`);
     }
 
     // Ejes X y Fechas (4 divisiones regulares en el tiempo en hora oficial de España)
@@ -7503,19 +7499,26 @@ export class LayerManager {
     const sortedPoints = [...points].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 
     const values = sortedPoints.map(p => Number(p.valor));
-    const rawMax = Math.max(...values, 0.1);
-    const rawMin = Math.min(...values);
 
-    // Escala Y adaptativa: si capNMN es relevante (< 1.35x de rawMax), lo mostramos; de lo contrario ajustamos al rango de datos con margen
+    // Calcular límites Y centrados exactamente entre el máximo y el mínimo del periodo para apreciar la variación
+    const rawMax = Math.max(...values);
+    const rawMin = Math.min(...values);
+    const span = rawMax - rawMin;
+
     let maxY, minY;
-    if (capNMN && capNMN <= rawMax * 1.35) {
-      maxY = Math.max(rawMax * 1.1, capNMN * 1.05);
-      minY = Math.max(0, rawMin - Math.max((rawMax - rawMin) * 0.2, 0.1));
+    if (span === 0) {
+      if (rawMax === 0) {
+        minY = 0;
+        maxY = 1;
+      } else {
+        const padVal = Math.max(Math.abs(rawMax) * 0.05, 0.2);
+        minY = rawMin - padVal;
+        maxY = rawMax + padVal;
+      }
     } else {
-      const span = rawMax - rawMin;
-      const margin = Math.max(span * 0.35, rawMax * 0.08, 0.1);
+      const margin = span * 0.15;
+      minY = rawMin - margin;
       maxY = rawMax + margin;
-      minY = Math.max(0, rawMin - margin * 0.8);
     }
     const rangeY = maxY - minY || 1;
 
@@ -7561,12 +7564,18 @@ export class LayerManager {
     // Cuadrícula y Ejes Y (4 divisiones)
     const gridLines = [];
     const yLabels = [];
+    const formatY = (v) => {
+      if (rangeY < 0.05) return v.toFixed(3);
+      if (rangeY < 2) return v.toFixed(2);
+      if (rangeY < 50) return v.toFixed(1);
+      return v >= 1000 ? v.toFixed(0) : v.toFixed(1);
+    };
     for (let i = 0; i <= 4; i++) {
       const val = minY + (rangeY * (i / 4));
       const y = pad.top + innerH - (innerH * (i / 4));
       const yF = y.toFixed(1);
       gridLines.push(`<line x1="${pad.left}" y1="${yF}" x2="${pad.left + innerW}" y2="${yF}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`);
-      yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${val >= 10 ? val.toFixed(1) : val.toFixed(2)}</text>`);
+      yLabels.push(`<text x="${pad.left - 8}" y="${(y + 3.5).toFixed(1)}" fill="#94a3b8" font-size="10" font-weight="500" text-anchor="end">${formatY(val)}</text>`);
     }
 
     // Ejes X y Fechas (4 divisiones regulares en el tiempo en hora oficial de España)
