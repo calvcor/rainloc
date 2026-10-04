@@ -2755,53 +2755,13 @@ export class UIManager {
   resetHoverInfo() {}
 
   /**
-   * Genera la leyenda cartográfica contraíble por Sistemas de Explotación CHJ
+   * Genera la leyenda cartográfica contraíble por Sistemas de Explotación CHJ (desactivada)
    */
   renderLegend() {
-    if (!this.legendContainer) return;
-
-    const systems = Object.keys(CONFIG.systemColors).filter(s => s !== 'Default');
-    const miniDots = systems.map(sys => `<span class="legend-mini-dot" style="background-color: ${CONFIG.systemColors[sys]};"></span>`).join('');
-
-    let html = `
-      <div class="legend-header">
-        <div class="legend-title-row">
-          <div class="legend-title-group">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-              <polyline points="2 17 12 22 22 17"></polyline>
-              <polyline points="2 12 12 17 22 12"></polyline>
-            </svg>
-            <h4>Leyenda Cuencas</h4>
-          </div>
-          <svg class="legend-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </div>
-        <div class="legend-mini-preview" aria-hidden="true">
-          ${miniDots}
-        </div>
-      </div>
-      <div class="legend-body">
-        <div class="legend-subtitle">${systems.length} Sistemas de Explotación CHJ</div>
-        <div class="legend-items">
-    `;
-
-    systems.forEach(sys => {
-      const color = CONFIG.systemColors[sys];
-      html += `
-        <div class="legend-item" title="Sistema ${sys}">
-          <span class="legend-color-chip" style="background-color: ${color}; border-color: ${color};"></span>
-          <span class="legend-label">${sys}</span>
-        </div>
-      `;
-    });
-
-    html += `
-        </div>
-      </div>
-    `;
-    this.legendContainer.innerHTML = html;
+    if (this.legendContainer) {
+      this.legendContainer.innerHTML = '';
+      this.legendContainer.style.display = 'none';
+    }
   }
 
   /**
