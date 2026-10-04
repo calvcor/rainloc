@@ -29,11 +29,14 @@ export class MultiLayerInspector {
     this._lastInspectTime = 0;
     this._currentHoveredCuenca = null;
 
-    // Cache y debounce para consultas puntuales de reflectividad dBZ
-    this._lastRadarLookup = null;
-    this._dbzDebounceTimer = null;
+    // Control de debounce/idle para peticiones al backend durante el hover
+    this._idleHoverTimer = null;
+    this._idleHoverDelay = 200; // 200ms de inactividad tras parar el ratón
 
-    // Cache espacial e in-flight tracker para consultas de precisión milimétrica en modelos (ECMWF, GFS, AROME)
+    // Cache para consultas puntuales de reflectividad dBZ
+    this._lastRadarLookup = null;
+
+    // Cache espacial e in-flight tracker para consultas de precisión milimétrica en modelos (ECMWF, GFS, AROME, ICON, GEM, HARMONIE)
     this._modelValuesCache = new Map();
     this._modelRequestsInFlight = new Set();
 
@@ -546,27 +549,30 @@ export class MultiLayerInspector {
     }
   }
 
-  _debouncedFetchDbz(lat, lng, mode, stationId) {
-    if (this._dbzDebounceTimer) clearTimeout(this._dbzDebounceTimer);
-    this._dbzDebounceTimer = setTimeout(async () => {
-      try {
-        const url = `${CONFIG.apiBaseUrl}/radar/value-at?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&mode=${mode}&station_id=${stationId || ''}`;
-        const resp = await fetch(url);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.dbz !== null && data.dbz !== undefined) {
-            this._lastRadarLookup = { lat, lng, dbz: data.dbz, rain_intensity: data.rain_intensity };
-            // Forzar refresco inmediato si el cursor/tap sigue en la misma celda (< 0.08° ~ 8km)
-            const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
-            if (targetLatLng && Math.abs(targetLatLng.lat - lat) < 0.08 && Math.abs(targetLatLng.lng - lng) < 0.08) {
-              this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
-            }
+  async _fetchRadarDbz(lat, lng, mode = "composite", stationId = "") {
+    const cacheKey = `radar_${lat.toFixed(4)}_${lng.toFixed(4)}_${mode}_${stationId || ''}`;
+    if (this._modelRequestsInFlight.has(cacheKey)) return;
+    this._modelRequestsInFlight.add(cacheKey);
+
+    try {
+      const url = `${CONFIG.apiBaseUrl}/radar/value-at?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&mode=${mode}&station_id=${stationId || ''}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.dbz !== null && data.dbz !== undefined) {
+          this._lastRadarLookup = { lat, lng, dbz: data.dbz, rain_intensity: data.rain_intensity };
+          // Forzar refresco inmediato si el cursor/tap sigue en la misma celda (< 0.08° ~ 8km)
+          const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
+          if (targetLatLng && Math.abs(targetLatLng.lat - lat) < 0.08 && Math.abs(targetLatLng.lng - lng) < 0.08) {
+            this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng), false);
           }
         }
-      } catch (e) {
-        // Silencioso en caso de error de red
       }
-    }, 40);
+    } catch (e) {
+      // Silencioso en caso de error de red
+    } finally {
+      this._modelRequestsInFlight.delete(cacheKey);
+    }
   }
 
   _getModelCacheKey(modelKey, lat, lng, step, type) {
@@ -596,13 +602,13 @@ export class MultiLayerInspector {
       this._modelValuesCache.set(cacheKey, fallbackMm !== undefined ? fallbackMm : 0.0);
     } finally {
       this._modelRequestsInFlight.delete(cacheKey);
-      // Re-inspeccionar tanto en móvil/tablet (_activeMobileLatLng) como en PC (_lastLatLng)
+      // Re-inspeccionar tanto en móvil/tablet (_activeMobileLatLng) como en PC (_lastLatLng) sin disparar nuevas peticiones
       const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
       if (targetLatLng) {
         const dLat = Math.abs(targetLatLng.lat - lat);
         const dLng = Math.abs(targetLatLng.lng - lng);
         if (dLat < 0.15 && dLng < 0.15) {
-          this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
+          this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng), false);
         }
       }
     }
@@ -671,29 +677,49 @@ export class MultiLayerInspector {
       return;
     }
 
+    // Cancelar cualquier temporizador de backend previo porque el ratón se está moviendo
+    if (this._idleHoverTimer) {
+      clearTimeout(this._idleHoverTimer);
+      this._idleHoverTimer = null;
+    }
+
     this._lastLatLng = e.latlng;
 
+    // Inspección visual inmediata con píxeles locales del canvas (0ms / 0 peticiones de red)
     const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
     if (this._lastInspectTime && (now - this._lastInspectTime < 32)) {
       if (!this._hoverThrottle) {
         this._hoverThrottle = setTimeout(() => {
           this._hoverThrottle = null;
           this._lastInspectTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          this._inspectPoint(this._lastLatLng, false);
+          this._inspectPoint(this._lastLatLng, false, false);
         }, 32 - (now - this._lastInspectTime));
       }
-      return;
+    } else {
+      this._lastInspectTime = now;
+      if (this._hoverThrottle) {
+        clearTimeout(this._hoverThrottle);
+        this._hoverThrottle = null;
+      }
+      this._inspectPoint(this._lastLatLng, false, false);
     }
 
-    this._lastInspectTime = now;
-    if (this._hoverThrottle) {
-      clearTimeout(this._hoverThrottle);
-      this._hoverThrottle = null;
-    }
-    this._inspectPoint(this._lastLatLng, false);
+    // Disparar peticiones al backend (value-at / series) ÚNICAMENTE cuando el ratón esté completamente parado (delay 200ms)
+    this._idleHoverTimer = setTimeout(() => {
+      this._idleHoverTimer = null;
+      if (this._lastLatLng) {
+        this._inspectPoint(this._lastLatLng, false, true);
+      }
+    }, this._idleHoverDelay || 200);
   }
 
   _onMouseOut(e) {
+    // Cancelar temporizador pendiente de backend si el cursor sale del mapa
+    if (this._idleHoverTimer) {
+      clearTimeout(this._idleHoverTimer);
+      this._idleHoverTimer = null;
+    }
+
     // Si el evento proviene de touch o es un dispositivo táctil, no cerrar abruptamente
     if (e && e.originalEvent && (e.originalEvent.pointerType === 'touch' || e.originalEvent.touches)) {
       return;
@@ -713,6 +739,11 @@ export class MultiLayerInspector {
 
   _onMapClick(e) {
     if (!e || !e.latlng) return;
+
+    if (this._idleHoverTimer) {
+      clearTimeout(this._idleHoverTimer);
+      this._idleHoverTimer = null;
+    }
 
     if (window.RainLoc && window.RainLoc.layerManager && window.RainLoc.layerManager._findSaihFeatureAtPoint) {
       const hit = window.RainLoc.layerManager._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
@@ -760,13 +791,20 @@ export class MultiLayerInspector {
 
   inspectAtLatLng(latlng, isExplicit = false) {
     if (!latlng) return;
-    this._inspectPoint(latlng, isExplicit);
+    if (this._idleHoverTimer) {
+      clearTimeout(this._idleHoverTimer);
+      this._idleHoverTimer = null;
+    }
+    this._inspectPoint(latlng, isExplicit, true);
   }
 
   /**
    * Realiza la intersección geométrica del punto con todas las capas activas
+   * @param {L.LatLng} latlng - Coordenadas a inspeccionar
+   * @param {boolean} isExplicit - Si proviene de un click o tap explícito
+   * @param {boolean} fetchBackend - Si está permitido consultar el backend (solo cuando el ratón está parado 200ms o tap/click)
    */
-  _inspectPoint(latlng, isExplicit = false) {
+  _inspectPoint(latlng, isExplicit = false, fetchBackend = false) {
     if (!latlng || !this.map) return;
 
     this._lastLatLng = latlng;
@@ -830,12 +868,12 @@ export class MultiLayerInspector {
               </div>
             `;
           }
-        } else {
-          // Precalentar caché en background y refrescar UI al finalizar
+        } else if (fetchBackend) {
+          // Precalentar caché en background y refrescar UI al finalizar cuando el ratón está parado
           this.layerManager.fetchBasinHydrograph(activeModel, cuencaFound.feature.id).then(() => {
             const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
             if (targetLatLng) {
-              this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng));
+              this._inspectPoint(targetLatLng, Boolean(this._activeMobileLatLng), false);
             }
           });
         }
@@ -1103,9 +1141,9 @@ export class MultiLayerInspector {
                 `
               });
 
-              // Disparar consulta de calibración fina con debounce si no está en cache
-              if (!cached) {
-                this._debouncedFetchDbz(lat, lng, "composite", "");
+              // Disparar consulta de calibración fina al backend solo cuando el ratón está parado (delay 200ms)
+              if (!cached && fetchBackend) {
+                this._fetchRadarDbz(lat, lng, "composite", "");
               }
             }
           }
@@ -1623,7 +1661,9 @@ export class MultiLayerInspector {
             const displayMmStr = ecmwfPixel.mm >= 1 ? `~${ecmwfPixel.mm.toFixed(0)}` : `~${ecmwfPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${ecmwfPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ecmwfPixel.label}`;
-            this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('ecmwf', latlng.lat, latlng.lng, step, type, cacheKey, ecmwfPixel.mm);
+            }
           }
 
           sections.push({
@@ -1675,7 +1715,9 @@ export class MultiLayerInspector {
             const displayMmStr = gfsPixel.mm >= 1 ? `~${gfsPixel.mm.toFixed(0)}` : `~${gfsPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gfsPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gfsPixel.label}`;
-            this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('gfs', latlng.lat, latlng.lng, step, type, cacheKey, gfsPixel.mm);
+            }
           }
 
           sections.push({
@@ -1727,7 +1769,9 @@ export class MultiLayerInspector {
             const displayMmStr = aromePixel.mm >= 1 ? `~${aromePixel.mm.toFixed(0)}` : `~${aromePixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${aromePixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${aromePixel.label}`;
-            this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('arome', latlng.lat, latlng.lng, step, type, cacheKey, aromePixel.mm);
+            }
           }
 
           sections.push({
@@ -1779,7 +1823,9 @@ export class MultiLayerInspector {
             const displayMmStr = iconPixel.mm >= 1 ? `~${iconPixel.mm.toFixed(0)}` : `~${iconPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${iconPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${iconPixel.label}`;
-            this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, iconPixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('icon', latlng.lat, latlng.lng, step, type, cacheKey, iconPixel.mm);
+            }
           }
 
           sections.push({
@@ -1831,7 +1877,9 @@ export class MultiLayerInspector {
             const displayMmStr = gemPixel.mm >= 1 ? `~${gemPixel.mm.toFixed(0)}` : `~${gemPixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${gemPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${gemPixel.label}`;
-            this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, gemPixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('gem', latlng.lat, latlng.lng, step, type, cacheKey, gemPixel.mm);
+            }
           }
 
           sections.push({
@@ -1883,7 +1931,9 @@ export class MultiLayerInspector {
             const displayMmStr = harmoniePixel.mm >= 1 ? `~${harmoniePixel.mm.toFixed(0)}` : `~${harmoniePixel.mm.toFixed(1)}`;
             displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${harmoniePixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
             labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${harmoniePixel.label}`;
-            this._fetchModelValue('harmonie', latlng.lat, latlng.lng, step, type, cacheKey, harmoniePixel.mm);
+            if (fetchBackend) {
+              this._fetchModelValue('harmonie', latlng.lat, latlng.lng, step, type, cacheKey, harmoniePixel.mm);
+            }
           }
 
           sections.push({
