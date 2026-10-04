@@ -15,4 +15,4 @@ xarray>=2024.2.0
 cfgrib>=0.9.14
 eccodes>=1.7.0
 scipy>=1.12.0
-
+shapely>=2.0.0

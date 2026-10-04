@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 
 # Copiar código del backend y cartografía base requerida
 COPY backend/ ./backend/
+COPY data/ ./data/
 COPY subsistemas.optimized.geojson ./subsistemas.optimized.geojson
 COPY subsistemas.geojson ./subsistemas.geojson
 COPY ccaa.geojson ./ccaa.geojson
