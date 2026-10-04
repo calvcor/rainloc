@@ -518,7 +518,7 @@ export class UIManager {
       if (tabId === 'prediction') {
         quickMapsPanel.style.display = 'none';
         if (this._activeQuickMapPreset) {
-          this.clearActiveQuickMap(true);
+          this.deactivateQuickMap();
         }
       } else {
         quickMapsPanel.style.display = 'flex';
@@ -1244,7 +1244,6 @@ export class UIManager {
     // Switches de activación
     document.querySelectorAll('.layer-toggle-input').forEach(checkbox => {
       checkbox.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const layerId = e.target.getAttribute('data-layer-id');
         const isChecked = e.target.checked;
         const card = document.querySelector(`.layer-card[data-layer-id="${layerId}"]`);
@@ -1266,7 +1265,6 @@ export class UIManager {
     // Sub-switches de la Red SAIH (CHJ) y Pluviometría
     document.querySelectorAll('.saih-sublayer-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const sublayerId = e.target.getAttribute('data-sublayer-id');
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.toggleSaihSublayer) {
@@ -1279,7 +1277,6 @@ export class UIManager {
     const pluvioMasterCheckbox = document.getElementById('pluvio-master-toggle');
     if (pluvioMasterCheckbox) {
       pluvioMasterCheckbox.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.togglePluvioGroup) {
           this.layerManager.togglePluvioGroup(isChecked);
@@ -1290,7 +1287,6 @@ export class UIManager {
     // Modo de renderizado de Pluviómetros (Puntos vs Malla Suave Continua)
     document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        this.clearActiveQuickMap(true);
         const mode = e.currentTarget.getAttribute('data-pluvio-mode');
         document.querySelectorAll('.pluvio-mode-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1309,7 +1305,6 @@ export class UIManager {
     // Selector de periodo de acumulación de Malla de Lluvia (1h, 4h, 12h, 24h)
     document.querySelectorAll('.pluvio-period-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
-        this.clearActiveQuickMap(true);
         const period = e.currentTarget.getAttribute('data-period');
         document.querySelectorAll('.pluvio-period-chip').forEach(c => c.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1329,7 +1324,6 @@ export class UIManager {
     const meshLabelsToggle = document.getElementById('toggle-pluvio-mesh-labels');
     if (meshLabelsToggle) {
       meshLabelsToggle.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioMeshLabels) {
           this.layerManager.setPluvioMeshLabels(isChecked);
@@ -1354,7 +1348,6 @@ export class UIManager {
     const adaptiveZoomToggle = document.getElementById('toggle-pluvio-adaptive-zoom');
     if (adaptiveZoomToggle) {
       adaptiveZoomToggle.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioAdaptiveZoom) {
           this.layerManager.setPluvioAdaptiveZoom(isChecked);
@@ -1380,7 +1373,6 @@ export class UIManager {
     // Selector de periodo de Avisos AEMET (Activos ahora, Mañana, Pasado)
     document.querySelectorAll('.aemet-period-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        this.clearActiveQuickMap(true);
         const period = e.currentTarget.getAttribute('data-period');
         document.querySelectorAll('.aemet-period-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1413,7 +1405,6 @@ export class UIManager {
     const radarLightningToggle = document.getElementById('radar-lightning-toggle');
     if (radarLightningToggle) {
       radarLightningToggle.addEventListener('change', (e) => {
-        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         const container = document.getElementById('radar-lightning-container');
         if (container) {
