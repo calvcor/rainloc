@@ -631,9 +631,18 @@ export class LayerManager {
     const curIdx = steps.indexOf(currentStep);
     if (curIdx === -1) return;
 
-    // 1. Prioridad concéntrica desde el paso actual: +1, -1, +2, -2... hasta el final de la serie
+    // Limitar la precarga a un radio moderado de pasos adyacentes para no congestionar
+    // el canal HTTP ni la decodificación en memoria (especialmente en radar con hasta 288 pasos)
+    const isPlaying = (modelKey === 'radar' && this.isRadarPlaying) || 
+                      (modelKey === 'ecmwf' && this.isEcmwfPlaying) || 
+                      (modelKey === 'gfs' && this.isGfsPlaying) || 
+                      (modelKey === 'arome' && this.isAromePlaying) || 
+                      (modelKey === 'harmonie' && this.isHarmoniePlaying) || 
+                      (modelKey === 'icon' && this.isIconPlaying) || 
+                      (modelKey === 'gem' && this.isGemPlaying);
+
+    const maxRadius = isPlaying ? (modelKey === 'radar' ? 6 : 4) : (modelKey === 'radar' ? 3 : 2);
     const targetIndices = [];
-    const maxRadius = Math.max(curIdx, steps.length - 1 - curIdx);
     for (let r = 1; r <= maxRadius; r++) {
       if (curIdx + r < steps.length) targetIndices.push(curIdx + r);
       if (curIdx - r >= 0) targetIndices.push(curIdx - r);
@@ -649,8 +658,8 @@ export class LayerManager {
         if (!this._preloadInFlight.has(cacheKey)) {
           this._preloadInFlight.add(cacheKey);
           const imgUrl = getUrlFn(step, type);
-          // Prioridad alta inmediata (<10 pasos), y progresiva en segundo plano para el resto
-          const delay = priorityOrder < 10 ? 0 : Math.min((priorityOrder - 10) * 40, 800);
+          // Escalonar peticiones de forma suave para dejar prioridad absoluta a la imagen activa
+          const delay = (priorityOrder + 1) * 120;
           setTimeout(() => {
             this._fetchModelImage(imgUrl, undefined, cacheKey)
               .catch(() => {})
@@ -669,7 +678,7 @@ export class LayerManager {
           const maxPreloadKey = `max_${cacheKey}`;
           if (!this._preloadInFlight.has(maxPreloadKey)) {
             this._preloadInFlight.add(maxPreloadKey);
-            const delay = priorityOrder < 8 ? 0 : Math.min((priorityOrder - 8) * 50, 900);
+            const delay = (priorityOrder + 1) * 150;
             setTimeout(() => {
               fetch(maxUrl)
                 .then(r => r.ok ? r.json() : null)
@@ -1735,13 +1744,28 @@ export class LayerManager {
       const oldTimeline = this.radarTimeline || [];
       const wasLive = !this.currentRadarTimestep || (oldTimeline.length > 0 && this.currentRadarTimestep === oldTimeline[oldTimeline.length - 1]?.timestep);
 
-      if (!this.radarMetadata || forceMetaFetch || !this.radarTimeline || this.radarTimeline.length === 0) {
-        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`);
-        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
-        const metadata = await metaResp.json();
+      const needsMeta = !this.radarMetadata || forceMetaFetch || !this.radarTimeline || this.radarTimeline.length === 0;
+      let initialImagePromise = null;
+
+      if (needsMeta) {
+        if (forceMetaFetch) this._clearModelImageCache('radar');
+
+        // Petición de metadatos
+        const metaPromise = fetch(`${CONFIG.apiBaseUrl}/radar/metadata?_t=${Date.now()}`).then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        });
+
+        // Si no teníamos timestep (arranque en frío), lanzar en paralelo la descarga del compuesto más reciente para velocidad instantánea
+        if (!this.currentRadarTimestep) {
+          const directLatestUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(this.currentRadarMode || 'mixed')}`;
+          const signal = this._getModelAbortSignal('radar');
+          initialImagePromise = this._fetchModelImage(directLatestUrl, signal, null).catch(() => null);
+        }
+
+        const metadata = await metaPromise;
         this.radarMetadata = metadata;
         this.radarTimeline = metadata.timeline || [];
-        if (forceMetaFetch) this._clearModelImageCache('radar');
       }
 
       const metadata = this.radarMetadata;
@@ -1790,10 +1814,23 @@ export class LayerManager {
         this._showMapLoading('Radar Meteorológico', '', timeText);
       }
 
-      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
+      let imageResult = null;
+      if (initialImagePromise && isLive) {
+        imageResult = await initialImagePromise;
+        if (imageResult) {
+          this._modelImageStore.set(cacheKey, { ...imageResult, imgUrl });
+        }
+      }
+
+      if (!imageResult) {
+        imageResult = await this._fetchModelImage(imgUrl, signal, cacheKey);
+      }
+
       if (requestId !== this._radarStepRequestId) {
         return;
       }
+
+      const { img: offscreenImg, objectUrl } = imageResult;
 
       // Actualizar canvas único de inspección bajo demanda (solo en escritorio)
       const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, currentStep, timeText, { mode: 'composite' });
@@ -1818,7 +1855,12 @@ export class LayerManager {
       }
       this._currentRadarObjectUrl = objectUrl;
 
-      this._preloadRadarSteps(currentStep);
+      // Precargar fotogramas adyacentes de forma diferida tras renderizar la imagen activa
+      setTimeout(() => {
+        if (requestId === this._radarStepRequestId) {
+          this._preloadRadarSteps(currentStep);
+        }
+      }, 150);
 
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -3913,6 +3955,12 @@ export class LayerManager {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'radar_update' || data.event === 'radar_init')) {
+            const isMounted = this.isLayerOnMap('radar');
+            // En el evento init inicial, si la capa no está en el mapa y ya tenemos o no requerimos metadatos, evitar peticiones duplicadas
+            if (data.event === 'radar_init' && !isMounted && this.radarMetadata) {
+              return;
+            }
+
             console.log('📡 Notificación SSE de radar recibida:', data.timestep);
 
             const oldTimeline = this.radarTimeline || [];
@@ -3949,7 +3997,7 @@ export class LayerManager {
               }
 
               // Recargar la imagen del radar si la capa está activa en el mapa
-              if (this.isLayerOnMap('radar')) {
+              if (isMounted) {
                 this.reloadRadarLayer(false);
               }
 
@@ -4000,6 +4048,11 @@ export class LayerManager {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'ecmwf_update' || data.event === 'ecmwf_init')) {
+            const isMounted = this.isLayerOnMap('ecmwf_ifs');
+            if (data.event === 'ecmwf_init' && !isMounted && this.ecmwfMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE ECMWF IFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4029,7 +4082,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('ecmwf_ifs')) {
+              if (isMounted) {
                 this.reloadEcmwfLayer();
               }
             }
@@ -4075,6 +4128,11 @@ export class LayerManager {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'gfs_update' || data.event === 'gfs_init')) {
+            const isMounted = this.isLayerOnMap('gfs_0p25');
+            if (data.event === 'gfs_init' && !isMounted && this.gfsMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE NOAA GFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4105,7 +4163,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('gfs_0p25')) {
+              if (isMounted) {
                 this.reloadGfsLayer();
               }
             }
@@ -4151,6 +4209,11 @@ export class LayerManager {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'arome_update' || data.event === 'arome_init')) {
+            const isMounted = this.isLayerOnMap('arome_precip');
+            if (data.event === 'arome_init' && !isMounted && this.aromeMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE AROME recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4181,7 +4244,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('arome_precip')) {
+              if (isMounted) {
                 this.reloadAromeLayer();
               }
             }
@@ -4227,6 +4290,11 @@ export class LayerManager {
         try {
           const data = JSON.parse(event.data);
           if (data && (data.event === 'harmonie_update' || data.event === 'harmonie_init')) {
+            const isMounted = this.isLayerOnMap('harmonie_aemet');
+            if (data.event === 'harmonie_init' && !isMounted && this.harmonieMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE Harmonie recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4257,7 +4325,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('harmonie_aemet')) {
+              if (isMounted) {
                 this.reloadHarmonieLayer();
               }
             }
@@ -4301,6 +4369,11 @@ export class LayerManager {
           if (!event.data) return;
           const data = JSON.parse(event.data);
           if (data && (data.event === 'icon_update' || data.event === 'icon_init')) {
+            const isMounted = this.isLayerOnMap('icon_eu');
+            if (data.event === 'icon_init' && !isMounted && this.iconMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE ICON-EU recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4331,7 +4404,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('icon_eu')) {
+              if (isMounted) {
                 this.reloadIconLayer();
               }
             }
@@ -4375,6 +4448,11 @@ export class LayerManager {
           if (!event.data) return;
           const data = JSON.parse(event.data);
           if (data && (data.event === 'gem_update' || data.event === 'gem_init')) {
+            const isMounted = this.isLayerOnMap('gem_gdps');
+            if (data.event === 'gem_init' && !isMounted && this.gemMetadata) {
+              return;
+            }
+
             console.log('🌐 Notificación SSE GEM-GDPS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
             // Refrescar metadatos completos desde la API
@@ -4405,7 +4483,7 @@ export class LayerManager {
               }
 
               // Si la capa está montada en el mapa, refrescar el raster
-              if (this.isLayerOnMap('gem_gdps')) {
+              if (isMounted) {
                 this.reloadGemLayer();
               }
             }
