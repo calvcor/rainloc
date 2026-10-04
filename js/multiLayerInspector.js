@@ -1340,11 +1340,15 @@ export class MultiLayerInspector {
       }
 
       // 2.4 Malla Suave de Acumulados de Lluvia (Interpolación Dinámica en Navegador)
-      if (this.layerManager && this.layerManager.pluvioRenderMode === 'mesh') {
+      const isPluvioMeshOn = this.layerManager && (
+        (typeof this.layerManager.isPluvioMeshActive === 'function' && this.layerManager.isPluvioMeshActive()) ||
+        this.layerManager.pluvioRenderMode === 'mesh'
+      );
+      if (isPluvioMeshOn) {
         const isSaihActive = Boolean(this.layerManager.layerStates['saih_hidrologia'] && this.layerManager.layerStates['saih_hidrologia'].active);
         if (isSaihActive && this.layerManager.getPluvioMeshValueAt) {
           const meshData = this.layerManager.getPluvioMeshValueAt(latlng.lat, latlng.lng);
-          if (meshData && meshData.value !== null) {
+          if (meshData && meshData.value !== null && meshData.value >= 0.5) {
             const val = meshData.value;
             const period = (meshData.period || '24h').toUpperCase();
             const periodLabel = `Acumulado ${period}`;

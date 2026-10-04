@@ -4664,6 +4664,12 @@ export class LayerManager {
    */
   getPluvioMeshValueAt(lat, lon) {
     if (!this.isPluvioMeshActive()) return null;
+
+    // Verificar si el punto está efectivamente pintado en el canvas (sobre tierra y con precipitación visible)
+    if (typeof rainInterpolator.isPixelPainted === 'function' && !rainInterpolator.isPixelPainted(lat, lon)) {
+      return null;
+    }
+
     const allFeatures = this.getAllActivePluvioFeatures();
     if (!allFeatures || allFeatures.length === 0) return null;
 
@@ -4671,7 +4677,7 @@ export class LayerManager {
     if (!points || points.length === 0) return null;
 
     const val = rainInterpolator.sampleValueAt(lat, lon, points);
-    if (val === null) return null;
+    if (val === null || val < 0.5) return null;
 
     let nearestStation = null;
     let minDistanceKm = 9999;

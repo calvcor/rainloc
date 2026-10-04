@@ -293,6 +293,21 @@ export class RainInterpolator {
       this._applyGeoMask(ctx, options.maskGeoJson, { minLat, maxLat, minLon, maxLon, width, height, yMin, yMax, ySpan });
     }
 
+    // Guardar los datos del renderizado actual para consulta ultrarrápida del pixel (Alpha / Máscara de mar)
+    this.lastRenderData = {
+      canvas,
+      ctx,
+      width,
+      height,
+      minLat,
+      maxLat,
+      minLon,
+      maxLon,
+      yMin,
+      yMax,
+      ySpan
+    };
+
     return {
       dataUrl: canvas.toDataURL('image/png'),
       bounds: [
@@ -302,6 +317,33 @@ export class RainInterpolator {
       maxObsVal,
       pointsCount: points.length
     };
+  }
+
+  /**
+   * Comprueba si el píxel en (lat, lon) está efectivamente pintado en el canvas (sobre tierra y con lluvia)
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {boolean}
+   */
+  isPixelPainted(lat, lon) {
+    if (!this.lastRenderData) return false;
+    const { ctx, width, height, minLat, maxLat, minLon, maxLon, yMin, yMax, ySpan } = this.lastRenderData;
+
+    if (lat < minLat || lat > maxLat || lon < minLon || lon > maxLon) return false;
+
+    const yPt = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 360)));
+    const y = Math.floor(((yMax - yPt) / ySpan) * height);
+    const x = Math.floor(((lon - minLon) / (maxLon - minLon)) * width);
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return false;
+
+    try {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      // Alpha >= 30 indica que el píxel está dentro de la máscara de tierra y tiene lluvia renderizada
+      return pixel[3] >= 30;
+    } catch (e) {
+      return false;
+    }
   }
 
   /**
