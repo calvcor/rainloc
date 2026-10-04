@@ -23,24 +23,24 @@ export const CONFIG = {
   // Rutas candidatas para el GeoJSON de cuencas/subsistemas y CCAA (prioriza Backend API con fallback local)
   dataSources: {
     subsistemasGeoJson: [
-      `${apiBase}/cuencas`,
+      `${apiBase}/cuencas?v=3.71`,
       './subsistemas.optimized.geojson',
       './subsistemas.geojson',
       './data/subsistemas.geojson',
       './data/cuencas.geojson'
     ],
     ebroCuencasGeoJson: [
-      `${apiBase}/cuencas/ebro`,
+      `${apiBase}/cuencas/ebro?v=3.71`,
       './data/ebro_subcuencas.geojson',
       './ebro_subcuencas.geojson'
     ],
     seguraCuencasGeoJson: [
-      `${apiBase}/cuencas/segura`,
+      `${apiBase}/cuencas/segura?v=3.71`,
       './data/segura_subcuencas.geojson',
       './segura_subcuencas.geojson'
     ],
     guadalquivirCuencasGeoJson: [
-      `${apiBase}/cuencas/guadalquivir`,
+      `${apiBase}/cuencas/guadalquivir?v=3.71`,
       './data/guadalquivir_subcuencas.geojson',
       './guadalquivir_subcuencas.geojson'
     ],
