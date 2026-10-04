@@ -358,7 +358,8 @@ export class LayerManager {
     }
 
     if (def.id === 'aemet_warnings') {
-      this._loadAemetWarnings(layerGroup, opacity);
+      const period = this.currentAemetPeriod || 'now';
+      this._loadAemetWarnings(layerGroup, opacity, period);
     } 
     else if (def.id === 'radar') {
       this._loadRadarLayer(layerGroup, opacity);
@@ -894,7 +895,13 @@ export class LayerManager {
           }
           this.reloadRadarLayer();
         } else if (def.id === 'aemet_warnings') {
+          if (!this.currentAemetPeriod) {
+            this.currentAemetPeriod = 'now';
+          }
           this.reloadAemetWarnings();
+          if (this.uiManager && this.uiManager.updateAemetPeriodButtons) {
+            this.uiManager.updateAemetPeriodButtons(this.currentAemetPeriod);
+          }
         }
       } else {
         this._hideLayerFromMap(def.id);
@@ -1329,6 +1336,19 @@ export class LayerManager {
           }
           this._stopLightningSSE();
           this._stopLightningAgingTimer();
+        }
+      }
+
+      if (layerId === 'aemet_warnings') {
+        if (active) {
+          if (!this.currentAemetPeriod) {
+            this.currentAemetPeriod = 'now';
+            StorageManager.setAemetPeriod('now');
+          }
+          this.reloadAemetWarnings();
+          if (this.uiManager && this.uiManager.updateAemetPeriodButtons) {
+            this.uiManager.updateAemetPeriodButtons(this.currentAemetPeriod);
+          }
         }
       }
     }
