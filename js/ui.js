@@ -862,6 +862,20 @@ export class UIManager {
                 </div>
               </div>
 
+              <!-- Control de Zoom Interactivo y Adaptativo (LOD) -->
+              <div class="saih-adaptive-zoom-block">
+                <label class="saih-adaptive-zoom-label" title="Ajusta automáticamente el nivel de detalle según la escala del mapa: Malla suave en vista lejana, valores en vista media y estaciones detalladas al acercarte">
+                  <input type="checkbox" id="toggle-pluvio-adaptive-zoom" class="saih-adaptive-zoom-checkbox" ${((this.layerManager && this.layerManager.pluvioAdaptiveZoom !== undefined) ? this.layerManager.pluvioAdaptiveZoom : (prefs.pluvioAdaptiveZoom !== undefined ? prefs.pluvioAdaptiveZoom : true)) ? 'checked' : ''}>
+                  <div class="saih-adaptive-zoom-info">
+                    <div class="saih-adaptive-zoom-title-row">
+                      <span class="saih-adaptive-zoom-title">🔍 Zoom interactivo por escala (LOD)</span>
+                      <span class="saih-adaptive-zoom-badge ${((this.layerManager && this.layerManager.pluvioAdaptiveZoom !== undefined) ? this.layerManager.pluvioAdaptiveZoom : (prefs.pluvioAdaptiveZoom !== undefined ? prefs.pluvioAdaptiveZoom : true)) ? '' : 'disabled'}">${((this.layerManager && this.layerManager.pluvioAdaptiveZoom !== undefined) ? this.layerManager.pluvioAdaptiveZoom : (prefs.pluvioAdaptiveZoom !== undefined ? prefs.pluvioAdaptiveZoom : true)) ? 'Activo' : 'Desactivado'}</span>
+                    </div>
+                    <span class="saih-adaptive-zoom-desc">Malla suave en zoom lejano &bull; Valores en zoom medio &bull; Puntos al acercarte</span>
+                  </div>
+                </label>
+              </div>
+
               <!-- Bloque de Atribución Legal y Licencias de Reutilización -->
               <div class="saih-sources-legal-block">
                 <div class="saih-sources-legal-header">
@@ -1284,6 +1298,17 @@ export class UIManager {
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioMeshLabels) {
           this.layerManager.setPluvioMeshLabels(isChecked);
+        }
+      });
+    }
+
+    // Toggle de Zoom Interactivo y Adaptativo por Escala (LOD)
+    const adaptiveZoomToggle = document.getElementById('toggle-pluvio-adaptive-zoom');
+    if (adaptiveZoomToggle) {
+      adaptiveZoomToggle.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        if (this.layerManager && this.layerManager.setPluvioAdaptiveZoom) {
+          this.layerManager.setPluvioAdaptiveZoom(isChecked);
         }
       });
     }
@@ -2789,13 +2814,49 @@ export class UIManager {
   }
 
   /**
+   * Actualiza los controles UI del Zoom Interactivo / Adaptativo (LOD)
+   */
+  updatePluvioAdaptiveZoomUI() {
+    if (!this.layerManager) return;
+    const isAdaptive = Boolean(this.layerManager.pluvioAdaptiveZoom);
+    const adaptiveToggle = document.getElementById('toggle-pluvio-adaptive-zoom');
+    if (adaptiveToggle) {
+      adaptiveToggle.checked = isAdaptive;
+    }
+
+    const adaptiveBadge = document.querySelector('.saih-adaptive-zoom-badge');
+    if (adaptiveBadge) {
+      adaptiveBadge.textContent = isAdaptive ? 'Activo' : 'Desactivado';
+      adaptiveBadge.classList.toggle('disabled', !isAdaptive);
+    }
+
+    const meshPanel = document.getElementById('pluvio-mesh-options-panel');
+    if (meshPanel) {
+      const isMeshActive = this.layerManager.isPluvioMeshActive();
+      meshPanel.style.display = isMeshActive ? 'block' : 'none';
+    }
+
+    const effectiveMode = isAdaptive 
+      ? (this.layerManager._effectivePluvioMode || (this.layerManager.map?.getZoom() < 10.5 ? 'mesh' : 'points'))
+      : this.layerManager.pluvioRenderMode;
+
+    document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
+      const btnMode = btn.getAttribute('data-pluvio-mode');
+      btn.classList.toggle('active', btnMode === effectiveMode);
+    });
+  }
+
+  /**
    * Actualiza el estado visual de los controles de la malla de lluvia
    */
   updatePluvioMeshUI() {
     if (!this.layerManager) return;
-    const mode = this.layerManager.pluvioRenderMode;
+    const isAdaptive = Boolean(this.layerManager.pluvioAdaptiveZoom);
+    const mode = isAdaptive 
+      ? (this.layerManager._effectivePluvioMode || (this.layerManager.map?.getZoom() < 10.5 ? 'mesh' : 'points'))
+      : this.layerManager.pluvioRenderMode;
     const period = this.layerManager.pluvioMeshPeriod;
-    const labels = this.layerManager.pluvioMeshLabels;
+    const labels = isAdaptive ? this.layerManager.isPluvioMeshLabelsActive() : this.layerManager.pluvioMeshLabels;
 
     document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-pluvio-mode') === mode);
@@ -2803,7 +2864,8 @@ export class UIManager {
 
     const meshPanel = document.getElementById('pluvio-mesh-options-panel');
     if (meshPanel) {
-      meshPanel.style.display = (mode === 'mesh') ? 'block' : 'none';
+      const isMeshActive = this.layerManager.isPluvioMeshActive();
+      meshPanel.style.display = isMeshActive ? 'block' : 'none';
     }
 
     document.querySelectorAll('.pluvio-period-chip').forEach(chip => {

@@ -95,6 +95,9 @@ export class LayerManager {
 
     // Estado del Mapa Suave de Acumulados de Lluvia (Interpolación en Navegador)
     this.pluvioRenderMode = prefs.pluvioRenderMode || 'points'; // 'points' | 'mesh'
+    this.pluvioAdaptiveZoom = (prefs.pluvioAdaptiveZoom !== undefined) ? Boolean(prefs.pluvioAdaptiveZoom) : true;
+    this._effectivePluvioMode = null; // 'points' | 'mesh' cuando está en modo adaptativo
+    this._effectivePluvioLabels = null; // boolean cuando está en modo adaptativo
     this.pluvioMeshPeriod = prefs.pluvioMeshPeriod || '24h'; // '1h' | '4h' | '12h' | '24h'
     this.pluvioMeshLabels = (prefs.pluvioMeshLabels !== undefined) ? Boolean(prefs.pluvioMeshLabels) : false;
     this.pluvioMeshOpacity = prefs.pluvioMeshOpacity !== undefined ? parseFloat(prefs.pluvioMeshOpacity) : 0.85;
@@ -242,6 +245,22 @@ export class LayerManager {
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
     this.startAutoRefresh(refreshSec);
+
+    // Escuchar eventos de cambio de zoom del mapa para la visualización interactiva / adaptativa (LOD)
+    if (this.map) {
+      this.map.on('zoomend', () => {
+        if (this.pluvioAdaptiveZoom) {
+          this._handlePluvioZoomChange();
+        }
+      });
+    }
+
+    // Sincronizar estado adaptativo inicial tras la carga
+    if (this.pluvioAdaptiveZoom && this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active) {
+      setTimeout(() => {
+        this._handlePluvioZoomChange();
+      }, 50);
+    }
   }
 
   /**
@@ -789,7 +808,7 @@ export class LayerManager {
         const state = this.layerStates[def.id];
         if (def.type === 'saih_group') {
           if (state && state.active && Array.isArray(def.subLayers)) {
-            if (this.pluvioRenderMode === 'mesh') {
+            if (this.isPluvioMeshActive()) {
               this.updatePluvioMesh();
             }
             def.subLayers.forEach(sub => {
@@ -4381,10 +4400,157 @@ export class LayerManager {
   }
 
   /**
+   * Determina si el modo activo efectivo para pluviometría es la malla continua
+   */
+  isPluvioMeshActive() {
+    if (this.pluvioAdaptiveZoom) {
+      if (this._effectivePluvioMode !== null && this._effectivePluvioMode !== undefined) {
+        return this._effectivePluvioMode === 'mesh';
+      }
+      const zoom = this.map ? this.map.getZoom() : 8;
+      return zoom < 10.5;
+    }
+    return this.pluvioRenderMode === 'mesh';
+  }
+
+  /**
+   * Determina si las etiquetas numéricas de la malla deben estar visibles
+   */
+  isPluvioMeshLabelsActive() {
+    if (this.pluvioAdaptiveZoom) {
+      if (this._effectivePluvioLabels !== null && this._effectivePluvioLabels !== undefined) {
+        return Boolean(this._effectivePluvioLabels);
+      }
+      const zoom = this.map ? this.map.getZoom() : 8;
+      return zoom >= 8.5 && zoom < 10.5;
+    }
+    return Boolean(this.pluvioMeshLabels);
+  }
+
+  /**
+   * Gestiona el cambio de nivel de detalle (LOD) de pluviometría según el zoom del mapa
+   */
+  _handlePluvioZoomChange() {
+    if (!this.pluvioAdaptiveZoom || !this.map) return;
+    const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+    if (!isMasterActive) return;
+
+    const zoom = this.map.getZoom();
+
+    if (zoom < 8.5) {
+      // Nivel 1: Zoom Lejano (< 8.5) -> Malla continua suave limpia, sin etiquetas, 0 puntos individuales en DOM
+      this._applyAdaptivePluvioState('mesh', false);
+    } else if (zoom < 10.5) {
+      // Nivel 2: Zoom Medio (8.5 - 10.5) -> Malla continua con etiquetas numéricas de acumulado
+      this._applyAdaptivePluvioState('mesh', true);
+    } else {
+      // Nivel 3: Zoom Cercano / Detalle (>= 10.5) -> Puntos individuales interactivos (pluviómetros)
+      this._applyAdaptivePluvioState('points', false);
+    }
+  }
+
+  /**
+   * Aplica un estado adaptativo a la red de pluviometría
+   * @param {'points' | 'mesh'} targetMode 
+   * @param {boolean} showLabels 
+   */
+  _applyAdaptivePluvioState(targetMode, showLabels = false) {
+    const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+    if (!isMasterActive) return;
+
+    const modeChanged = this._effectivePluvioMode !== targetMode;
+    const labelsChanged = this._effectivePluvioLabels !== showLabels;
+
+    this._effectivePluvioMode = targetMode;
+    this._effectivePluvioLabels = showLabels;
+
+    if (targetMode === 'mesh') {
+      // Limpiar puntos individuales de todas las subcapas de pluviometría
+      const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+      pluvioIds.forEach(id => {
+        if (this.layers[id]) this.layers[id].clearLayers();
+      });
+
+      this._ensureAllPluvioFeaturesLoaded().then(() => {
+        this.updatePluvioMesh();
+      });
+    } else {
+      // targetMode === 'points': Ocultar malla y etiquetas
+      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      this.pluvioLabelsGroup.clearLayers();
+      if (this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
+
+      if (modeChanged) {
+        this._reloadActivePluvioPointLayers();
+      }
+    }
+
+    if (this.uiManager && this.uiManager.updatePluvioAdaptiveZoomUI) {
+      this.uiManager.updatePluvioAdaptiveZoomUI();
+    }
+  }
+
+  /**
+   * Activa o desactiva la opción de visualización interactiva / adaptativa por zoom (LOD)
+   * @param {boolean} enabled 
+   */
+  setPluvioAdaptiveZoom(enabled) {
+    this.pluvioAdaptiveZoom = Boolean(enabled);
+    StorageManager.setPluvioAdaptiveZoom(this.pluvioAdaptiveZoom);
+
+    if (this.pluvioAdaptiveZoom) {
+      this._handlePluvioZoomChange();
+    } else {
+      // Restaurar el modo manual seleccionado por el usuario ('points' o 'mesh')
+      this._effectivePluvioMode = null;
+      this._effectivePluvioLabels = null;
+      if (this.pluvioRenderMode === 'mesh') {
+        const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+        pluvioIds.forEach(id => {
+          if (this.layers[id]) this.layers[id].clearLayers();
+        });
+        this._ensureAllPluvioFeaturesLoaded().then(() => {
+          this.updatePluvioMesh();
+        });
+      } else {
+        if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+          this.map.removeLayer(this.pluvioMeshOverlay);
+        }
+        this.pluvioLabelsGroup.clearLayers();
+        if (this.map.hasLayer(this.pluvioLabelsGroup)) {
+          this.map.removeLayer(this.pluvioLabelsGroup);
+        }
+        this._reloadActivePluvioPointLayers();
+      }
+    }
+
+    if (this.uiManager && this.uiManager.updatePluvioAdaptiveZoomUI) {
+      this.uiManager.updatePluvioAdaptiveZoomUI();
+    }
+    if (this.uiManager && this.uiManager.updatePluvioMeshUI) {
+      this.uiManager.updatePluvioMeshUI();
+    }
+  }
+
+  /**
    * Cambia el modo de visualización de pluviómetros: 'points' (puntos) o 'mesh' (malla suave continua)
    * @param {'points' | 'mesh'} mode
    */
   setPluvioRenderMode(mode) {
+    if (this.pluvioAdaptiveZoom) {
+      this.pluvioAdaptiveZoom = false;
+      StorageManager.setPluvioAdaptiveZoom(false);
+      this._effectivePluvioMode = null;
+      this._effectivePluvioLabels = null;
+      if (this.uiManager && this.uiManager.updatePluvioAdaptiveZoomUI) {
+        this.uiManager.updatePluvioAdaptiveZoomUI();
+      }
+    }
+
     if (this.pluvioRenderMode === mode) return;
     this.pluvioRenderMode = mode;
     StorageManager.setPluvioRenderMode(mode);
@@ -4425,7 +4591,7 @@ export class LayerManager {
     this.pluvioMeshPeriod = period;
     StorageManager.setPluvioMeshPeriod(period);
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     }
 
@@ -4442,7 +4608,7 @@ export class LayerManager {
     this.pluvioMeshLabels = Boolean(show);
     StorageManager.setPluvioMeshLabels(this.pluvioMeshLabels);
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     }
   }
@@ -4497,7 +4663,7 @@ export class LayerManager {
    * @returns {Object|null} { value, period, nearestStation, nearestDistanceKm }
    */
   getPluvioMeshValueAt(lat, lon) {
-    if (this.pluvioRenderMode !== 'mesh') return null;
+    if (!this.isPluvioMeshActive()) return null;
     const allFeatures = this.getAllActivePluvioFeatures();
     if (!allFeatures || allFeatures.length === 0) return null;
 
@@ -4553,7 +4719,9 @@ export class LayerManager {
    */
   updatePluvioMesh() {
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
-    if (!isMasterActive || this.pluvioRenderMode !== 'mesh') {
+    const isMeshActive = this.isPluvioMeshActive();
+
+    if (!isMasterActive || !isMeshActive) {
       if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
         this.map.removeLayer(this.pluvioMeshOverlay);
       }
@@ -4567,7 +4735,7 @@ export class LayerManager {
     const allFeatures = this.getAllActivePluvioFeatures();
     if (!allFeatures || allFeatures.length === 0) {
       this._ensureAllPluvioFeaturesLoaded().then(() => {
-        if (this.pluvioRenderMode === 'mesh') this.updatePluvioMesh();
+        if (this.isPluvioMeshActive()) this.updatePluvioMesh();
       });
       return;
     }
@@ -4604,10 +4772,25 @@ export class LayerManager {
 
     // Actualizar capa de etiquetas numéricas sobre el mapa
     this.pluvioLabelsGroup.clearLayers();
-    if (this.pluvioMeshLabels) {
+    const showLabels = this.isPluvioMeshLabelsActive();
+
+    if (showLabels) {
       // Filtrar estaciones con precipitación significativa (>= 0.5 mm) para máxima claridad visual
       const labeledPoints = points.filter(p => p.val >= 0.5);
+      // Ordenar por mayor precipitación para priorizar estaciones con más lluvia al filtrar solapes
+      labeledPoints.sort((a, b) => b.val - a.val);
+
+      const placedPointsPix = [];
+      const minDistancePix = 28; // Mínimo 28px de separación en pantalla para evitar solapes de texto
+
       labeledPoints.forEach(pt => {
+        if (this.map) {
+          const ptPix = this.map.latLngToLayerPoint([pt.lat, pt.lon]);
+          const tooClose = placedPointsPix.some(p => Math.hypot(p.x - ptPix.x, p.y - ptPix.y) < minDistancePix);
+          if (tooClose) return;
+          placedPointsPix.push(ptPix);
+        }
+
         const valText = pt.val >= 10 ? Math.round(pt.val) : pt.val.toFixed(1);
         const labelIcon = L.divIcon({
           className: 'pluvio-mesh-val-label',
@@ -4630,6 +4813,11 @@ export class LayerManager {
         this.map.removeLayer(this.pluvioLabelsGroup);
       }
     }
+
+    if (this.uiManager && this.uiManager.updatePluvioMeshLegend) {
+      this.uiManager.updatePluvioMeshLegend(this.pluvioMeshPeriod, result.maxObsVal, points.length);
+    }
+  }
 
     if (this.uiManager && this.uiManager.updatePluvioMeshLegend) {
       this.uiManager.updatePluvioMeshLegend(this.pluvioMeshPeriod, result.maxObsVal, points.length);
@@ -5715,7 +5903,7 @@ export class LayerManager {
     this._lluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     } else {
       const lluviasGeoJSON = L.geoJSON(geojson, {
@@ -5836,7 +6024,7 @@ export class LayerManager {
     this._aemetLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     } else {
       const aemetLluviasGeoJSON = L.geoJSON(geojson, {
@@ -5954,7 +6142,7 @@ export class LayerManager {
     this._avametLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     } else {
       const avametLluviasGeoJSON = L.geoJSON(geojson, {
@@ -6072,7 +6260,7 @@ export class LayerManager {
     this._meteocatLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     } else {
       const meteocatLluviasGeoJSON = L.geoJSON(geojson, {
@@ -6189,7 +6377,7 @@ export class LayerManager {
     this._hidrosurLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
-    if (this.pluvioRenderMode === 'mesh') {
+    if (this.isPluvioMeshActive()) {
       this.updatePluvioMesh();
     } else {
       const hidrosurLluviasGeoJSON = L.geoJSON(geojson, {

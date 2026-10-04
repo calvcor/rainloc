@@ -1568,6 +1568,114 @@ body {
   border: 1px solid rgba(13, 148, 136, 0.35);
 }
 
+/* Bloque de Zoom Interactivo y Adaptativo (LOD) */
+.saih-adaptive-zoom-block {
+  background: rgba(2, 132, 199, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 9px;
+  margin-top: 4px;
+  transition: all 0.2s ease;
+}
+
+.saih-adaptive-zoom-block:hover {
+  background: rgba(2, 132, 199, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.saih-adaptive-zoom-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+}
+
+.saih-adaptive-zoom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(56, 189, 248, 0.5);
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.saih-adaptive-zoom-checkbox:checked {
+  background: var(--accent-cyan, #0284c7);
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.saih-adaptive-zoom-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.saih-adaptive-zoom-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.saih-adaptive-zoom-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.saih-adaptive-zoom-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.01em;
+}
+
+.saih-adaptive-zoom-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: all 0.2s ease;
+}
+
+.saih-adaptive-zoom-badge.disabled {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.saih-adaptive-zoom-desc {
+  font-size: 0.64rem;
+  color: #94a3b8;
+  line-height: 1.25;
+}
+
 /* Bloque Legal de Fuentes y Licencias de Reutilización */
 .saih-sources-legal-block {
   background: rgba(0, 0, 0, 0.22);

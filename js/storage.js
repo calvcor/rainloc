@@ -68,6 +68,7 @@ export class StorageManager {
       autoRefreshInterval: 180, // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
       aemetPeriod: 'now', // 'now' | 'today' | 'tomorrow' | 'after_tomorrow'
       pluvioRenderMode: 'points', // 'points' | 'mesh'
+      pluvioAdaptiveZoom: true, // Visualización adaptativa por nivel de zoom (LOD) activa por defecto
       pluvioMeshPeriod: '24h', // '1h' | '4h' | '12h' | '24h'
       pluvioMeshLabels: false, // Mostrar etiquetas de valor numérico sobre la malla (por defecto desactivado para visualización limpia en hover)
       pluvioMeshOpacity: 0.85
@@ -251,6 +252,14 @@ export class StorageManager {
    */
   static setPluvioMeshLabels(show) {
     return this.save({ pluvioMeshLabels: Boolean(show) });
+  }
+
+  /**
+   * Guarda la preferencia de zoom interactivo/adaptativo de pluviometría (LOD)
+   * @param {boolean} enabled
+   */
+  static setPluvioAdaptiveZoom(enabled) {
+    return this.save({ pluvioAdaptiveZoom: Boolean(enabled) });
   }
 
   /**
