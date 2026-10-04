@@ -120,7 +120,13 @@ export class CuencasLayer {
       throw new Error(`No se pudo cargar el archivo de subsistemas GeoJSON desde ninguna de las rutas: ${CONFIG.dataSources.subsistemasGeoJson.join(', ')}`);
     }
 
-    const allFeatures = [...geojsonData.features];
+    const featureMap = new Map();
+    if (geojsonData && Array.isArray(geojsonData.features)) {
+      for (const f of geojsonData.features) {
+        const id = f.id || (f.properties && f.properties.id);
+        if (id) featureMap.set(id, f);
+      }
+    }
 
     // Cargar cuencas y subcuencas del Ebro (CHEbro) dinámicamente desde el backend
     if (CONFIG.dataSources.ebroCuencasGeoJson) {
@@ -130,7 +136,10 @@ export class CuencasLayer {
           if (ebroRes.ok) {
             const ebroData = await ebroRes.json();
             if (ebroData && Array.isArray(ebroData.features)) {
-              allFeatures.push(...ebroData.features);
+              for (const f of ebroData.features) {
+                const id = f.id || (f.properties && f.properties.id);
+                if (id) featureMap.set(id, f);
+              }
             }
             break;
           }
@@ -148,7 +157,10 @@ export class CuencasLayer {
           if (chsRes.ok) {
             const chsData = await chsRes.json();
             if (chsData && Array.isArray(chsData.features)) {
-              allFeatures.push(...chsData.features);
+              for (const f of chsData.features) {
+                const id = f.id || (f.properties && f.properties.id);
+                if (id) featureMap.set(id, f);
+              }
             }
             break;
           }
@@ -166,7 +178,10 @@ export class CuencasLayer {
           if (chgRes.ok) {
             const chgData = await chgRes.json();
             if (chgData && Array.isArray(chgData.features)) {
-              allFeatures.push(...chgData.features);
+              for (const f of chgData.features) {
+                const id = f.id || (f.properties && f.properties.id);
+                if (id) featureMap.set(id, f);
+              }
             }
             break;
           }
@@ -176,6 +191,7 @@ export class CuencasLayer {
       }
     }
 
+    const allFeatures = Array.from(featureMap.values());
     this.featuresData = allFeatures;
     this._createLayer({ type: 'FeatureCollection', features: allFeatures });
 
