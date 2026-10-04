@@ -30,6 +30,7 @@ export class MapManager {
       minZoom: minZoom,
       maxZoom: maxZoom,
       maxBounds: maxBounds,
+      preferCanvas: true, // Aceleración GPU por Canvas para miles de puntos vectoriales y polígonos
       zoomControl: false, // Usamos control personalizado para mejor posición UI
       attributionControl: false // Personalizaremos el control
     });
