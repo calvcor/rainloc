@@ -48,6 +48,9 @@ export class UIManager {
     this.btnFavoriteBasinMobile = document.getElementById('btn-favorite-basin-mobile');
     this.favBasinMobileLabel = document.getElementById('fav-basin-mobile-label');
     this.mobileBasemapSelector = document.getElementById('mobile-basemap-selector');
+    this.quickMapsPanel = document.getElementById('quick-maps-panel');
+    this._quickMapSnapshot = null;
+    this._activeQuickMapPreset = null;
   }
 
   /**
@@ -158,6 +161,9 @@ export class UIManager {
 
     // Inicializar reproductor temporal inferior unificado (Radar / Modelos)
     this._initTimelineBottomPlayer();
+
+    // Inicializar selector de Mapas Rápidos (Presets)
+    this._initQuickMaps();
   }
 
   /**
@@ -505,6 +511,19 @@ export class UIManager {
 
     this.activeTab = tabId;
     StorageManager.setActiveTab(tabId);
+
+    // Visibilidad y desactivación de Mapas Rápidos según la pestaña
+    const quickMapsPanel = this.quickMapsPanel || document.getElementById('quick-maps-panel');
+    if (quickMapsPanel) {
+      if (tabId === 'prediction') {
+        quickMapsPanel.style.display = 'none';
+        if (this._activeQuickMapPreset) {
+          this.clearActiveQuickMap(true);
+        }
+      } else {
+        quickMapsPanel.style.display = 'flex';
+      }
+    }
 
     if (this.layerManager && this.layerManager.onTabChange) {
       this.layerManager.onTabChange(tabId);
@@ -1225,6 +1244,7 @@ export class UIManager {
     // Switches de activación
     document.querySelectorAll('.layer-toggle-input').forEach(checkbox => {
       checkbox.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const layerId = e.target.getAttribute('data-layer-id');
         const isChecked = e.target.checked;
         const card = document.querySelector(`.layer-card[data-layer-id="${layerId}"]`);
@@ -1246,6 +1266,7 @@ export class UIManager {
     // Sub-switches de la Red SAIH (CHJ) y Pluviometría
     document.querySelectorAll('.saih-sublayer-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const sublayerId = e.target.getAttribute('data-sublayer-id');
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.toggleSaihSublayer) {
@@ -1258,6 +1279,7 @@ export class UIManager {
     const pluvioMasterCheckbox = document.getElementById('pluvio-master-toggle');
     if (pluvioMasterCheckbox) {
       pluvioMasterCheckbox.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.togglePluvioGroup) {
           this.layerManager.togglePluvioGroup(isChecked);
@@ -1268,6 +1290,7 @@ export class UIManager {
     // Modo de renderizado de Pluviómetros (Puntos vs Malla Suave Continua)
     document.querySelectorAll('.pluvio-mode-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        this.clearActiveQuickMap(true);
         const mode = e.currentTarget.getAttribute('data-pluvio-mode');
         document.querySelectorAll('.pluvio-mode-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1286,6 +1309,7 @@ export class UIManager {
     // Selector de periodo de acumulación de Malla de Lluvia (1h, 4h, 12h, 24h)
     document.querySelectorAll('.pluvio-period-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
+        this.clearActiveQuickMap(true);
         const period = e.currentTarget.getAttribute('data-period');
         document.querySelectorAll('.pluvio-period-chip').forEach(c => c.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1305,6 +1329,7 @@ export class UIManager {
     const meshLabelsToggle = document.getElementById('toggle-pluvio-mesh-labels');
     if (meshLabelsToggle) {
       meshLabelsToggle.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioMeshLabels) {
           this.layerManager.setPluvioMeshLabels(isChecked);
@@ -1329,6 +1354,7 @@ export class UIManager {
     const adaptiveZoomToggle = document.getElementById('toggle-pluvio-adaptive-zoom');
     if (adaptiveZoomToggle) {
       adaptiveZoomToggle.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioAdaptiveZoom) {
           this.layerManager.setPluvioAdaptiveZoom(isChecked);
@@ -1354,6 +1380,7 @@ export class UIManager {
     // Selector de periodo de Avisos AEMET (Activos ahora, Mañana, Pasado)
     document.querySelectorAll('.aemet-period-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        this.clearActiveQuickMap(true);
         const period = e.currentTarget.getAttribute('data-period');
         document.querySelectorAll('.aemet-period-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1386,6 +1413,7 @@ export class UIManager {
     const radarLightningToggle = document.getElementById('radar-lightning-toggle');
     if (radarLightningToggle) {
       radarLightningToggle.addEventListener('change', (e) => {
+        this.clearActiveQuickMap(true);
         const isChecked = e.target.checked;
         const container = document.getElementById('radar-lightning-container');
         if (container) {
@@ -2883,6 +2911,248 @@ export class UIManager {
     if (legendTitle) {
       legendTitle.textContent = `Acumulado ${period.toUpperCase()}${maxVal !== undefined && maxVal > 0 ? ` · Máx: ${maxVal.toFixed(1)} mm` : ''}`;
     }
+  }
+
+  /**
+   * Inicializa los botones de Mapas Rápidos (Presets)
+   */
+  _initQuickMaps() {
+    this.quickMapsPanel = document.getElementById('quick-maps-panel');
+    const buttons = document.querySelectorAll('.btn-quick-map');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const presetId = btn.getAttribute('data-preset');
+        if (!presetId) return;
+
+        if (this._activeQuickMapPreset === presetId) {
+          this.deactivateQuickMap();
+        } else {
+          this.applyQuickMapPreset(presetId);
+        }
+      });
+    });
+  }
+
+  /**
+   * Captura una instantánea en memoria de la configuración actual de capas y ajustes de Tiempo Real
+   */
+  _captureRealtimeSnapshot() {
+    if (!this.layerManager) return null;
+    const prefs = StorageManager.load();
+    const layerStatesCopy = {};
+    const allLayerIds = [
+      'radar',
+      'saih_hidrologia',
+      'saih_caudales',
+      'saih_embalses',
+      'saih_lluvias',
+      'aemet_lluvias',
+      'avamet_lluvias',
+      'meteocat_lluvias',
+      'hidrosur_lluvias',
+      'aemet_warnings'
+    ];
+    allLayerIds.forEach(id => {
+      const st = this.layerManager.layerStates[id];
+      layerStatesCopy[id] = st ? Boolean(st.active) : Boolean(prefs.activeLayers && prefs.activeLayers[id]);
+    });
+
+    return {
+      layerStates: layerStatesCopy,
+      showRadarLightning: Boolean(this.layerManager.showRadarLightning),
+      aemetPeriod: this.layerManager.currentAemetPeriod || 'now',
+      pluvioRenderMode: this.layerManager.pluvioRenderMode || 'points',
+      pluvioAdaptiveZoom: (this.layerManager.pluvioAdaptiveZoom !== undefined) ? Boolean(this.layerManager.pluvioAdaptiveZoom) : true,
+      pluvioMeshPeriod: this.layerManager.pluvioMeshPeriod || '24h',
+      pluvioMeshLabels: Boolean(this.layerManager.pluvioMeshLabels)
+    };
+  }
+
+  /**
+   * Restaura la configuración guardada en memoria
+   * @param {Object} snapshot 
+   */
+  _restoreRealtimeSnapshot(snapshot) {
+    if (!this.layerManager || !snapshot) return;
+
+    // 1. Restaurar periodo AEMET
+    if (snapshot.aemetPeriod) {
+      this.layerManager.setAemetPeriod(snapshot.aemetPeriod);
+      if (this.updateAemetPeriodButtons) {
+        this.updateAemetPeriodButtons(snapshot.aemetPeriod);
+      }
+    }
+
+    // 2. Restaurar rayos de radar
+    if (snapshot.showRadarLightning !== undefined) {
+      StorageManager.save({ showRadarLightning: snapshot.showRadarLightning });
+      this.layerManager.toggleRadarLightning(snapshot.showRadarLightning);
+      const lightningToggle = document.getElementById('radar-lightning-toggle');
+      if (lightningToggle) lightningToggle.checked = snapshot.showRadarLightning;
+      const lightningContainer = document.getElementById('radar-lightning-container');
+      if (lightningContainer) lightningContainer.style.display = snapshot.showRadarLightning ? 'block' : 'none';
+    }
+
+    // 3. Restaurar ajustes de pluviometría
+    if (snapshot.pluvioRenderMode !== undefined) {
+      this.layerManager.setPluvioRenderMode(snapshot.pluvioRenderMode);
+    }
+    if (snapshot.pluvioAdaptiveZoom !== undefined) {
+      this.layerManager.setPluvioAdaptiveZoom(snapshot.pluvioAdaptiveZoom);
+    }
+    if (snapshot.pluvioMeshPeriod !== undefined) {
+      this.layerManager.setPluvioMeshPeriod(snapshot.pluvioMeshPeriod);
+    }
+    if (snapshot.pluvioMeshLabels !== undefined) {
+      this.layerManager.setPluvioMeshLabels(snapshot.pluvioMeshLabels);
+    }
+
+    // 4. Restaurar subcapas de la red SAIH
+    const saihSubIds = [
+      'saih_caudales',
+      'saih_embalses',
+      'saih_lluvias',
+      'aemet_lluvias',
+      'avamet_lluvias',
+      'meteocat_lluvias',
+      'hidrosur_lluvias'
+    ];
+    saihSubIds.forEach(id => {
+      const wasActive = Boolean(snapshot.layerStates && snapshot.layerStates[id]);
+      this.layerManager.toggleSaihSublayer(id, wasActive);
+      const cb = document.querySelector(`.layer-toggle-input[data-layer-id="${id}"]`) || document.querySelector(`.saih-sublayer-checkbox[data-sublayer-id="${id}"]`);
+      if (cb) cb.checked = wasActive;
+    });
+
+    // 5. Restaurar capas maestras
+    const masterLayers = ['saih_hidrologia', 'radar', 'aemet_warnings'];
+    masterLayers.forEach(id => {
+      const wasActive = Boolean(snapshot.layerStates && snapshot.layerStates[id]);
+      this.layerManager.toggleLayer(id, wasActive);
+      this.updateLayerCardActiveState(id, wasActive);
+    });
+
+    if (this.updateSaihGroupUI) this.updateSaihGroupUI();
+    if (this.updatePluvioMeshUI) this.updatePluvioMeshUI();
+    if (this.updatePluvioAdaptiveZoomUI) this.updatePluvioAdaptiveZoomUI();
+    if (this.updateMobileLayersBadge) this.updateMobileLayersBadge();
+    if (this.updateUnifiedTimelinePlayer) this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Aplica una preconfiguración rápida guardando la configuración actual en memoria
+   * @param {'aemet_today' | 'radar_lightning' | 'pluvio_24h_mesh' | 'caudales_embalses'} presetId 
+   */
+  applyQuickMapPreset(presetId) {
+    if (!this.layerManager) return;
+
+    // Guardar configuración actual en memoria si no hay una instantánea previa
+    if (!this._quickMapSnapshot) {
+      this._quickMapSnapshot = this._captureRealtimeSnapshot();
+    }
+
+    this._activeQuickMapPreset = presetId;
+
+    // Actualizar clase activa en los botones de mapas rápidos
+    document.querySelectorAll('.btn-quick-map').forEach(btn => {
+      const match = btn.getAttribute('data-preset') === presetId;
+      btn.classList.toggle('active', match);
+    });
+
+    const saihSubIds = [
+      'saih_caudales',
+      'saih_embalses',
+      'saih_lluvias',
+      'aemet_lluvias',
+      'avamet_lluvias',
+      'meteocat_lluvias',
+      'hidrosur_lluvias'
+    ];
+
+    if (presetId === 'aemet_today') {
+      // 1. Solo avisos hoy
+      this.layerManager.toggleLayer('radar', false);
+      this.layerManager.toggleLayer('saih_hidrologia', false);
+      saihSubIds.forEach(id => this.layerManager.toggleSaihSublayer(id, false));
+
+      this.layerManager.toggleLayer('aemet_warnings', true);
+      this.layerManager.setAemetPeriod('today');
+      if (this.updateAemetPeriodButtons) this.updateAemetPeriodButtons('today');
+    } else if (presetId === 'radar_lightning') {
+      // 2. Solo radar (mostrar radar y rayos)
+      this.layerManager.toggleLayer('aemet_warnings', false);
+      this.layerManager.toggleLayer('saih_hidrologia', false);
+      saihSubIds.forEach(id => this.layerManager.toggleSaihSublayer(id, false));
+
+      this.layerManager.toggleLayer('radar', true);
+      StorageManager.save({ showRadarLightning: true });
+      this.layerManager.toggleRadarLightning(true);
+      const lightningToggle = document.getElementById('radar-lightning-toggle');
+      if (lightningToggle) lightningToggle.checked = true;
+      const lightningContainer = document.getElementById('radar-lightning-container');
+      if (lightningContainer) lightningContainer.style.display = 'block';
+    } else if (presetId === 'pluvio_24h_mesh') {
+      // 3. Solo acumulados 24h (mostrar mapa fino sin etiquetas)
+      this.layerManager.toggleLayer('radar', false);
+      this.layerManager.toggleLayer('aemet_warnings', false);
+
+      this.layerManager.toggleSaihSublayer('saih_caudales', false);
+      this.layerManager.toggleSaihSublayer('saih_embalses', false);
+
+      const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+      pluvioIds.forEach(id => this.layerManager.toggleSaihSublayer(id, true));
+      this.layerManager.toggleLayer('saih_hidrologia', true);
+
+      this.layerManager.setPluvioAdaptiveZoom(false);
+      this.layerManager.setPluvioRenderMode('mesh');
+      this.layerManager.setPluvioMeshPeriod('24h');
+      this.layerManager.setPluvioMeshLabels(false);
+
+      if (this.updatePluvioMeshUI) this.updatePluvioMeshUI();
+      if (this.updatePluvioAdaptiveZoomUI) this.updatePluvioAdaptiveZoomUI();
+      this.layerManager.updatePluvioMesh();
+    } else if (presetId === 'caudales_embalses') {
+      // 4. Solo caudales y embalses
+      this.layerManager.toggleLayer('radar', false);
+      this.layerManager.toggleLayer('aemet_warnings', false);
+
+      const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
+      pluvioIds.forEach(id => this.layerManager.toggleSaihSublayer(id, false));
+
+      this.layerManager.toggleSaihSublayer('saih_caudales', true);
+      this.layerManager.toggleSaihSublayer('saih_embalses', true);
+      this.layerManager.toggleLayer('saih_hidrologia', true);
+
+      if (this.updateSaihGroupUI) this.updateSaihGroupUI();
+    }
+
+    if (this.updateSaihGroupUI) this.updateSaihGroupUI();
+    if (this.updateMobileLayersBadge) this.updateMobileLayersBadge();
+    if (this.updateUnifiedTimelinePlayer) this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Desactiva el mapa rápido y recupera la configuración que había antes
+   */
+  deactivateQuickMap() {
+    if (this._quickMapSnapshot) {
+      this._restoreRealtimeSnapshot(this._quickMapSnapshot);
+      this._quickMapSnapshot = null;
+    }
+    this._activeQuickMapPreset = null;
+    document.querySelectorAll('.btn-quick-map').forEach(btn => btn.classList.remove('active'));
+  }
+
+  /**
+   * Limpia el indicador visual de mapa rápido activo
+   * @param {boolean} clearSnapshot 
+   */
+  clearActiveQuickMap(clearSnapshot = true) {
+    if (clearSnapshot) {
+      this._quickMapSnapshot = null;
+    }
+    this._activeQuickMapPreset = null;
+    document.querySelectorAll('.btn-quick-map').forEach(btn => btn.classList.remove('active'));
   }
 
   /**
