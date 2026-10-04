@@ -85,7 +85,11 @@ export class LayerManager {
     this.aromeEventSource = null;
     this.iconEventSource = null;
     this.gemEventSource = null;
-    this.lightningCanvasRenderer = L.canvas({ padding: 0.5, pane: 'lluviasPane' });
+    this.lightningCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'lluviasPane' }) : null;
+    this.caudalesCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'caudalesPane' }) : null;
+    this.embalsesCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'embalsesPane' }) : null;
+    this.lluviasCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'lluviasPane' }) : null;
+    this._pluvioMeshDebounceTimer = null;
     this.lightningGroup = L.layerGroup();
     this._pendingStrikesQueue = [];
     this._lightningBatchRaf = null;
@@ -4516,71 +4520,71 @@ export class LayerManager {
   /**
    * Recarga la capa de caudales
    */
-  reloadCaudalesLayer() {
+  reloadCaudalesLayer(force = true) {
     const group = this.layers['saih_caudales'];
     if (!group) return;
     const opacity = (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].opacity) || 0.95;
-    this._loadCaudalesLayer(group, opacity);
+    this._loadCaudalesLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de embalses
    */
-  reloadEmbalsesLayer() {
+  reloadEmbalsesLayer(force = true) {
     const group = this.layers['saih_embalses'];
     if (!group) return;
     const opacity = (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].opacity) || 0.95;
-    this._loadEmbalsesLayer(group, opacity);
+    this._loadEmbalsesLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de pluviómetros / lluvias del SAIH
    */
-  reloadLluviasLayer() {
+  reloadLluviasLayer(force = true) {
     const group = this.layers['saih_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].opacity) || 0.95;
-    this._loadLluviasLayer(group, opacity);
+    this._loadLluviasLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de pluviómetros / observaciones de AEMET OpenData
    */
-  reloadAemetLluviasLayer() {
+  reloadAemetLluviasLayer(force = true) {
     const group = this.layers['aemet_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['aemet_lluvias'] && this.layerStates['aemet_lluvias'].opacity) || 0.95;
-    this._loadAemetLluviasLayer(group, opacity);
+    this._loadAemetLluviasLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de pluviómetros / observaciones de AVAMET (MeteoXarxa)
    */
-  reloadAvametLluviasLayer() {
+  reloadAvametLluviasLayer(force = true) {
     const group = this.layers['avamet_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['avamet_lluvias'] && this.layerStates['avamet_lluvias'].opacity) || 0.95;
-    this._loadAvametLluviasLayer(group, opacity);
+    this._loadAvametLluviasLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de pluviómetros / observaciones de Meteocat (XEMA)
    */
-  reloadMeteocatLluviasLayer() {
+  reloadMeteocatLluviasLayer(force = true) {
     const group = this.layers['meteocat_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['meteocat_lluvias'] && this.layerStates['meteocat_lluvias'].opacity) || 0.95;
-    this._loadMeteocatLluviasLayer(group, opacity);
+    this._loadMeteocatLluviasLayer(group, opacity, force);
   }
 
   /**
    * Recarga la capa de pluviómetros / observaciones del SAIH Hidrosur
    */
-  reloadHidrosurLluviasLayer() {
+  reloadHidrosurLluviasLayer(force = true) {
     const group = this.layers['hidrosur_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].opacity) || 0.95;
-    this._loadHidrosurLluviasLayer(group, opacity);
+    this._loadHidrosurLluviasLayer(group, opacity, force);
   }
 
   /**
@@ -4907,6 +4911,19 @@ export class LayerManager {
   }
 
   /**
+   * Solicita la actualización de la malla continua de lluvia de forma coalescente / debounced
+   */
+  requestUpdatePluvioMesh() {
+    if (this._pluvioMeshDebounceTimer) {
+      clearTimeout(this._pluvioMeshDebounceTimer);
+    }
+    this._pluvioMeshDebounceTimer = setTimeout(() => {
+      this._pluvioMeshDebounceTimer = null;
+      this.updatePluvioMesh();
+    }, 40);
+  }
+
+  /**
    * Actualiza y re-renderiza la malla continua de acumulados de precipitación en cliente
    */
   updatePluvioMesh() {
@@ -5098,35 +5115,46 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones de medición de caudal del SAIH Júcar (CHJ)
    */
-  async _loadCaudalesLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/caudales?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/saih_aforos.geojson',
-      './saih_aforos.geojson',
-      './backend/data/saih_aforos.geojson'
-    ];
-
+  async _loadCaudalesLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('No se pudo conectar a la API de caudales, buscando en rutas locales:', err);
-    }
 
-    if (!geojson) {
-      for (const fbUrl of fallbackUrls) {
-        try {
-          const fbResp = await fetch(fbUrl);
-          if (fbResp.ok) {
-            geojson = await fbResp.json();
-            break;
-          }
-        } catch (fbErr) {
-          // continuar con el siguiente
+    if (!force && this._caudalesGeojson && (now - (this._caudalesGeojsonTime || 0) < 180000)) {
+      geojson = this._caudalesGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/saih/caudales?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/saih_aforos.geojson',
+        './saih_aforos.geojson',
+        './backend/data/saih_aforos.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
         }
+      } catch (err) {
+        console.warn('No se pudo conectar a la API de caudales, buscando en rutas locales:', err);
+      }
+
+      if (!geojson) {
+        for (const fbUrl of fallbackUrls) {
+          try {
+            const fbResp = await fetch(fbUrl);
+            if (fbResp.ok) {
+              geojson = await fbResp.json();
+              break;
+            }
+          } catch (fbErr) {
+            // continuar con el siguiente
+          }
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._caudalesGeojson = geojson;
+        this._caudalesGeojsonTime = now;
       }
     }
 
@@ -5135,8 +5163,10 @@ export class LayerManager {
     this._caudalesFeatures = geojson.features;
     layerGroup.clearLayers();
 
+    const renderer = this.caudalesCanvasRenderer || undefined;
     const caudalesGeoJSON = L.geoJSON(geojson, {
       pane: 'caudalesPane',
+      renderer: renderer,
       pointToLayer: (feature, latlng) => {
         const props = feature.properties || {};
         props.lat = latlng.lat;
@@ -5192,6 +5222,7 @@ export class LayerManager {
 
         const marker = L.circleMarker(latlng, {
           pane: 'caudalesPane',
+          renderer: renderer,
           radius: 6.5,
           color: '#ffffff',
           weight: 2,
@@ -5226,7 +5257,7 @@ export class LayerManager {
     layerGroup.addLayer(caudalesGeoJSON);
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._caudalesGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('saih_caudales', tsHtml);
       this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
@@ -5944,33 +5975,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones de embalses y presas del SAIH Júcar (CHJ)
    */
-  async _loadEmbalsesLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/embalses?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/saih_embalses.geojson',
-      './saih_embalses.geojson',
-      './backend/data/saih_embalses.geojson'
-    ];
-
+  async _loadEmbalsesLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de embalses no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._embalsesGeojson && (now - (this._embalsesGeojsonTime || 0) < 180000)) {
+      geojson = this._embalsesGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/saih/embalses?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/saih_embalses.geojson',
+        './saih_embalses.geojson',
+        './backend/data/saih_embalses.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de embalses no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._embalsesGeojson = geojson;
+        this._embalsesGeojsonTime = now;
       }
     }
 
@@ -5982,8 +6024,10 @@ export class LayerManager {
     this._embalsesFeatures = geojson.features;
     layerGroup.clearLayers();
 
+    const renderer = this.embalsesCanvasRenderer || undefined;
     const embalsesGeoJSON = L.geoJSON(geojson, {
       pane: 'embalsesPane',
+      renderer: renderer,
       pointToLayer: (feature, latlng) => {
         const props = feature.properties || {};
         props.lat = latlng.lat;
@@ -6027,6 +6071,7 @@ export class LayerManager {
 
         const marker = L.circleMarker(latlng, {
           pane: 'embalsesPane',
+          renderer: renderer,
           radius: radius,
           color: '#ffffff',
           weight: 2.2,
@@ -6061,7 +6106,7 @@ export class LayerManager {
     layerGroup.addLayer(embalsesGeoJSON);
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._embalsesGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('saih_embalses', tsHtml);
       this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
@@ -6070,33 +6115,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones pluviométricas / lluvia del SAIH Júcar (CHJ)
    */
-  async _loadLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/saih/lluvias?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/saih_lluvias.geojson',
-      './saih_lluvias.geojson',
-      './backend/data/saih_lluvias.geojson'
-    ];
-
+  async _loadLluviasLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de pluviómetros no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._lluviasGeojson && (now - (this._lluviasGeojsonTime || 0) < 180000)) {
+      geojson = this._lluviasGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/saih/lluvias?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/saih_lluvias.geojson',
+        './saih_lluvias.geojson',
+        './backend/data/saih_lluvias.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de pluviómetros no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._lluviasGeojson = geojson;
+        this._lluviasGeojsonTime = now;
       }
     }
 
@@ -6109,10 +6165,12 @@ export class LayerManager {
     layerGroup.clearLayers();
 
     if (this.isPluvioMeshActive()) {
-      this.updatePluvioMesh();
+      this.requestUpdatePluvioMesh();
     } else {
+      const renderer = this.lluviasCanvasRenderer || undefined;
       const lluviasGeoJSON = L.geoJSON(geojson, {
         pane: 'lluviasPane',
+        renderer: renderer,
         pointToLayer: (feature, latlng) => {
           const props = feature.properties || {};
           props.lat = latlng.lat;
@@ -6165,6 +6223,7 @@ export class LayerManager {
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
+            renderer: renderer,
             radius: radius,
             color: '#ffffff',
             weight: 1.2,
@@ -6182,7 +6241,7 @@ export class LayerManager {
     }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._lluviasGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('saih_lluvias', tsHtml);
       this.uiManager.updateLayerTimestamp('saih_hidrologia', tsHtml);
     }
@@ -6191,33 +6250,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones pluviométricas / observaciones de AEMET OpenData
    */
-  async _loadAemetLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/aemet/lluvias?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/aemet_lluvias.geojson',
-      './aemet_lluvias.geojson',
-      './backend/data/aemet_lluvias.geojson'
-    ];
-
+  async _loadAemetLluviasLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de pluviómetros AEMET no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._aemetLluviasGeojson && (now - (this._aemetLluviasGeojsonTime || 0) < 180000)) {
+      geojson = this._aemetLluviasGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/aemet/lluvias?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/aemet_lluvias.geojson',
+        './aemet_lluvias.geojson',
+        './backend/data/aemet_lluvias.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de pluviómetros AEMET no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._aemetLluviasGeojson = geojson;
+        this._aemetLluviasGeojsonTime = now;
       }
     }
 
@@ -6230,10 +6300,12 @@ export class LayerManager {
     layerGroup.clearLayers();
 
     if (this.isPluvioMeshActive()) {
-      this.updatePluvioMesh();
+      this.requestUpdatePluvioMesh();
     } else {
+      const renderer = this.lluviasCanvasRenderer || undefined;
       const aemetLluviasGeoJSON = L.geoJSON(geojson, {
         pane: 'lluviasPane',
+        renderer: renderer,
         pointToLayer: (feature, latlng) => {
           const props = feature.properties || {};
           props.lat = latlng.lat;
@@ -6284,6 +6356,7 @@ export class LayerManager {
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
+            renderer: renderer,
             radius: radius,
             color: '#ffffff',
             weight: 1.2,
@@ -6301,7 +6374,7 @@ export class LayerManager {
     }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._aemetLluviasGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('aemet_lluvias', tsHtml);
     }
   }
@@ -6309,33 +6382,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones pluviométricas / observaciones de AVAMET (MeteoXarxa)
    */
-  async _loadAvametLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/avamet/lluvias?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/avamet_lluvias.geojson',
-      './avamet_lluvias.geojson',
-      './backend/data/avamet_lluvias.geojson'
-    ];
-
+  async _loadAvametLluviasLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de pluviómetros AVAMET no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._avametLluviasGeojson && (now - (this._avametLluviasGeojsonTime || 0) < 180000)) {
+      geojson = this._avametLluviasGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/avamet/lluvias?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/avamet_lluvias.geojson',
+        './avamet_lluvias.geojson',
+        './backend/data/avamet_lluvias.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de pluviómetros AVAMET no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._avametLluviasGeojson = geojson;
+        this._avametLluviasGeojsonTime = now;
       }
     }
 
@@ -6348,10 +6432,12 @@ export class LayerManager {
     layerGroup.clearLayers();
 
     if (this.isPluvioMeshActive()) {
-      this.updatePluvioMesh();
+      this.requestUpdatePluvioMesh();
     } else {
+      const renderer = this.lluviasCanvasRenderer || undefined;
       const avametLluviasGeoJSON = L.geoJSON(geojson, {
         pane: 'lluviasPane',
+        renderer: renderer,
         pointToLayer: (feature, latlng) => {
           const props = feature.properties || {};
           props.lat = latlng.lat;
@@ -6402,6 +6488,7 @@ export class LayerManager {
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
+            renderer: renderer,
             radius: radius,
             color: '#ffffff',
             weight: 1.2,
@@ -6419,7 +6506,7 @@ export class LayerManager {
     }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._avametLluviasGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('avamet_lluvias', tsHtml);
     }
   }
@@ -6427,33 +6514,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones pluviométricas / observaciones de Meteocat (XEMA - Dades Obertes)
    */
-  async _loadMeteocatLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/meteocat/lluvias?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/meteocat_lluvias.geojson',
-      './meteocat_lluvias.geojson',
-      './backend/data/meteocat_lluvias.geojson'
-    ];
-
+  async _loadMeteocatLluviasLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de pluviómetros Meteocat no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._meteocatLluviasGeojson && (now - (this._meteocatLluviasGeojsonTime || 0) < 180000)) {
+      geojson = this._meteocatLluviasGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/meteocat/lluvias?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/meteocat_lluvias.geojson',
+        './meteocat_lluvias.geojson',
+        './backend/data/meteocat_lluvias.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de pluviómetros Meteocat no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._meteocatLluviasGeojson = geojson;
+        this._meteocatLluviasGeojsonTime = now;
       }
     }
 
@@ -6466,10 +6564,12 @@ export class LayerManager {
     layerGroup.clearLayers();
 
     if (this.isPluvioMeshActive()) {
-      this.updatePluvioMesh();
+      this.requestUpdatePluvioMesh();
     } else {
+      const renderer = this.lluviasCanvasRenderer || undefined;
       const meteocatLluviasGeoJSON = L.geoJSON(geojson, {
         pane: 'lluviasPane',
+        renderer: renderer,
         pointToLayer: (feature, latlng) => {
           const props = feature.properties || {};
           props.lat = latlng.lat;
@@ -6519,6 +6619,7 @@ export class LayerManager {
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
+            renderer: renderer,
             radius: radius,
             color: '#ffffff',
             weight: 1.2,
@@ -6536,7 +6637,7 @@ export class LayerManager {
     }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._meteocatLluviasGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('meteocat_lluvias', tsHtml);
     }
   }
@@ -6544,33 +6645,44 @@ export class LayerManager {
   /**
    * Carga asíncrona de estaciones pluviométricas / observaciones del SAIH Hidrosur (Junta de Andalucía)
    */
-  async _loadHidrosurLluviasLayer(layerGroup, opacity) {
-    const apiUrl = `${CONFIG.apiBaseUrl}/hidrosur/lluvias?format=geojson&_t=${Date.now()}`;
-    const fallbackUrls = [
-      './data/hidrosur_lluvias.geojson',
-      './hidrosur_lluvias.geojson',
-      './backend/data/hidrosur_lluvias.geojson'
-    ];
-
+  async _loadHidrosurLluviasLayer(layerGroup, opacity, force = false) {
+    const now = Date.now();
     let geojson = null;
-    try {
-      const resp = await fetch(apiUrl);
-      if (resp.ok) {
-        geojson = await resp.json();
-      }
-    } catch (err) {
-      console.warn('API de pluviómetros SAIH Hidrosur no accesible directamente, buscando fallback local...');
-    }
 
-    if (!geojson || !geojson.features) {
-      for (const url of fallbackUrls) {
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            geojson = await resp.json();
-            break;
-          }
-        } catch (e) {}
+    if (!force && this._hidrosurLluviasGeojson && (now - (this._hidrosurLluviasGeojsonTime || 0) < 180000)) {
+      geojson = this._hidrosurLluviasGeojson;
+    } else {
+      const apiUrl = `${CONFIG.apiBaseUrl}/hidrosur/lluvias?format=geojson&_t=${now}`;
+      const fallbackUrls = [
+        './data/hidrosur_lluvias.geojson',
+        './hidrosur_lluvias.geojson',
+        './backend/data/hidrosur_lluvias.geojson'
+      ];
+
+      try {
+        const resp = await fetch(apiUrl);
+        if (resp.ok) {
+          geojson = await resp.json();
+        }
+      } catch (err) {
+        console.warn('API de pluviómetros SAIH Hidrosur no accesible directamente, buscando fallback local...');
+      }
+
+      if (!geojson || !geojson.features) {
+        for (const url of fallbackUrls) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              geojson = await resp.json();
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (geojson && geojson.features) {
+        this._hidrosurLluviasGeojson = geojson;
+        this._hidrosurLluviasGeojsonTime = now;
       }
     }
 
@@ -6583,10 +6695,12 @@ export class LayerManager {
     layerGroup.clearLayers();
 
     if (this.isPluvioMeshActive()) {
-      this.updatePluvioMesh();
+      this.requestUpdatePluvioMesh();
     } else {
+      const renderer = this.lluviasCanvasRenderer || undefined;
       const hidrosurLluviasGeoJSON = L.geoJSON(geojson, {
         pane: 'lluviasPane',
+        renderer: renderer,
         pointToLayer: (feature, latlng) => {
           const props = feature.properties || {};
           props.lat = latlng.lat;
@@ -6636,6 +6750,7 @@ export class LayerManager {
 
           const marker = L.circleMarker(latlng, {
             pane: 'lluviasPane',
+            renderer: renderer,
             radius: radius,
             color: '#ffffff',
             weight: 1.2,
@@ -6653,7 +6768,7 @@ export class LayerManager {
     }
 
     if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date())}</strong>`;
+      const tsHtml = `Actualizado: <strong>${formatMadridDateTime(new Date(this._hidrosurLluviasGeojsonTime || Date.now()))}</strong>`;
       this.uiManager.updateLayerTimestamp('hidrosur_lluvias', tsHtml);
     }
   }
