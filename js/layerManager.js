@@ -4819,11 +4819,6 @@ export class LayerManager {
     }
   }
 
-    if (this.uiManager && this.uiManager.updatePluvioMeshLegend) {
-      this.uiManager.updatePluvioMeshLegend(this.pluvioMeshPeriod, result.maxObsVal, points.length);
-    }
-  }
-
   /**
    * Re-renderiza los puntos individuales para todas las subcapas de pluviometría activas
    */
