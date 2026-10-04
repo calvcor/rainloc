@@ -782,29 +782,20 @@
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
           crossorigin=""></script>
 
-  <!-- Registro temprano e inmediato del Service Worker para PWA con Auto-Reload -->
+  <!-- Registro temprano del Service Worker para PWA -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js', { scope: './' })
         .then(function(reg) {
           console.log('[PWA] Service Worker registrado tempranamente en scope:', reg.scope);
-          reg.update();
         })
         .catch(function(err) {
           console.warn('[PWA] Error en registro temprano de SW:', err);
         });
-
-      var refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function() {
-        if (!refreshing) {
-          refreshing = true;
-          window.location.reload();
-        }
-      });
     }
   </script>
 
   <!-- Módulo ES6 Principal -->
-  <script type="module" src="./js/app.js?v=3.36"></script>
+  <script type="module" src="./js/app.js?v=3.37"></script>
 </body>
 </html>

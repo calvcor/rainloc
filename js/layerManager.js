@@ -724,6 +724,9 @@ export class LayerManager {
     if (cacheKey && this._modelImageStore && this._modelImageStore.has(cacheKey)) {
       const cached = this._modelImageStore.get(cacheKey);
       if (cached && cached.imgUrl === imgUrl) {
+        // Renovar prioridad en LRU (re-insertar al final del Map)
+        this._modelImageStore.delete(cacheKey);
+        this._modelImageStore.set(cacheKey, cached);
         return cached;
       }
       // Si la URL ha cambiado (nueva pasada, fin de fallback, etc.), revocar y refrescar
@@ -750,8 +753,8 @@ export class LayerManager {
       if (!this._modelImageStore) this._modelImageStore = new Map();
       this._modelImageStore.set(cacheKey, item);
 
-      // Limitar memoria a un máximo de 160 imágenes en RAM (~20 MB)
-      if (this._modelImageStore.size > 160) {
+      // Limitar memoria a un máximo de 400 imágenes en RAM (~40-50 MB) para dar cabida a las 24h completas de radar + modelos
+      if (this._modelImageStore.size > 400) {
         const oldestKey = this._modelImageStore.keys().next().value;
         const oldestItem = this._modelImageStore.get(oldestKey);
         if (oldestItem && !this._isObjectUrlInUse(oldestItem.objectUrl)) {
