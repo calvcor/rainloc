@@ -71,7 +71,7 @@ export class StorageManager {
       pluvioAdaptiveZoom: true, // Visualización adaptativa por nivel de zoom (LOD) activa por defecto
       pluvioMeshPeriod: '24h', // '1h' | '4h' | '12h' | '24h'
       pluvioMeshLabels: false, // Mostrar etiquetas de valor numérico sobre la malla (por defecto desactivado para visualización limpia en hover)
-      pluvioMeshOpacity: 0.85
+      pluvioMeshOpacity: 0.65
     };
   }
 

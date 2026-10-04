@@ -100,7 +100,7 @@ export class LayerManager {
     this._effectivePluvioLabels = null; // boolean cuando está en modo adaptativo
     this.pluvioMeshPeriod = prefs.pluvioMeshPeriod || '24h'; // '1h' | '4h' | '12h' | '24h'
     this.pluvioMeshLabels = (prefs.pluvioMeshLabels !== undefined) ? Boolean(prefs.pluvioMeshLabels) : false;
-    this.pluvioMeshOpacity = prefs.pluvioMeshOpacity !== undefined ? parseFloat(prefs.pluvioMeshOpacity) : 0.85;
+    this.pluvioMeshOpacity = prefs.pluvioMeshOpacity !== undefined ? parseFloat(prefs.pluvioMeshOpacity) : 0.65;
     this.pluvioMeshOverlay = null;
     this.pluvioLabelsGroup = L.layerGroup();
 

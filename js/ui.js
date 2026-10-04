@@ -836,6 +836,14 @@ export class UIManager {
                     </label>
                   </div>
 
+                  <div class="pluvio-mesh-opacity-row" style="margin: 6px 0; background: rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <span style="font-size: 0.72rem; color: #94a3b8; font-weight: 500;">Opacidad de la malla:</span>
+                      <span id="pluvio-mesh-opacity-val" style="font-size: 0.74rem; color: #38bdf8; font-weight: 700;">${Math.round(((this.layerManager && this.layerManager.pluvioMeshOpacity !== undefined) ? this.layerManager.pluvioMeshOpacity : (prefs.pluvioMeshOpacity !== undefined ? prefs.pluvioMeshOpacity : 0.65)) * 100)}%</span>
+                    </div>
+                    <input type="range" id="pluvio-mesh-opacity-slider" min="0.1" max="1" step="0.05" value="${(this.layerManager && this.layerManager.pluvioMeshOpacity !== undefined) ? this.layerManager.pluvioMeshOpacity : (prefs.pluvioMeshOpacity !== undefined ? prefs.pluvioMeshOpacity : 0.65)}" class="range-slider" style="width: 100%; height: 5px; accent-color: #38bdf8; cursor: pointer;">
+                  </div>
+
                   <!-- Leyenda de colores cromáticos de lluvia acumulada estilo AVAMET -->
                   <div class="pluvio-mesh-legend-card">
                     <div class="mesh-legend-header">
@@ -1298,6 +1306,19 @@ export class UIManager {
         const isChecked = e.target.checked;
         if (this.layerManager && this.layerManager.setPluvioMeshLabels) {
           this.layerManager.setPluvioMeshLabels(isChecked);
+        }
+      });
+    }
+
+    // Slider de opacidad de la malla de lluvia
+    const pluvioMeshOpacitySlider = document.getElementById('pluvio-mesh-opacity-slider');
+    if (pluvioMeshOpacitySlider) {
+      pluvioMeshOpacitySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const label = document.getElementById('pluvio-mesh-opacity-val');
+        if (label) label.textContent = `${Math.round(val * 100)}%`;
+        if (this.layerManager && this.layerManager.setPluvioMeshOpacity) {
+          this.layerManager.setPluvioMeshOpacity(val);
         }
       });
     }
@@ -2840,6 +2861,15 @@ export class UIManager {
     const meshLabelsToggle = document.getElementById('toggle-pluvio-mesh-labels');
     if (meshLabelsToggle) {
       meshLabelsToggle.checked = labels;
+    }
+
+    const opacitySlider = document.getElementById('pluvio-mesh-opacity-slider');
+    const opacityValEl = document.getElementById('pluvio-mesh-opacity-val');
+    if (opacitySlider && this.layerManager.pluvioMeshOpacity !== undefined) {
+      opacitySlider.value = this.layerManager.pluvioMeshOpacity;
+      if (opacityValEl) {
+        opacityValEl.textContent = `${Math.round(this.layerManager.pluvioMeshOpacity * 100)}%`;
+      }
     }
   }
 

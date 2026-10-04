@@ -41,8 +41,13 @@ export class MapManager {
     // Añadir control de escala en km/m
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(this.map);
 
-    // Crear paneles dedicados para jerarquía estricta de capas y clics
-    // 1. Cuencas base (350) y Resalte/Selección de cuencas (360) -> Por debajo de todas las capas de tiempo real y modelos
+    // 0.5. Malla Continua de Acumulados de Lluvia Interpolada (320) -> Al fondo de todo, por debajo de cuencas (350), modelos (420) y radar (440)
+    if (!this.map.getPane('pluvioMeshPane')) {
+      this.map.createPane('pluvioMeshPane');
+      this.map.getPane('pluvioMeshPane').style.zIndex = 320;
+    }
+
+    // 1. Cuencas base (350) y Resalte/Selección de cuencas (360) -> Por encima de la malla continua de lluvia
     if (!this.map.getPane('cuencasPane')) {
       this.map.createPane('cuencasPane');
       this.map.getPane('cuencasPane').style.zIndex = 350;
@@ -78,11 +83,6 @@ export class MapManager {
       this.map.getPane('ccaaPane').style.pointerEvents = 'none';
     }
 
-    // 5.1. Malla Continua de Acumulados de Lluvia Interpolada (520)
-    if (!this.map.getPane('pluvioMeshPane')) {
-      this.map.createPane('pluvioMeshPane');
-      this.map.getPane('pluvioMeshPane').style.zIndex = 520;
-    }
 
     // 6. Redes de Observación y Estaciones en Tiempo Real (SAIH Júcar) -> Máxima prioridad
     if (!this.map.getPane('lluviasPane')) {
