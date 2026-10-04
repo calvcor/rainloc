@@ -720,34 +720,167 @@ export class LayerManager {
   }
 
   /**
+   * Oculta y detiene todas las capas y componentes de Tiempo Real del mapa
+   */
+  _hideAllRealtimeLayers() {
+    // 1. Ocultar del mapa todas las capas y subcapas de tiempo real
+    CONFIG.overlayLayers.realtime.forEach(def => {
+      this._hideLayerFromMap(def.id);
+      if (def.subLayers && Array.isArray(def.subLayers)) {
+        def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
+      }
+    });
+
+    // 2. Ocultar explícitamente todas las subredes pluviométricas e hidrológicas secundarias
+    const allRealtimeSubIds = [
+      'saih_caudales',
+      'saih_embalses',
+      'saih_lluvias',
+      'aemet_lluvias',
+      'avamet_lluvias',
+      'meteocat_lluvias',
+      'hidrosur_lluvias'
+    ];
+    allRealtimeSubIds.forEach(id => this._hideLayerFromMap(id));
+
+    // 3. Detener temporizadores de refresco en vivo
+    if (this._caudalesPollInterval) { clearInterval(this._caudalesPollInterval); this._caudalesPollInterval = null; }
+    if (this._embalsesPollInterval) { clearInterval(this._embalsesPollInterval); this._embalsesPollInterval = null; }
+    if (this._lluviasPollInterval) { clearInterval(this._lluviasPollInterval); this._lluviasPollInterval = null; }
+    if (this._aemetLluviasPollInterval) { clearInterval(this._aemetLluviasPollInterval); this._aemetLluviasPollInterval = null; }
+    if (this._avametLluviasPollInterval) { clearInterval(this._avametLluviasPollInterval); this._avametLluviasPollInterval = null; }
+    if (this._meteocatLluviasPollInterval) { clearInterval(this._meteocatLluviasPollInterval); this._meteocatLluviasPollInterval = null; }
+    if (this._hidrosurLluviasPollInterval) { clearInterval(this._hidrosurLluviasPollInterval); this._hidrosurLluviasPollInterval = null; }
+
+    // 4. Rayos, cobertura y animación de radar
+    if (this.lightningGroup && this.map && this.map.hasLayer(this.lightningGroup)) {
+      this.map.removeLayer(this.lightningGroup);
+    }
+    this._stopLightningSSE();
+    this._stopLightningAgingTimer();
+
+    if (this.radarCoverageGroup && this.map && this.map.hasLayer(this.radarCoverageGroup)) {
+      this.map.removeLayer(this.radarCoverageGroup);
+    }
+
+    if (this.isRadarPlaying) {
+      this.pauseRadarPlayback();
+    }
+    if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
+      this.uiManager.toggleRadarBottomPlayer(false);
+    }
+
+    // 5. Malla interpolada IDW de precipitación y etiquetas numéricas
+    if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
+      this.map.removeLayer(this.pluvioMeshOverlay);
+    }
+    if (this.pluvioLabelsGroup && this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+      this.map.removeLayer(this.pluvioLabelsGroup);
+    }
+  }
+
+  /**
+   * Oculta y detiene todos los modelos de predicción y sus marcadores
+   */
+  _hideAllPredictionLayers() {
+    // 1. Ocultar capas ráster de modelos de predicción
+    CONFIG.overlayLayers.prediction.forEach(def => {
+      this._hideLayerFromMap(def.id);
+    });
+
+    // 2. Detener animaciones y reproductores de predicción
+    if (this.isEcmwfPlaying) this.pauseEcmwfPlayback();
+    if (this.isGfsPlaying) this.pauseGfsPlayback();
+    if (this.isAromePlaying) this.pauseAromePlayback();
+    if (this.isHarmoniePlaying) this.pauseHarmoniePlayback();
+    if (this.isIconPlaying) this.pauseIconPlayback();
+    if (this.isGemPlaying) this.pauseGemPlayback();
+
+    // 3. Limpiar marcadores de punto máximo de predicción
+    if (this.modelMaxMarkerGroup) {
+      this.modelMaxMarkerGroup.clearLayers();
+    }
+  }
+
+  /**
+   * Restaura en el mapa todas las capas de Tiempo Real configuradas como activas en el estado
+   */
+  _restoreActiveRealtimeLayers() {
+    CONFIG.overlayLayers.realtime.forEach(def => {
+      const state = this.layerStates[def.id];
+      if (def.type === 'saih_group' || def.id === 'saih_hidrologia') {
+        if (state && state.active && Array.isArray(def.subLayers)) {
+          if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
+            this.updatePluvioMesh();
+          }
+          def.subLayers.forEach(sub => {
+            const subState = this.layerStates[sub.id];
+            if (subState && subState.active) {
+              this._showLayerOnMap(sub.id);
+              const op = subState.opacity || 0.95;
+              if (sub.id === 'saih_caudales') this.reloadCaudalesLayer();
+              else if (sub.id === 'saih_embalses') this.reloadEmbalsesLayer();
+              else if (sub.id === 'saih_lluvias') this.reloadLluviasLayer();
+              else if (sub.id === 'aemet_lluvias') this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
+              else if (sub.id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
+              else if (sub.id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
+              else if (sub.id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+            } else {
+              this._hideLayerFromMap(sub.id);
+            }
+          });
+        } else if (Array.isArray(def.subLayers)) {
+          def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
+        }
+        if (this.uiManager && state) {
+          this.uiManager.updateLayerCardActiveState(def.id, state.active);
+          if (this.uiManager.updateSaihGroupUI) this.uiManager.updateSaihGroupUI();
+        }
+        return;
+      }
+
+      if (state && state.active) {
+        this._showLayerOnMap(def.id);
+        if (def.id === 'radar') {
+          if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
+            this.uiManager.toggleRadarBottomPlayer(true);
+          }
+          if (this.showRadarLightning) {
+            if (this.lightningGroup && !this.map.hasLayer(this.lightningGroup)) {
+              this.map.addLayer(this.lightningGroup);
+            }
+            this.reloadLightningLayer();
+            this._startLightningSSE();
+            this._startLightningAgingTimer();
+          }
+          if (this.showRadarCoverage && this.radarCoverageGroup) {
+            if (!this.map.hasLayer(this.radarCoverageGroup)) {
+              this.map.addLayer(this.radarCoverageGroup);
+            }
+            this._updateRadarCoverageOverlay();
+          }
+          this.reloadRadarLayer();
+        } else if (def.id === 'aemet_warnings') {
+          this.reloadAemetWarnings();
+        }
+      } else {
+        this._hideLayerFromMap(def.id);
+      }
+      if (this.uiManager && state) {
+        this.uiManager.updateLayerCardActiveState(def.id, state.active);
+      }
+    });
+  }
+
+  /**
    * Gestiona el cambio de pestaña entre Tiempo Real y Predicción
    * - Al ir a Predicción: oculta todas las capas de tiempo real y muestra la predicción activa (si hay).
    * - Al volver a Tiempo Real: oculta la predicción y restaura todas las capas de tiempo real con su configuración previa.
    */
   onTabChange(tabId) {
     if (tabId === 'prediction') {
-      // 1. Ocultar del mapa todas las capas de tiempo real
-      CONFIG.overlayLayers.realtime.forEach(def => {
-        if (def.type === 'saih_group' && Array.isArray(def.subLayers)) {
-          def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
-        } else {
-          this._hideLayerFromMap(def.id);
-        }
-      });
-      if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
-        this.map.removeLayer(this.lightningGroup);
-      }
-      this._stopLightningSSE();
-      this._stopLightningAgingTimer();
-      if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
-        this.map.removeLayer(this.radarCoverageGroup);
-      }
-      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
-        this.map.removeLayer(this.pluvioMeshOverlay);
-      }
-      if (this.pluvioLabelsGroup && this.map.hasLayer(this.pluvioLabelsGroup)) {
-        this.map.removeLayer(this.pluvioLabelsGroup);
-      }
+      // 1. Ocultar del mapa todo lo de Tiempo Real
+      this._hideAllRealtimeLayers();
 
       // 2. Mostrar la capa de predicción activa (garantizando exclusividad de una única predicción)
       let activePredId = null;
@@ -781,81 +914,10 @@ export class LayerManager {
       }
     } else {
       // 1. Ocultar del mapa cualquier modelo de predicción
-      CONFIG.overlayLayers.prediction.forEach(def => {
-        this._hideLayerFromMap(def.id);
-      });
-      if (this.isEcmwfPlaying) {
-        this.pauseEcmwfPlayback();
-      }
-      if (this.isGfsPlaying) {
-        this.pauseGfsPlayback();
-      }
-      if (this.isAromePlaying) {
-        this.pauseAromePlayback();
-      }
-      if (this.isHarmoniePlaying) {
-        this.pauseHarmoniePlayback();
-      }
-      if (this.isIconPlaying) {
-        this.pauseIconPlayback();
-      }
-      if (this.isGemPlaying) {
-        this.pauseGemPlayback();
-      }
+      this._hideAllPredictionLayers();
 
       // 2. Restaurar y reactivar en el mapa todas las capas de tiempo real configuradas como activas
-      CONFIG.overlayLayers.realtime.forEach(def => {
-        const state = this.layerStates[def.id];
-        if (def.type === 'saih_group') {
-          if (state && state.active && Array.isArray(def.subLayers)) {
-            if (this.isPluvioMeshActive()) {
-              this.updatePluvioMesh();
-            }
-            def.subLayers.forEach(sub => {
-              const subState = this.layerStates[sub.id];
-              if (subState && subState.active) {
-                this._showLayerOnMap(sub.id);
-                if (sub.id === 'saih_caudales') this.reloadCaudalesLayer();
-                if (sub.id === 'saih_embalses') this.reloadEmbalsesLayer();
-                if (sub.id === 'saih_lluvias') this.reloadLluviasLayer();
-              } else {
-                this._hideLayerFromMap(sub.id);
-              }
-            });
-          } else if (Array.isArray(def.subLayers)) {
-            def.subLayers.forEach(sub => this._hideLayerFromMap(sub.id));
-          }
-          if (this.uiManager && state) {
-            this.uiManager.updateLayerCardActiveState(def.id, state.active);
-          }
-          return;
-        }
-
-        if (state && state.active) {
-          this._showLayerOnMap(def.id);
-          if (def.id === 'radar') {
-            if (this.showRadarLightning) {
-              if (this.lightningGroup && !this.map.hasLayer(this.lightningGroup)) {
-                this.map.addLayer(this.lightningGroup);
-              }
-              this.reloadLightningLayer();
-              this._startLightningSSE();
-              this._startLightningAgingTimer();
-            }
-            if (this.showRadarCoverage && this.radarCoverageGroup) {
-              if (!this.map.hasLayer(this.radarCoverageGroup)) {
-                this.map.addLayer(this.radarCoverageGroup);
-              }
-              this._updateRadarCoverageOverlay();
-            }
-          }
-        } else {
-          this._hideLayerFromMap(def.id);
-        }
-        if (this.uiManager && state) {
-          this.uiManager.updateLayerCardActiveState(def.id, state.active);
-        }
-      });
+      this._restoreActiveRealtimeLayers();
     }
     if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
       this.uiManager.updateUnifiedTimelinePlayer();
@@ -876,23 +938,7 @@ export class LayerManager {
     if (isPrediction) {
       if (active) {
         // Regla 1: Desactivar del mapa todas las capas de tiempo real
-        CONFIG.overlayLayers.realtime.forEach(r => {
-          this._hideLayerFromMap(r.id);
-        });
-        if (this.lightningGroup && this.map.hasLayer(this.lightningGroup)) {
-          this.map.removeLayer(this.lightningGroup);
-        }
-        this._stopLightningSSE();
-        this._stopLightningAgingTimer();
-        if (this.radarCoverageGroup && this.map.hasLayer(this.radarCoverageGroup)) {
-          this.map.removeLayer(this.radarCoverageGroup);
-        }
-        if (this.isRadarPlaying) {
-          this.pauseRadarPlayback();
-        }
-        if (this.uiManager && this.uiManager.toggleRadarBottomPlayer) {
-          this.uiManager.toggleRadarBottomPlayer(false);
-        }
+        this._hideAllRealtimeLayers();
 
         // Regla 2: Solo una predicción activa a la vez
         CONFIG.overlayLayers.prediction.forEach(p => {
@@ -901,21 +947,12 @@ export class LayerManager {
             if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
             StorageManager.setLayerActive(p.id, false);
             if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
-            if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
-              this.pauseEcmwfPlayback();
-            }
-            if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
-              this.pauseGfsPlayback();
-            }
-            if (p.id === 'arome_precip' && this.isAromePlaying) {
-              this.pauseAromePlayback();
-            }
-            if (p.id === 'icon_eu' && this.isIconPlaying) {
-              this.pauseIconPlayback();
-            }
-            if (p.id === 'gem_gdps' && this.isGemPlaying) {
-              this.pauseGemPlayback();
-            }
+            if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
+            if (p.id === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
+            if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
+            if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
+            if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+            if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
           }
         });
 
@@ -931,6 +968,8 @@ export class LayerManager {
           this.reloadGfsLayer();
         } else if (layerId === 'arome_precip') {
           this.reloadAromeLayer();
+        } else if (layerId === 'harmonie_aemet') {
+          this.reloadHarmonieLayer();
         } else if (layerId === 'icon_eu') {
           this.reloadIconLayer();
         } else if (layerId === 'gem_gdps') {
@@ -941,21 +980,13 @@ export class LayerManager {
         if (this.layerStates[layerId]) this.layerStates[layerId].active = false;
         StorageManager.setLayerActive(layerId, false);
         if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, false);
-        if (layerId === 'ecmwf_ifs' && this.isEcmwfPlaying) {
-          this.pauseEcmwfPlayback();
-        }
-        if (layerId === 'gfs_0p25' && this.isGfsPlaying) {
-          this.pauseGfsPlayback();
-        }
-        if (layerId === 'arome_precip' && this.isAromePlaying) {
-          this.pauseAromePlayback();
-        }
-        if (layerId === 'icon_eu' && this.isIconPlaying) {
-          this.pauseIconPlayback();
-        }
-        if (layerId === 'gem_gdps' && this.isGemPlaying) {
-          this.pauseGemPlayback();
-        }
+        if (layerId === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
+        if (layerId === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
+        if (layerId === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
+        if (layerId === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
+        if (layerId === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+        if (layerId === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
+        if (this.modelMaxMarkerGroup) this.modelMaxMarkerGroup.clearLayers();
       }
       if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
         this.uiManager.updateUnifiedTimelinePlayer();
@@ -969,17 +1000,11 @@ export class LayerManager {
 
       if (active) {
         // Desactivar del mapa cualquier modelo de predicción
+        this._hideAllPredictionLayers();
         CONFIG.overlayLayers.prediction.forEach(p => {
-          this._hideLayerFromMap(p.id);
           if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
           StorageManager.setLayerActive(p.id, false);
           if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
-          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
-          if (p.id === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
-          if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
-          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
-          if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
-          if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
         });
 
         if (this.layerStates['saih_hidrologia']) {
@@ -1049,29 +1074,11 @@ export class LayerManager {
     if (isRealtime) {
       if (active) {
         // Ocultar cualquier modelo de predicción
+        this._hideAllPredictionLayers();
         CONFIG.overlayLayers.prediction.forEach(p => {
-          this._hideLayerFromMap(p.id);
           if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
           StorageManager.setLayerActive(p.id, false);
           if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
-          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) {
-            this.pauseEcmwfPlayback();
-          }
-          if (p.id === 'gfs_0p25' && this.isGfsPlaying) {
-            this.pauseGfsPlayback();
-          }
-          if (p.id === 'arome_precip' && this.isAromePlaying) {
-            this.pauseAromePlayback();
-          }
-          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) {
-            this.pauseHarmoniePlayback();
-          }
-          if (p.id === 'icon_eu' && this.isIconPlaying) {
-            this.pauseIconPlayback();
-          }
-          if (p.id === 'gem_gdps' && this.isGemPlaying) {
-            this.pauseGemPlayback();
-          }
         });
 
         this._showLayerOnMap(layerId);
@@ -1283,17 +1290,11 @@ export class LayerManager {
         StorageManager.setLayerActive('saih_hidrologia', true);
 
         // Desactivar modelos de predicción
+        this._hideAllPredictionLayers();
         CONFIG.overlayLayers.prediction.forEach(p => {
-          this._hideLayerFromMap(p.id);
           if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
           StorageManager.setLayerActive(p.id, false);
           if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
-          if (p.id === 'ecmwf_ifs' && this.isEcmwfPlaying) this.pauseEcmwfPlayback();
-          if (p.id === 'gfs_0p25' && this.isGfsPlaying) this.pauseGfsPlayback();
-          if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
-          if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
-          if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
-          if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
         });
       }
 
@@ -1359,8 +1360,8 @@ export class LayerManager {
         StorageManager.setLayerActive('saih_hidrologia', true);
 
         // Desactivar modelos de predicción
+        this._hideAllPredictionLayers();
         CONFIG.overlayLayers.prediction.forEach(p => {
-          this._hideLayerFromMap(p.id);
           if (this.layerStates[p.id]) this.layerStates[p.id].active = false;
           StorageManager.setLayerActive(p.id, false);
           if (this.uiManager) this.uiManager.updateLayerCardActiveState(p.id, false);
