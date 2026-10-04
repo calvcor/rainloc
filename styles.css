@@ -2073,13 +2073,17 @@ body {
 .quick-maps-panel {
   position: absolute;
   right: calc(14px + env(safe-area-inset-right, 0px));
-  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
   z-index: 1000;
   pointer-events: auto;
   transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, transform 0.2s ease;
+}
+
+body.has-timeline-player .quick-maps-panel {
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
 }
 
 .btn-quick-map {
