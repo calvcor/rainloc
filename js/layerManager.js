@@ -267,6 +267,149 @@ export class LayerManager {
         this._handlePluvioZoomChange();
       }, 50);
     }
+
+    // Inicializar manejadores de interacción espacial para marcadores Canvas
+    this._initCanvasInteractionHandlers();
+  }
+
+  /**
+   * Configura listeners de eventos sobre el mapa Leaflet para detección espacial de clics y hover en Canvas
+   */
+  _initCanvasInteractionHandlers() {
+    if (!this.map) return;
+
+    this._customCursorActive = false;
+
+    // Escuchar click sobre el mapa para detección espacial precisa de estaciones Canvas
+    this.map.on('click', (e) => {
+      this._onMapCanvasClick(e);
+    });
+
+    // Escuchar movimiento para cambiar el cursor a pointer al pasar sobre una estación
+    this.map.on('mousemove', (e) => {
+      this._onMapCanvasMouseMove(e);
+    });
+  }
+
+  /**
+   * Búsqueda espacial de proximidad en píxeles de pantalla para estaciones SAIH (Caudales y Embalses)
+   */
+  _findSaihFeatureAtPoint(latlng, containerPoint) {
+    if (!this.map || !latlng) return null;
+    const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+    if (!isMasterActive) return null;
+
+    const pt = containerPoint || this.map.latLngToContainerPoint(latlng);
+    let bestHit = null;
+
+    // 1. Embalses (radio visual 10.5px -> hit radius 16px)
+    if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active && this._embalsesFeatures) {
+      const hitRadius = 16;
+      for (const feature of this._embalsesFeatures) {
+        if (!feature) continue;
+        let lat = null, lon = null;
+        if (feature.geometry && Array.isArray(feature.geometry.coordinates)) {
+          lon = feature.geometry.coordinates[0];
+          lat = feature.geometry.coordinates[1];
+        } else if (feature.properties) {
+          lat = feature.properties.lat ?? feature.properties.latitud;
+          lon = feature.properties.lon ?? feature.properties.longitud;
+        }
+        if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) continue;
+
+        const stPt = this.map.latLngToContainerPoint([lat, lon]);
+        const dist = Math.hypot(pt.x - stPt.x, pt.y - stPt.y);
+        if (dist <= hitRadius && (!bestHit || dist < bestHit.dist)) {
+          const props = { ...(feature.properties || {}), lat, lon };
+          bestHit = { type: 'embalse', feature, props, dist };
+        }
+      }
+    }
+
+    if (bestHit) return bestHit;
+
+    // 2. Caudales (radio visual 6.5px -> hit radius 14px)
+    if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active && this._caudalesFeatures) {
+      const hitRadius = 14;
+      for (const feature of this._caudalesFeatures) {
+        if (!feature) continue;
+        let lat = null, lon = null;
+        if (feature.geometry && Array.isArray(feature.geometry.coordinates)) {
+          lon = feature.geometry.coordinates[0];
+          lat = feature.geometry.coordinates[1];
+        } else if (feature.properties) {
+          lat = feature.properties.lat ?? feature.properties.latitud;
+          lon = feature.properties.lon ?? feature.properties.longitud;
+        }
+        if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) continue;
+
+        const stPt = this.map.latLngToContainerPoint([lat, lon]);
+        const dist = Math.hypot(pt.x - stPt.x, pt.y - stPt.y);
+        if (dist <= hitRadius && (!bestHit || dist < bestHit.dist)) {
+          const props = { ...(feature.properties || {}), lat, lon };
+          bestHit = { type: 'caudal', feature, props, dist };
+        }
+      }
+    }
+
+    return bestHit;
+  }
+
+  /**
+   * Manejador de click sobre el mapa para marcadores acelerados por Canvas
+   */
+  _onMapCanvasClick(e) {
+    if (!e || !e.latlng) return;
+    const hit = this._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
+    if (!hit) return;
+
+    if (e.originalEvent) {
+      if (hit.type === 'caudal') e.originalEvent._caudalMarkerClicked = true;
+      if (hit.type === 'embalse') e.originalEvent._embalseMarkerClicked = true;
+      e.originalEvent._stopBasinClick = true;
+      e.originalEvent._stopInspector = true;
+      if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+      if (e.originalEvent.stopImmediatePropagation) e.originalEvent.stopImmediatePropagation();
+    }
+    if (e) {
+      L.DomEvent.stopPropagation(e);
+      L.DomEvent.preventDefault(e);
+    }
+    if (this.map && this.map.closePopup) {
+      this.map.closePopup();
+    }
+
+    const props = { ...(hit.props || {}) };
+    if (hit.feature && hit.feature.geometry && Array.isArray(hit.feature.geometry.coordinates)) {
+      props.lat = hit.feature.geometry.coordinates[1];
+      props.lon = hit.feature.geometry.coordinates[0];
+    }
+
+    if (hit.type === 'caudal') {
+      this.openCaudalHistoryModal(props, 24);
+    } else if (hit.type === 'embalse') {
+      this.openEmbalseHistoryModal(props, 24);
+    }
+  }
+
+  /**
+   * Manejador de movimiento de cursor sobre el mapa para cambiar a cursor pointer sobre marcadores Canvas
+   */
+  _onMapCanvasMouseMove(e) {
+    if (!e || !e.latlng || !this.map) return;
+    const hit = this._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
+    const container = this.map.getContainer();
+    if (!container) return;
+
+    if (hit) {
+      if (!this._customCursorActive) {
+        container.style.cursor = 'pointer';
+        this._customCursorActive = true;
+      }
+    } else if (this._customCursorActive) {
+      container.style.cursor = '';
+      this._customCursorActive = false;
+    }
   }
 
   /**

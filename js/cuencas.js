@@ -393,6 +393,10 @@ export class CuencasLayer {
    * Manejador de evento click (mostrar popup detallado y zoom opcional)
    */
   _onFeatureClick(e, feature, layer) {
+    if (window.RainLoc && window.RainLoc.layerManager && window.RainLoc.layerManager._findSaihFeatureAtPoint) {
+      const hit = window.RainLoc.layerManager._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
+      if (hit) return;
+    }
     if (e && e.originalEvent) {
       if (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopBasinClick || e.originalEvent.defaultPrevented) {
         return;

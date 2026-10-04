@@ -714,6 +714,11 @@ export class MultiLayerInspector {
   _onMapClick(e) {
     if (!e || !e.latlng) return;
 
+    if (window.RainLoc && window.RainLoc.layerManager && window.RainLoc.layerManager._findSaihFeatureAtPoint) {
+      const hit = window.RainLoc.layerManager._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
+      if (hit) return;
+    }
+
     // Si se hizo click en un marcador interactivo o elemento con su propio modal, ignorar
     if (e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked || e.originalEvent._stopInspector || e.originalEvent._stopBasinClick)) {
       return;
