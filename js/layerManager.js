@@ -699,6 +699,16 @@ export class LayerManager {
     });
   }
 
+  isRealtimeTabActive() {
+    if (this.uiManager && this.uiManager.activeTab) {
+      return this.uiManager.activeTab === 'realtime';
+    }
+    const tab = (typeof StorageManager !== 'undefined' && StorageManager.getActiveTab) 
+      ? StorageManager.getActiveTab() 
+      : 'realtime';
+    return tab === 'realtime';
+  }
+
   _showLayerOnMap(layerId) {
     const layer = this.layers[layerId];
     if (layer && this.map && !this.map.hasLayer(layer)) {
@@ -710,6 +720,21 @@ export class LayerManager {
     const layer = this.layers[layerId];
     if (layer && this.map && this.map.hasLayer(layer)) {
       this.map.removeLayer(layer);
+    }
+    if (layerId === 'saih_hidrologia' || layerId === 'saih_lluvias' || layerId === 'aemet_lluvias' || layerId === 'avamet_lluvias' || layerId === 'meteocat_lluvias' || layerId === 'hidrosur_lluvias') {
+      const anyPluvioActive = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'].some(id => this.layerStates[id] && this.layerStates[id].active);
+      const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+      if (layerId === 'saih_hidrologia' || !anyPluvioActive || !isMasterActive || !this.isRealtimeTabActive()) {
+        if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
+          this.map.removeLayer(this.pluvioMeshOverlay);
+        }
+        if (this.pluvioLabelsGroup) {
+          this.pluvioLabelsGroup.clearLayers();
+          if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+            this.map.removeLayer(this.pluvioLabelsGroup);
+          }
+        }
+      }
     }
     if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'harmonie_aemet' || layerId === 'icon_eu' || layerId === 'gem_gdps' || layerId === 'radar') {
       const modelKey = (layerId === 'ecmwf_ifs') ? 'ecmwf' : ((layerId === 'gfs_0p25') ? 'gfs' : ((layerId === 'arome_precip') ? 'arome' : ((layerId === 'harmonie_aemet') ? 'harmonie' : ((layerId === 'icon_eu') ? 'icon' : ((layerId === 'gem_gdps') ? 'gem' : 'radar')))));
@@ -774,8 +799,11 @@ export class LayerManager {
     if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
       this.map.removeLayer(this.pluvioMeshOverlay);
     }
-    if (this.pluvioLabelsGroup && this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
-      this.map.removeLayer(this.pluvioLabelsGroup);
+    if (this.pluvioLabelsGroup) {
+      this.pluvioLabelsGroup.clearLayers();
+      if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+        this.map.removeLayer(this.pluvioLabelsGroup);
+      }
     }
   }
 
@@ -1045,6 +1073,10 @@ export class LayerManager {
             this._hideLayerFromMap(s.id);
           }
         });
+
+        if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
+          this.updatePluvioMesh();
+        }
       } else {
         if (this.layerStates['saih_hidrologia']) {
           this.layerStates['saih_hidrologia'].active = false;
@@ -1054,6 +1086,29 @@ export class LayerManager {
         subLayers.forEach(s => {
           this._hideLayerFromMap(s.id);
         });
+
+        // Ocultar explícitamente todas las subredes secundarias
+        const allRealtimeSubIds = [
+          'saih_caudales',
+          'saih_embalses',
+          'saih_lluvias',
+          'aemet_lluvias',
+          'avamet_lluvias',
+          'meteocat_lluvias',
+          'hidrosur_lluvias'
+        ];
+        allRealtimeSubIds.forEach(id => this._hideLayerFromMap(id));
+
+        // Ocultar inmediatamente la malla de acumulación y las etiquetas numéricas
+        if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
+          this.map.removeLayer(this.pluvioMeshOverlay);
+        }
+        if (this.pluvioLabelsGroup) {
+          this.pluvioLabelsGroup.clearLayers();
+          if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+            this.map.removeLayer(this.pluvioLabelsGroup);
+          }
+        }
 
         if (this._caudalesPollInterval) { clearInterval(this._caudalesPollInterval); this._caudalesPollInterval = null; }
         if (this._embalsesPollInterval) { clearInterval(this._embalsesPollInterval); this._embalsesPollInterval = null; }
@@ -1067,6 +1122,7 @@ export class LayerManager {
       if (this.uiManager) {
         this.uiManager.updateLayerCardActiveState('saih_hidrologia', active);
         if (this.uiManager.updateSaihGroupUI) this.uiManager.updateSaihGroupUI();
+        if (this.uiManager.updatePluvioMeshUI) this.uiManager.updatePluvioMeshUI();
       }
       return;
     }
@@ -1320,6 +1376,10 @@ export class LayerManager {
       } else if (sublayerId === 'hidrosur_lluvias') {
         this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
       }
+
+      if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
+        this.updatePluvioMesh();
+      }
     } else {
       if (this.layerStates[sublayerId]) {
         this.layerStates[sublayerId].active = false;
@@ -1334,6 +1394,10 @@ export class LayerManager {
           this.layerStates['saih_hidrologia'].active = false;
         }
         StorageManager.setLayerActive('saih_hidrologia', false);
+      }
+
+      if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
+        this.updatePluvioMesh();
       }
     }
 
@@ -1378,12 +1442,27 @@ export class LayerManager {
         else if (id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
         else if (id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
       });
+
+      if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
+        this.updatePluvioMesh();
+      }
     } else {
       pluvioIds.forEach(id => {
         if (this.layerStates[id]) this.layerStates[id].active = false;
         StorageManager.setLayerActive(id, false);
         this._hideLayerFromMap(id);
       });
+
+      // Ocultar malla y etiquetas
+      if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      if (this.pluvioLabelsGroup) {
+        this.pluvioLabelsGroup.clearLayers();
+        if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+          this.map.removeLayer(this.pluvioLabelsGroup);
+        }
+      }
 
       const saihDef = CONFIG.overlayLayers.realtime.find(r => r.id === 'saih_hidrologia');
       const allSubLayers = saihDef ? saihDef.subLayers : [];
@@ -4433,6 +4512,7 @@ export class LayerManager {
    */
   _handlePluvioZoomChange() {
     if (!this.pluvioAdaptiveZoom || !this.map) return;
+    if (!this.isRealtimeTabActive()) return;
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
     if (!isMasterActive) return;
 
@@ -4456,6 +4536,7 @@ export class LayerManager {
    * @param {boolean} showLabels 
    */
   _applyAdaptivePluvioState(targetMode, showLabels = false) {
+    if (!this.isRealtimeTabActive()) return;
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
     if (!isMasterActive) return;
 
@@ -4725,16 +4806,19 @@ export class LayerManager {
    * Actualiza y re-renderiza la malla continua de acumulados de precipitación en cliente
    */
   updatePluvioMesh() {
+    const isRealtimeTab = this.isRealtimeTabActive();
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
     const isMeshActive = this.isPluvioMeshActive();
 
-    if (!isMasterActive || !isMeshActive) {
-      if (this.pluvioMeshOverlay && this.map.hasLayer(this.pluvioMeshOverlay)) {
+    if (!isRealtimeTab || !isMasterActive || !isMeshActive) {
+      if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
         this.map.removeLayer(this.pluvioMeshOverlay);
       }
-      this.pluvioLabelsGroup.clearLayers();
-      if (this.map.hasLayer(this.pluvioLabelsGroup)) {
-        this.map.removeLayer(this.pluvioLabelsGroup);
+      if (this.pluvioLabelsGroup) {
+        this.pluvioLabelsGroup.clearLayers();
+        if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+          this.map.removeLayer(this.pluvioLabelsGroup);
+        }
       }
       return;
     }
@@ -4742,13 +4826,24 @@ export class LayerManager {
     const allFeatures = this.getAllActivePluvioFeatures();
     if (!allFeatures || allFeatures.length === 0) {
       this._ensureAllPluvioFeaturesLoaded().then(() => {
-        if (this.isPluvioMeshActive()) this.updatePluvioMesh();
+        if (this.isRealtimeTabActive() && this.isPluvioMeshActive()) {
+          this.updatePluvioMesh();
+        }
       });
       return;
     }
 
     const points = rainInterpolator.extractStationPoints(allFeatures, this.pluvioMeshPeriod);
     if (!points || points.length === 0) {
+      if (this.pluvioMeshOverlay && this.map && this.map.hasLayer(this.pluvioMeshOverlay)) {
+        this.map.removeLayer(this.pluvioMeshOverlay);
+      }
+      if (this.pluvioLabelsGroup) {
+        this.pluvioLabelsGroup.clearLayers();
+        if (this.map && this.map.hasLayer(this.pluvioLabelsGroup)) {
+          this.map.removeLayer(this.pluvioLabelsGroup);
+        }
+      }
       return;
     }
 
@@ -4830,6 +4925,9 @@ export class LayerManager {
    * Re-renderiza los puntos individuales para todas las subcapas de pluviometría activas
    */
   _reloadActivePluvioPointLayers() {
+    if (!this.isRealtimeTabActive()) return;
+    const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
+    if (!isMasterActive) return;
     const pluvioIds = ['saih_lluvias', 'aemet_lluvias', 'avamet_lluvias', 'meteocat_lluvias', 'hidrosur_lluvias'];
     pluvioIds.forEach(id => {
       const state = this.layerStates[id];
@@ -4858,6 +4956,7 @@ export class LayerManager {
 
     // Refresco periódico secundario (cada 5 min = 300s por defecto)
     this._refreshTimer = setInterval(() => {
+      if (!this.isRealtimeTabActive()) return;
       console.log('🔄 Ejecutando refresco automático periódico de capas SAIH / AEMET / AVAMET / METEOCAT / HIDROSUR / Radar...');
       if (this.layerStates['radar'] && this.layerStates['radar'].active) {
         this.reloadRadarLayer(true);
