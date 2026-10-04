@@ -128,18 +128,37 @@ export class CuencasLayer {
       }
     }
 
-    // Cargar cuencas y subcuencas del Ebro (CHEbro) dinámicamente desde el backend
-    if (CONFIG.dataSources.ebroCuencasGeoJson) {
+    const isDemarcation = (f, keyword) => {
+      const p = f.properties || {};
+      const d = (p.Demarcacion || p.demarcacion || p.Sistema || p.NomSistExp || '').toLowerCase();
+      return d.includes(keyword.toLowerCase());
+    };
+
+    const replaceDemarcation = (newFeatures, keyword) => {
+      for (const [id, feat] of featureMap.entries()) {
+        if (isDemarcation(feat, keyword)) {
+          featureMap.delete(id);
+        }
+      }
+      for (const f of newFeatures) {
+        const id = f.id || (f.properties && f.properties.id);
+        if (id) featureMap.set(id, f);
+      }
+    };
+
+    const hasEbro = Array.from(featureMap.values()).some(f => isDemarcation(f, 'ebro') || isDemarcation(f, 'che'));
+    const hasSegura = Array.from(featureMap.values()).some(f => isDemarcation(f, 'segura') || isDemarcation(f, 'chs'));
+    const hasGuadalquivir = Array.from(featureMap.values()).some(f => isDemarcation(f, 'guadalquivir') || isDemarcation(f, 'chg'));
+
+    // Cargar cuencas del Ebro (CHE) si no estaban en el fichero base
+    if (!hasEbro && CONFIG.dataSources.ebroCuencasGeoJson) {
       for (const url of CONFIG.dataSources.ebroCuencasGeoJson) {
         try {
           const ebroRes = await fetch(url);
           if (ebroRes.ok) {
             const ebroData = await ebroRes.json();
             if (ebroData && Array.isArray(ebroData.features)) {
-              for (const f of ebroData.features) {
-                const id = f.id || (f.properties && f.properties.id);
-                if (id) featureMap.set(id, f);
-              }
+              replaceDemarcation(ebroData.features, 'ebro');
             }
             break;
           }
@@ -149,18 +168,15 @@ export class CuencasLayer {
       }
     }
 
-    // Cargar cuencas y subcuencas del Segura (CHSegura) dinámicamente desde el backend
-    if (CONFIG.dataSources.seguraCuencasGeoJson) {
+    // Cargar cuencas del Segura (CHS) si no estaban en el fichero base
+    if (!hasSegura && CONFIG.dataSources.seguraCuencasGeoJson) {
       for (const url of CONFIG.dataSources.seguraCuencasGeoJson) {
         try {
           const chsRes = await fetch(url);
           if (chsRes.ok) {
             const chsData = await chsRes.json();
             if (chsData && Array.isArray(chsData.features)) {
-              for (const f of chsData.features) {
-                const id = f.id || (f.properties && f.properties.id);
-                if (id) featureMap.set(id, f);
-              }
+              replaceDemarcation(chsData.features, 'segura');
             }
             break;
           }
@@ -170,18 +186,15 @@ export class CuencasLayer {
       }
     }
 
-    // Cargar cuencas y subcuencas del Guadalquivir (CHGuadalquivir) dinámicamente desde el backend
-    if (CONFIG.dataSources.guadalquivirCuencasGeoJson) {
+    // Cargar cuencas del Guadalquivir (CHG) si no estaban en el fichero base
+    if (!hasGuadalquivir && CONFIG.dataSources.guadalquivirCuencasGeoJson) {
       for (const url of CONFIG.dataSources.guadalquivirCuencasGeoJson) {
         try {
           const chgRes = await fetch(url);
           if (chgRes.ok) {
             const chgData = await chgRes.json();
             if (chgData && Array.isArray(chgData.features)) {
-              for (const f of chgData.features) {
-                const id = f.id || (f.properties && f.properties.id);
-                if (id) featureMap.set(id, f);
-              }
+              replaceDemarcation(chgData.features, 'guadalquivir');
             }
             break;
           }
