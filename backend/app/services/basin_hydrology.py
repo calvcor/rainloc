@@ -129,8 +129,11 @@ class BasinHydrologyService:
                 str(props.get("id") or ""),
                 str(props.get("cod_subse") or ""),
                 str(props.get("cod_sisexp") or ""),
+                str(props.get("codigo_cuenca") or ""),
                 str(props.get("codigo_saih") or ""),
                 str(props.get("cod_demar") or ""),
+                str(props.get("nombre") or ""),
+                str(props.get("Subsistema") or ""),
                 basin_name,
                 sist_name,
             ]
