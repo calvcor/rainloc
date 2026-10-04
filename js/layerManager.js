@@ -1480,6 +1480,7 @@ export class LayerManager {
             }
             this._updateRadarCoverageOverlay();
           }
+          this.reloadRadarLayer();
         } else {
           if (this.isRadarPlaying) {
             this.pauseRadarPlayback();
@@ -1827,10 +1828,11 @@ export class LayerManager {
     const mode = this.currentRadarMode || 'mixed';
     const isLatest = !timestep || (this.radarTimeline && this.radarTimeline.length > 0 && timestep === this.radarTimeline[this.radarTimeline.length - 1]?.timestep);
     const vParam = isLatest ? `&_v=${encodeURIComponent((this.radarMetadata && this.radarMetadata.last_updated) || Date.now())}` : '';
+    const stParam = (mode === 'single' && this.currentRadarStationId) ? `&station_id=${encodeURIComponent(this.currentRadarStationId)}` : '';
     if (timestep) {
-      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&timestep=${encodeURIComponent(timestep)}${vParam}`;
+      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}&timestep=${encodeURIComponent(timestep)}${vParam}`;
     }
-    return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}&_t=${Date.now()}`;
+    return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}&_t=${Date.now()}`;
   }
 
   /**
@@ -1908,7 +1910,8 @@ export class LayerManager {
 
         // Si no teníamos timestep (arranque en frío), lanzar en paralelo la descarga del compuesto más reciente para velocidad instantánea
         if (!this.currentRadarTimestep) {
-          const directLatestUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(this.currentRadarMode || 'mixed')}`;
+          const stParam = (this.currentRadarMode === 'single' && this.currentRadarStationId) ? `&station_id=${encodeURIComponent(this.currentRadarStationId)}` : '';
+          const directLatestUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(this.currentRadarMode || 'mixed')}${stParam}`;
           const signal = this._getModelAbortSignal('radar');
           initialImagePromise = this._fetchModelImage(directLatestUrl, signal, null).catch(() => null);
         }
