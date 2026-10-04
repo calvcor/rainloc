@@ -30,13 +30,19 @@ export const CONFIG = {
       './data/cuencas.geojson'
     ],
     ebroCuencasGeoJson: [
-      `${apiBase}/cuencas/ebro`
+      `${apiBase}/cuencas/ebro`,
+      './data/ebro_subcuencas.geojson',
+      './ebro_subcuencas.geojson'
     ],
     seguraCuencasGeoJson: [
-      `${apiBase}/cuencas/segura`
+      `${apiBase}/cuencas/segura`,
+      './data/segura_subcuencas.geojson',
+      './segura_subcuencas.geojson'
     ],
     guadalquivirCuencasGeoJson: [
-      `${apiBase}/cuencas/guadalquivir`
+      `${apiBase}/cuencas/guadalquivir`,
+      './data/guadalquivir_subcuencas.geojson',
+      './guadalquivir_subcuencas.geojson'
     ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,

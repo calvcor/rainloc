@@ -1042,69 +1042,110 @@ class GuadalquivirService:
         shp_bytes = z.read(shp_name)
         shx_bytes = z.read(shx_name)
 
-        features = []
+        # 1. Extraer geometrías y clasificar en las 23 subcuencas principales
+        from collections import defaultdict
+        from shapely.geometry import shape, mapping
+        from shapely.ops import unary_union
+
+        def _classify(nom_raw: str, geom_shape) -> tuple[str, str, str]:
+            nom = nom_raw.upper().replace("RÍO ", "").replace("RIO ", "").strip()
+            lon, lat = geom_shape.centroid.x, geom_shape.centroid.y
+            if any(k in nom for k in ["MONACHIL", "DILAR", "AGUAS BLANCAS", "VALDECANALES", "MAITENA", "GENIL CABECERA"]):
+                return "Alto Genil", "Alto Genil", "CHG_ALTOGENIL"
+            if any(k in nom for k in ["GENIL", "CUBILLAS", "CACIN", "DARRO", "BEIRO", "ANZUR", "SALADO DE PRIEGO", "CABRA", "BLANQUILLO", "PESQUERA", "LANA", "ENGANHADERO", "IZBOR", "DURCAL", "TORRENTE", "ALHAMA"]):
+                return "Cuenca del Río Genil", "Regulación General", "CHG_GENIL"
+            if any(k in nom for k in ["GUADIANA MENOR", "BAZA", "FARDES", "GUARDAL", "CASTRIL", "GALERA", "ANGORILLA", "CERRO GORDO", "GUADIX", "CULLAR", "HUESCAR", "ORCE", "CASTILLEJAR", "GOR", "ALMANZORA"]):
+                return "Cuenca del Río Guadiana Menor", "Hoya de Guadix", "CHG_GUADIANAMENOR"
+            if any(k in nom for k in ["GUADALIMAR", "GUADALMENA", "DANADOR", "DAÑADOR", "ARQUILLOS", "GIRIBAILE", "TRUCHAS", "ONSARES", "ONZA", "CAMPORREDONDO", "HERMOSO", "CARRIZAS"]):
+                return "Cuenca del Río Guadalimar", "Regulación General", "CHG_GUADALIMAR"
+            if any(k in nom for k in ["GUADALEN", "GUADALÉN", "GUARRIZAS", "MARTIN MALO", "CAMPANARIO", "DESPENAPERROS", "DESPEÑAPERROS"]):
+                return "Cuenca del Río Guadalén y Guarrizas", "Regulación General", "CHG_GUADALEN"
+            if any(k in nom for k in ["JANDULA", "JÁNDULA", "FRESNEDA", "RUMBLAR", "PINEROS", "ROBLEDO", "VALDEAZORES", "ALAMO", "ÁLAMO", "SANTOS"]):
+                return "Cuenca del Río Jándula y Rumblar", "Regulación General", "CHG_JANDULA"
+            if any(k in nom for k in ["YEGUAS", "PRADILLO", "VALMAYOR", "NAVAS DEL MOLERO", "CEREZO"]):
+                return "Cuenca del Río Yeguas", "Regulación General", "CHG_YEGUAS"
+            if any(k in nom for k in ["GUADALBULLON", "GUADALBULLÓN", "JAEN", "JAÉN", "QUEBRACHO", "ESCAJUELA", "FRÍO", "FRIO", "CAMBIL"]):
+                return "Cuenca del Río Guadalbullón", "Regulación General", "CHG_GUADALBULLON"
+            if any(k in nom for k in ["GUADIEL", "CANIZAL", "CAÑIZAL", "BAÑOS", "BANOS"]):
+                return "Cuenca del Río Guadiel", "Regulación General", "CHG_GUADIEL"
+            if any(k in nom for k in ["GUADAJOZ", "SAN JUAN", "MARBALEJO", "SALADO DE CASTRO", "TORREPAREDONES", "VIBORAS", "VÍBORAS", "SALOBRAL"]):
+                return "Cuenca del Río Guadajoz", "Regulación General", "CHG_GUADAJOZ"
+            if any(k in nom for k in ["PORCUNA", "ARJONA", "ARJONILLA", "SALADO DE ARJONA", "SALADO DE PORCUNA"]):
+                return "Cuenca del Río Salado de Porcuna", "Regulación General", "CHG_PORCUNA"
+            if any(k in nom for k in ["GUADIATO", "BRENA", "BREÑA", "ZAPATEROS", "GATO", "MATABUEYES", "PASCUAL", "GUADANUNO", "GUADAÑUÑO"]):
+                return "Cuenca del Río Guadiato", "Regulación General", "CHG_GUADIATO"
+            if any(k in nom for k in ["BEMBEZAR", "BEMBÉZAR", "RETORTILLO", "SOTILLO", "BENAJARAFE", "AGUAS CLARAS", "NEGRO"]):
+                return "Cuenca de los Ríos Bembézar y Retortillo", "Bembézar-Retortillo", "CHG_BEMBEZAR"
+            if any(k in nom for k in ["HUESNA", "RIVERA DEL HUESNA", "GALAPAGAR", "SAN NICOLAS", "VIARILLO"]):
+                return "Cuenca de la Rivera del Huesna", "Regulación General", "CHG_HUESNA"
+            if any(k in nom for k in ["VIAR", "AGUA SANTA", "MONTERO", "MANZANO", "GRAFAS", "ROBLADO"]):
+                return "Cuenca del Río Viar", "Regulación General", "CHG_VIAR"
+            if any(k in nom for k in ["HUELVA", "CALA", "ALCALA", "ALCALÁ", "CALANCHA", "MINILLA", "ZUFRE", "ARACENA", "GERGAL", "MARIA"]):
+                return "Cuenca de Rivera de Huelva y Cala", "Abastecimiento de Sevilla", "CHG_HUELVA"
+            if any(k in nom for k in ["CORBONES", "SALADO DE MORON", "SALADO DE MORÓN", "PEONIA", "PEONÍA", "REDONDA"]):
+                return "Cuenca del Río Corbones", "Regulación General", "CHG_CORBONES"
+            if any(k in nom for k in ["GUADAIRA", "GUADAÍRA", "GUADAIRAJO", "SALADO DE ARAHAL", "GUADAJIRA", "ALBARRAGA", "GUADATINAJAS"]):
+                return "Cuenca del Río Guadaíra", "Regulación General", "CHG_GUADAIRA"
+            if any(k in nom for k in ["GUADIAMAR", "AGRIO", "BRAZO DE LA TORRE", "ALCARAYON", "ALCARAYÓN", "CRISPINES"]):
+                return "Cuenca del Río Guadiamar", "Guadiamar", "CHG_GUADIAMAR"
+            if lon > -3.5 or (lat > 37.7 and lon > -3.8):
+                return "Cuenca del Alto Guadalquivir", "Regulación General", "CHG_ALTOGUADALQUIVIR"
+            elif lon > -5.3:
+                if lat > 37.8:
+                    return "Cuenca del Medio Guadalquivir (Sierra Morena)", "Regulación General", "CHG_MEDGUAD_NORTE"
+                else:
+                    return "Cuenca del Medio Guadalquivir (Campiña)", "Regulación General", "CHG_MEDGUAD_SUR"
+            else:
+                return "Cuenca del Bajo Guadalquivir y Marismas", "Regulación General", "CHG_BAJOGUADALQUIVIR"
+
+        grouped = defaultdict(list)
         for idx, rec in enumerate(records):
             cod_demar = str(rec.get("COD_DEMAR", "")).strip()
             if cod_demar != "51":
                 continue
 
-            # Buscar offset en SHX
             shx_offset = 100 + idx * 8
             if shx_offset + 8 > len(shx_bytes):
                 continue
             offset_words = struct.unpack(">I", shx_bytes[shx_offset : shx_offset + 4])[0]
             shp_offset = offset_words * 2
 
-            geom = self._parse_shp_polygon_at(shp_bytes, shp_offset, tolerance=0.0012)
-            if not geom:
+            geom_dict = self._parse_shp_polygon_at(shp_bytes, shp_offset, tolerance=0.0012)
+            if not geom_dict:
                 continue
 
-            code = str(rec.get("COD_CUENCA", f"{idx}")).strip()
             nom_raw = str(rec.get("NOM_CUENCA", "")).strip()
-            
-            # Formatear nombre legible
-            clean_name = nom_raw.title()
-            if clean_name and not clean_name.lower().startswith("río") and not clean_name.lower().startswith("rio"):
-                clean_name = f"Río {clean_name}"
-
-            # Mapear sistema de explotación
-            nom_upper = nom_raw.upper()
-            if any(k in nom_upper for k in ("BEMBEZAR", "RETORTILLO")):
-                sist = "Bembézar-Retortillo"
-            elif any(k in nom_upper for k in ("CALA", "HUELVA", "ALCALA", "CALANCHA")):
-                sist = "Abastecimiento de Sevilla"
-            elif any(k in nom_upper for k in ("GUADIAMAR", "AGRIO", "BRAZO DE LA TORRE")):
-                sist = "Guadiamar"
-            elif any(k in nom_upper for k in ("GUADIX", "FARDES", "GUARDAL", "CASTRIL", "GALERA", "ANGORILLA", "CERRO GORDO")):
-                sist = "Hoya de Guadix"
-            elif any(k in nom_upper for k in ("AGUAS BLANCAS", "MONACHIL", "DILAR", "VALDECANALES")):
-                sist = "Alto Genil"
-            else:
-                sist = "Regulación General"
-
             try:
-                area_km2 = round(float(rec.get("AREA_CUENC", 0.0)) / 1e6, 2)
+                area_km2 = float(rec.get("AREA_CUENC", 0.0)) / 1e6
             except Exception:
                 area_km2 = 0.0
 
-            basin_id = f"GUAD_{code}"
+            g_shape = shape(geom_dict)
+            b_name, sys_name, b_id = _classify(nom_raw, g_shape)
+            grouped[(b_name, sys_name, b_id)].append((g_shape, area_km2))
+
+        features = []
+        for (b_name, sys_name, b_id), items in grouped.items():
+            geoms = [g for g, _ in items]
+            tot_area = round(sum(a for _, a in items), 2)
+            dissolved = unary_union(geoms)
+            simplified = dissolved.simplify(0.0012, preserve_topology=True)
             features.append({
                 "type": "Feature",
-                "id": basin_id,
+                "id": b_id,
                 "properties": {
-                    "id": basin_id,
-                    "NomSistExp": sist,
-                    "Sistema": sist,
-                    "Subsistema": clean_name or f"Subcuenca {code}",
-                    "nombre": clean_name or f"Subcuenca {code}",
+                    "id": b_id,
+                    "NomSistExp": sys_name,
+                    "Sistema": sys_name,
+                    "Subsistema": b_name,
+                    "nombre": b_name,
                     "Demarcacion": "Demarcación Hidrográfica del Guadalquivir (CHG)",
                     "demarcacion": "Guadalquivir",
-                    "codigo_cuenca": code,
                     "cod_demar": "ES050",
-                    "Area km2": area_km2,
-                    "Superf km2": area_km2,
+                    "Area km2": tot_area,
+                    "Superf km2": tot_area,
                 },
-                "geometry": geom,
+                "geometry": mapping(simplified),
             })
 
         fc = {"type": "FeatureCollection", "features": features}
@@ -1114,7 +1155,7 @@ class GuadalquivirService:
             GUADALQUIVIR_CUENCAS_GEOJSON_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(GUADALQUIVIR_CUENCAS_GEOJSON_FILE, "w", encoding="utf-8") as f:
                 json.dump(fc, f, ensure_ascii=False, separators=(",", ":"))
-            logger.info("GeoJSON de subcuencas del Guadalquivir generado y guardado en %s (%d subcuencas)", GUADALQUIVIR_CUENCAS_GEOJSON_FILE, len(features))
+            logger.info("GeoJSON de subcuencas del Guadalquivir generado y guardado en %s (%d subcuencas principales)", GUADALQUIVIR_CUENCAS_GEOJSON_FILE, len(features))
         except Exception as e:
             logger.warning("No se pudo escribir archivo local guadalquivir_subcuencas.geojson: %s", e)
 
