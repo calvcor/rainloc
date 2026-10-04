@@ -149,6 +149,30 @@ class ACAService:
                 self._embalses_by_id[c_short] = emb
                 self._embalses_by_id[f"aca_embalse_{c_short}"] = emb
 
+    def _ensure_aforos_catalog(self) -> Dict[str, Any]:
+        if not self._aforos_catalog:
+            try:
+                now_ts = int(datetime.now(MADRID_TZ).timestamp())
+                url_cat = f"{ACA_BASE_URL}/catalog/public/rivergauges?json=false&_t={now_ts}"
+                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
+                with urllib.request.urlopen(req_cat, timeout=12) as resp:
+                    self._aforos_catalog = json.loads(resp.read().decode("utf-8"))
+            except Exception as e:
+                logger.warning(f"Error descargando catálogo de aforos ACA: {e}")
+        return self._aforos_catalog
+
+    def _ensure_embalses_catalog(self) -> Dict[str, Any]:
+        if not self._embalses_catalog:
+            try:
+                now_ts = int(datetime.now(MADRID_TZ).timestamp())
+                url_cat = f"{ACA_BASE_URL}/catalog/public/reservoir?json=false&_t={now_ts}"
+                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
+                with urllib.request.urlopen(req_cat, timeout=12) as resp:
+                    self._embalses_catalog = json.loads(resp.read().decode("utf-8"))
+            except Exception as e:
+                logger.warning(f"Error descargando catálogo de embalses ACA: {e}")
+        return self._embalses_catalog
+
     # ==========================================
     # 1. AFOROS Y CAUDALES EN RÍOS
     # ==========================================
@@ -164,10 +188,11 @@ class ACAService:
         now_iso = now_madrid.strftime("%Y-%m-%d %H:%M:%S")
 
         # 1. Catálogo
+        now_ts = int(now_madrid.timestamp())
         if not self._aforos_catalog:
             try:
-                url_cat = f"{ACA_BASE_URL}/catalog/public/rivergauges?json=false"
-                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT})
+                url_cat = f"{ACA_BASE_URL}/catalog/public/rivergauges?json=false&_t={now_ts}"
+                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
                 with urllib.request.urlopen(req_cat, timeout=12) as resp:
                     self._aforos_catalog = json.loads(resp.read().decode("utf-8"))
             except Exception as e:
@@ -176,8 +201,8 @@ class ACAService:
         # 2. Umbrales de retorno (T2, T5, T10, T25, T50)
         thresholds_by_code: Dict[str, Dict[str, Any]] = {}
         try:
-            url_alert = f"{ACA_BASE_URL}/alerts/rivergauges"
-            req_alert = urllib.request.Request(url_alert, headers={"User-Agent": USER_AGENT})
+            url_alert = f"{ACA_BASE_URL}/alerts/rivergauges?_t={now_ts}"
+            req_alert = urllib.request.Request(url_alert, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req_alert, timeout=12) as resp:
                 alerts_data = json.loads(resp.read().decode("utf-8"))
                 if isinstance(alerts_data, dict):
@@ -196,13 +221,13 @@ class ACAService:
         except Exception as e:
             logger.warning(f"Error descargando alertas/umbrales ACA: {e}")
 
-        # 3. Lecturas en tiempo real de todas las estaciones
+        # 3. Lecturas en tiempo real de todas las estaciones (lote global)
         live_data_by_code: Dict[str, Dict[str, Any]] = {}
         try:
-            # Una llamada a una estación existente devuelve el lote entero de 84 estaciones
+            # Una llamada a una estación existente con cache-buster devuelve el lote entero de 84 estaciones
             sample_code = "171812-001"
-            url_live = f"{ACA_BASE_URL}/data/public/rivergauges/{sample_code}"
-            req_live = urllib.request.Request(url_live, headers={"User-Agent": USER_AGENT})
+            url_live = f"{ACA_BASE_URL}/data/public/rivergauges/{sample_code}?_t={now_ts}"
+            req_live = urllib.request.Request(url_live, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req_live, timeout=12) as resp:
                 live_batch = json.loads(resp.read().decode("utf-8"))
                 if isinstance(live_batch, dict):
@@ -214,31 +239,76 @@ class ACAService:
         all_codes = set(self._aforos_catalog.keys()) | set(live_data_by_code.keys())
         aforos_list = []
 
+        # Estaciones que necesitan consulta de fallback (ej. canales/acequias secundarias con null en live batch)
         for code in all_codes:
             meta = self._aforos_catalog.get(code, {})
             live = live_data_by_code.get(code, {})
             thresh = thresholds_by_code.get(code, {})
+            sensors = meta.get("sensors", {}) if isinstance(meta, dict) else {}
 
             # Coordenadas
-            loc_str = live.get("location") or meta.get("point")
+            loc_str = live.get("location") or meta.get("point") or meta.get("location")
             lat, lon = _parse_coords(loc_str)
             if lat is None or lon is None:
                 continue
 
             # Valores en tiempo real
             popup = live.get("popup", {})
-            q_obj = popup.get("river_flow", {}) if isinstance(popup, dict) else {}
-            lvl_obj = popup.get("river_level", {}) if isinstance(popup, dict) else {}
+            popup_dict = popup if isinstance(popup, dict) else {}
+            q_obj = popup_dict.get("river_flow", {}) if isinstance(popup_dict, dict) else {}
+            lvl_obj = popup_dict.get("river_level", {}) if isinstance(popup_dict, dict) else {}
 
-            caudal_val = _parse_float(q_obj.get("value")) if q_obj else thresh.get("caudal_alert")
-            nivel_val = _parse_float(lvl_obj.get("value")) if lvl_obj else None
+            raw_caudal = _parse_float(q_obj.get("value")) if q_obj else thresh.get("caudal_alert")
+            if raw_caudal is None and live.get("value") is not None:
+                raw_caudal = _parse_float(live.get("value"))
+
+            raw_nivel = _parse_float(lvl_obj.get("value")) if lvl_obj else None
             nivel_unit = lvl_obj.get("unit") or "cm"
-            
-            # Normalizar nivel a metros si viene en cm
-            nivel_m = round(nivel_val / 100.0, 3) if (nivel_val is not None and nivel_unit == "cm") else nivel_val
 
             raw_time = q_obj.get("time") or lvl_obj.get("time") or live.get("time")
-            update_time = _format_madrid_iso(raw_time)
+
+            # Detectar si los sensores están en l/s (canales, acequias como Séquia Monar)
+            is_liters_per_sec = False
+            primary_flow_unit = q_obj.get("unit") or live.get("unit")
+            if primary_flow_unit == "l/s":
+                is_liters_per_sec = True
+            else:
+                for s_key, s_data in sensors.items():
+                    if isinstance(s_data, dict) and (s_data.get("unit") == "l/s" or s_data.get("type") == "channel_flow"):
+                        is_liters_per_sec = True
+                        break
+
+            # Si el valor de caudal o nivel sigue en null en el lote general, consultar último punto de la serie histórica
+            if raw_caudal is None and raw_nivel is None and sensors:
+                try:
+                    s_iso_fb = (now_madrid - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%S")
+                    e_iso_fb = now_madrid.strftime("%Y-%m-%dT%H:%M:%S")
+                    fb_url = f"{ACA_BASE_URL}/chart/public/rivergauges/{code}?from={s_iso_fb}&to={e_iso_fb}&_t={now_ts}"
+                    req_fb = urllib.request.Request(fb_url, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
+                    with urllib.request.urlopen(req_fb, timeout=5) as resp_fb:
+                        chart_fb = json.loads(resp_fb.read().decode("utf-8"))
+                        if isinstance(chart_fb, dict) and chart_fb:
+                            first_signal = list(chart_fb.keys())[0]
+                            pts_fb = chart_fb.get(first_signal, {})
+                            if isinstance(pts_fb, dict) and pts_fb:
+                                valid_pts = [(t, v) for t, v in pts_fb.items() if v is not None]
+                                if valid_pts:
+                                    last_t_fb, last_v_fb = valid_pts[-1]
+                                    raw_caudal = _parse_float(last_v_fb)
+                                    raw_time = last_t_fb
+                except Exception as fb_err:
+                    logger.debug(f"Fallback chart no disponible para aforo {code}: {fb_err}")
+
+            # Normalizar caudal a m³/s si venía en l/s
+            if raw_caudal is not None and is_liters_per_sec:
+                caudal_val = round(raw_caudal / 1000.0, 4)
+            else:
+                caudal_val = raw_caudal
+
+            # Normalizar nivel a metros si viene en cm
+            nivel_m = round(raw_nivel / 100.0, 3) if (raw_nivel is not None and nivel_unit == "cm") else raw_nivel
+
+            update_time = _format_madrid_iso(raw_time) if raw_time else now_iso
 
             name = meta.get("name") or live.get("name") or f"Aforament {code}"
             river = meta.get("waterbody") or meta.get("river") or ""
@@ -275,7 +345,7 @@ class ACAService:
                 "nivel": nivel_m,
                 "ultimo_nivel": nivel_m,
                 "nivel_actual": nivel_m,
-                "nivel_cm": nivel_val if nivel_unit == "cm" else (round(nivel_val * 100, 1) if nivel_val else None),
+                "nivel_cm": raw_nivel if nivel_unit == "cm" else (round(raw_nivel * 100, 1) if raw_nivel else None),
                 "umbrales": umbrales,
                 "aviso": umbrales.get("amarillo"),
                 "prealerta": umbrales.get("naranja"),
@@ -577,10 +647,11 @@ class ACAService:
         )
 
         endpoint_type = "reservoir" if is_emb else "rivergauges"
-        url = f"{ACA_BASE_URL}/chart/public/{endpoint_type}/{raw_code}?from={start_iso}&to={end_iso}"
+        now_ts = int(now_madrid.timestamp())
+        url = f"{ACA_BASE_URL}/chart/public/{endpoint_type}/{raw_code}?from={start_iso}&to={end_iso}&_t={now_ts}"
 
         def _fetch():
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
             try:
                 with urllib.request.urlopen(req, timeout=12) as resp:
                     if resp.status == 200:
@@ -591,17 +662,24 @@ class ACAService:
 
         raw_data = await asyncio.to_thread(_fetch)
         series = []
+        effective_unit = "m³/s" if not is_emb else "hm³"
 
         if isinstance(raw_data, dict):
             # Para aforos de caudal: buscar la señal de caudal (generalmente CALC...)
             # Para embalses: buscar volumen, capacidad o nivel según variable_type
             target_signal_key = None
             if not is_emb:
-                # Elegir la señal con valores de caudal (priorizar CALC...)
-                for k in raw_data.keys():
-                    if k.startswith("CALC") or "Q" in k or "CAUDAL" in k:
-                        target_signal_key = k
-                        break
+                if variable_type == "nivel":
+                    for k in raw_data.keys():
+                        if "ANA" in k or "NIV" in k or "LEVEL" in k.upper():
+                            target_signal_key = k
+                            break
+                if not target_signal_key:
+                    # Elegir la señal con valores de caudal (priorizar CALC...)
+                    for k in raw_data.keys():
+                        if k.startswith("CALC") or "Q" in k or "CAUDAL" in k or "FLOW" in k.upper():
+                            target_signal_key = k
+                            break
                 if not target_signal_key and len(raw_data) > 0:
                     target_signal_key = list(raw_data.keys())[0]
             else:
@@ -630,10 +708,37 @@ class ACAService:
 
             if target_signal_key and target_signal_key in raw_data:
                 points_dict = raw_data[target_signal_key]
+                meta_st = self._ensure_embalses_catalog().get(raw_code, {}) if is_emb else self._ensure_aforos_catalog().get(raw_code, {})
+                sensors = meta_st.get("sensors", {}) if isinstance(meta_st, dict) else {}
+                sensor_meta = sensors.get(target_signal_key, {}) if isinstance(sensors, dict) else {}
+                sensor_unit = sensor_meta.get("unit") or ""
+                sensor_type = sensor_meta.get("type") or ""
+
+                is_liters = sensor_unit == "l/s" or "channel_flow" in sensor_type
+                is_cm = sensor_unit == "cm" or "level" in sensor_type
+
+                if is_emb:
+                    vt = str(variable_type).lower() if variable_type else "volumen"
+                    if "cota" in vt or "level" in vt or "absolute_level" in sensor_type:
+                        effective_unit = "m"
+                    elif "porcent" in vt or "%" in vt or "capacity" in sensor_type:
+                        effective_unit = "%"
+                    else:
+                        effective_unit = "hm³"
+                else:
+                    if variable_type == "nivel" or (is_cm and not is_liters and not str(target_signal_key).startswith("CALC")):
+                        effective_unit = "m"
+                    else:
+                        effective_unit = "m³/s"
+
                 if isinstance(points_dict, dict):
                     for t_str, val in points_dict.items():
                         v_float = _parse_float(val)
                         if v_float is not None:
+                            if is_liters:
+                                v_float = round(v_float / 1000.0, 4)
+                            elif effective_unit == "m" and is_cm:
+                                v_float = round(v_float / 100.0, 3)
                             madrid_dt_str = _format_madrid_iso(t_str)
                             series.append({
                                 "fecha": madrid_dt_str,
@@ -649,6 +754,7 @@ class ACAService:
         return {
             "id_variable": str(id_variable),
             "estacion": station_info,
+            "unidad": effective_unit,
             "rango": {
                 "desde": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "hasta": end_dt.strftime("%Y-%m-%d %H:%M:%S"),

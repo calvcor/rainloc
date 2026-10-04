@@ -5243,17 +5243,53 @@ export class LayerManager {
       if (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].active) {
         this.reloadHidrosurLluviasLayer();
       }
-      const isSaihActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
-      if (isSaihActive && this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
-        this.reloadCaudalesLayer();
+      const isCaudalesActive = Boolean(
+        (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) ||
+        this.isLayerOnMap('saih_caudales')
+      );
+      if (isCaudalesActive) {
+        this.reloadCaudalesLayer(true);
       }
-      if (isSaihActive && this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) {
-        this.reloadEmbalsesLayer();
+      const isEmbalsesActive = Boolean(
+        (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) ||
+        this.isLayerOnMap('saih_embalses')
+      );
+      if (isEmbalsesActive) {
+        this.reloadEmbalsesLayer(true);
       }
-      if (isSaihActive && this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
-        this.reloadLluviasLayer();
+      const isLluviasActive = Boolean(
+        (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) ||
+        this.isLayerOnMap('saih_lluvias')
+      );
+      if (isLluviasActive) {
+        this.reloadLluviasLayer(true);
       }
     }, sec * 1000);
+
+    if (!this._visibilityListenerBound) {
+      this._visibilityListenerBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.isRealtimeTabActive()) {
+          const now = Date.now();
+          if (this._caudalesGeojsonTime && (now - this._caudalesGeojsonTime > 180000)) {
+            if (this.isLayerOnMap('saih_caudales') || (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active)) {
+              this.reloadCaudalesLayer(true);
+            }
+          }
+          if (this._embalsesGeojsonTime && (now - this._embalsesGeojsonTime > 180000)) {
+            if (this.isLayerOnMap('saih_embalses') || (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active)) {
+              this.reloadEmbalsesLayer(true);
+            }
+          }
+          if (this.layerStates['radar'] && this.layerStates['radar'].active) {
+            this.reloadRadarLayer(true);
+          }
+          if (this.layerStates['aemet_warnings'] && this.layerStates['aemet_warnings'].active) {
+            this.reloadAemetWarnings();
+          }
+        }
+      });
+    }
   }
 
 
