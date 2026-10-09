@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import re
+import subprocess
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -39,6 +40,28 @@ STATIC_DUERO_PLUVIOS_FILE = DATA_DIR / "duero_lluvias_estaciones.json"
 DUERO_AFOROS_GEOJSON_FILE = DATA_DIR / "duero_aforos.geojson"
 DUERO_EMBALSES_GEOJSON_FILE = DATA_DIR / "duero_embalses.geojson"
 DUERO_PLUVIOS_GEOJSON_FILE = DATA_DIR / "duero_lluvias.geojson"
+
+
+def _fetch_url(url: str, timeout: int = 20) -> str:
+    """Descarga el contenido de una URL de forma robusta evitando bloqueos de chunked encoding."""
+    try:
+        proc = subprocess.run(
+            ["curl", "-s", "--compressed", "-m", str(timeout), "-A", USER_AGENT, url],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.stdout:
+            return proc.stdout
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Connection": "close"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        logger.warning(f"Error descargando {url}: {e}")
+        return ""
 
 
 def _parse_num(val_str: Optional[str]) -> Optional[float]:
@@ -223,12 +246,9 @@ class DueroService:
         now_iso = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         # 1. Descarga de RISR
-        req_risr = urllib.request.Request(RISR_LIVE_URL, headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(req_risr, timeout=15) as resp:
-                html_risr = resp.read().decode("utf-8", errors="ignore")
-        except Exception as e:
-            logger.error(f"Error descargando datos RISR de Duero: {e}")
+        html_risr = _fetch_url(RISR_LIVE_URL, timeout=10)
+        if not html_risr:
+            logger.error(f"Error descargando datos RISR de Duero desde {RISR_LIVE_URL}")
             return
 
         pattern = re.compile(r'var\s+(datos[A-Z0-9_]+)\s*=\s*new\s+Array\s*\((.*?)\);', re.DOTALL)
@@ -250,10 +270,8 @@ class DueroService:
 
         # 2. Descarga de situacion-embalses (capacidades y balance hídrico)
         capacidades_map: Dict[str, float] = {}
-        try:
-            req_emb = urllib.request.Request(EMBALSES_LIVE_URL, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_emb, timeout=10) as resp:
-                html_emb = resp.read().decode("utf-8", errors="ignore")
+        html_emb = _fetch_url(EMBALSES_LIVE_URL, timeout=10)
+        if html_emb:
             # Parsear filas de la tabla de embalses
             for row in re.finditer(r'<tr[^>]*>(.*?)</tr>', html_emb, re.DOTALL):
                 cells = [re.sub(r'<[^>]+>', ' ', c).strip() for c in re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row.group(1), re.DOTALL)]
@@ -262,8 +280,6 @@ class DueroService:
                     cap_val = _parse_num(cells[1])
                     if cap_val and cap_val > 0:
                         capacidades_map[nombre_emb] = cap_val
-        except Exception as e:
-            logger.warning(f"No se pudo descargar boletín situacion-embalses de Duero: {e}")
 
         # -------------------------------------------------------------
         # Procesar AFOROS (datosEA)
@@ -299,15 +315,25 @@ class DueroService:
                 "lat": lat,
                 "lon": lng,
                 "caudal": caudal,
+                "ultimo_caudal": caudal,
                 "nivel": nivel,
+                "ultimo_nivel": nivel,
                 "fecha": fecha_iso,
+                "ultima_hora": fecha_iso,
+                "fecha_comunicacion": fecha_iso,
                 "timestamp": int(datetime.fromisoformat(fecha_iso).timestamp()) if fecha_iso else int(now_dt.timestamp()),
                 "estado": status_str == "normal",
                 "estado_alerta": status_str,
+                "status": status_str,
+                "q_status": str(ea.get("q_status", "variable_normal")),
+                "n_status": str(ea.get("n_status", "variable_normal")),
+                "umbrales": {},
                 "tendencia": "estable",
                 "fuente": "S.A.I.H. Duero (CHD / MITECO)",
+                "unidad": "m³/s",
                 "unidad_caudal": "m³/s",
-                "unidad_nivel": "m"
+                "unidad_nivel": "m",
+                "tipo": "Aforo",
             }
             aforos_list.append(aforo_obj)
 
@@ -360,16 +386,21 @@ class DueroService:
                 "volumen": volumen,
                 "volumen_actual": volumen,
                 "capacidad": capacidad,
+                "capacidad_nmn": capacidad,
                 "porcentaje": porcentaje,
+                "porcentaje_llenado": porcentaje,
                 "porcentaje_volumen": porcentaje,
                 "nivel": cota,
                 "cota": cota,
                 "cota_actual": cota,
                 "fecha": fecha_iso,
+                "ultima_hora": fecha_iso,
                 "timestamp": int(datetime.fromisoformat(fecha_iso).timestamp()) if fecha_iso else int(now_dt.timestamp()),
                 "fuente": "S.A.I.H. Duero (CHD / MITECO)",
                 "unidad_volumen": "hm³",
-                "unidad_nivel": "msnm"
+                "unidad_cota": "msnm",
+                "unidad_nivel": "msnm",
+                "tipo": "Embalse",
             }
             embalses_list.append(embalse_obj)
 
@@ -632,66 +663,119 @@ class DueroService:
         end_date: Optional[str]
     ) -> Dict[str, Any]:
         """Extracción síncrona de la serie temporal horaria desde la web de SAIH Duero."""
-        station_info = self._aforos_by_id.get(st_id) or self._embalses_by_id.get(st_id) or self._pluvios_by_id.get(st_id) or {}
-        st_name = station_info.get("nombre") or st_id
+        clean_id = str(st_id).strip()
+        station_info = self._aforos_by_id.get(clean_id) or self._embalses_by_id.get(clean_id) or self._pluvios_by_id.get(clean_id)
+        if not station_info:
+            for prefix in ["duero_aforo_", "duero_emb_", "duero_pluvio_", "duero_"]:
+                if clean_id.lower().startswith(prefix):
+                    c = clean_id[len(prefix):]
+                    station_info = self._aforos_by_id.get(c) or self._embalses_by_id.get(c) or self._pluvios_by_id.get(c)
+                    if station_info:
+                        break
+
+        if station_info:
+            real_code = station_info.get("id_variable") or station_info.get("codigo") or clean_id
+            st_name = station_info.get("nombre") or clean_id
+        else:
+            real_code = clean_id
+            st_name = clean_id
 
         # 1. Obtener la página principal de la estación para descubrir los enlaces de histórico
-        station_url = f"{DUERO_BASE_URL}/risr/{st_id}"
-        req = urllib.request.Request(station_url, headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-        except Exception as e:
-            logger.warning(f"Error consultando estación {st_id} de Duero: {e}")
+        station_url = f"{DUERO_BASE_URL}/risr/{real_code}"
+        html = _fetch_url(station_url, timeout=20)
+        if not html:
+            logger.warning(f"Error consultando estación {real_code} de Duero")
             return {
-                "id_variable": st_id,
+                "id_variable": real_code,
                 "nombre": st_name,
                 "red": "CHD",
                 "cuenca": "Duero",
                 "variable": var_type.capitalize(),
                 "unidad": "m³/s",
                 "total_puntos": 0,
+                "puntos_totales": 0,
+                "serie": [],
                 "datos": []
             }
 
         # Mapear variables disponibles a sus URLs de histórico
         var_map = {}
-        for r in re.finditer(r'<tr[^>]*>\s*<td>([^<]+)</td>.*?href=[\"\']([^\"\']*?historico/[^\"\']+)[\"\']', html, re.DOTALL):
-            v_name = r.group(1).strip().lower()
-            v_href = r.group(2).strip()
-            var_map[v_name] = v_href
+        for m in re.finditer(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL):
+            row_text = m.group(1)
+            if "historico/" in row_text:
+                cells = [re.sub(r'<[^>]+>', ' ', c).strip() for c in re.findall(r'<td[^>]*>(.*?)</td>', row_text, re.DOTALL)]
+                links = re.findall(r'href=[\"\']([^\"\']*?historico/[^\"\']+)[\"\']', row_text)
+                if cells and links:
+                    var_name = cells[0].strip().lower()
+                    var_map[var_name] = links[0].strip()
 
         target_href = None
         target_var_name = "Caudal"
         target_unit = "m³/s"
 
-        if "caudal" in var_type or "flow" in var_type or "q" in var_type:
+        if "vol" in var_type or "embalse" in var_type:
+            # 1. Priorizar volumen embalsado (excluyendo porcentaje)
             for k, href in var_map.items():
-                if "caudal" in k:
+                if ("volumen embalsado" in k or "volumen" in k) and "porcentaje" not in k and "%" not in k:
                     target_href = href
-                    target_var_name = "Caudal"
+                    target_var_name = "Volumen"
+                    target_unit = "hm³"
+                    break
+            if not target_href:
+                for k, href in var_map.items():
+                    if "volumen" in k:
+                        target_href = href
+                        target_var_name = "Volumen"
+                        target_unit = "hm³"
+                        break
+        elif "entrante" in var_type or "recibido" in var_type or "caudal_in" in var_type:
+            for k, href in var_map.items():
+                if "entrante" in k or "recibido" in k:
+                    target_href = href
+                    target_var_name = "Caudal Entrante"
+                    target_unit = "m³/s"
+                    break
+        elif "vertido" in var_type or "aliviado" in var_type or "salida" in var_type or "caudal_out" in var_type:
+            for k, href in var_map.items():
+                if "vertido" in k or "aliviado" in k or "salida" in k:
+                    target_href = href
+                    target_var_name = "Caudal Vertido"
                     target_unit = "m³/s"
                     break
         elif "nivel" in var_type or "level" in var_type or "n" in var_type or "cota" in var_type:
             for k, href in var_map.items():
-                if "nivel" in k or "cota" in k:
+                if k == "nivel" or "cota" in k:
                     target_href = href
-                    target_var_name = "Nivel"
+                    target_var_name = "Cota / Nivel"
                     target_unit = "m"
                     break
+            if not target_href:
+                for k, href in var_map.items():
+                    if "nivel" in k:
+                        target_href = href
+                        target_var_name = "Nivel"
+                        target_unit = "m"
+                        break
+        elif "caudal" in var_type or "flow" in var_type or "q" in var_type:
+            for k, href in var_map.items():
+                if "caudal" in k and "vertido" not in k and "medio" not in k:
+                    target_href = href
+                    target_var_name = "Caudal"
+                    target_unit = "m³/s"
+                    break
+            if not target_href:
+                for k, href in var_map.items():
+                    if "caudal" in k:
+                        target_href = href
+                        target_var_name = "Caudal"
+                        target_unit = "m³/s"
+                        break
         elif "pluv" in var_type or "precip" in var_type or "lluv" in var_type or "rain" in var_type:
             for k, href in var_map.items():
                 if "pluvio" in k or "precip" in k or "lluvia" in k:
                     target_href = href
                     target_var_name = "Precipitación"
                     target_unit = "mm"
-                    break
-        elif "vol" in var_type or "embalse" in var_type:
-            for k, href in var_map.items():
-                if "vol" in k:
-                    target_href = href
-                    target_var_name = "Volumen"
-                    target_unit = "hm³"
                     break
 
         if not target_href and var_map:
@@ -708,38 +792,40 @@ class DueroService:
                 "variable": target_var_name,
                 "unidad": target_unit,
                 "total_puntos": 0,
+                "puntos_totales": 0,
+                "serie": [],
                 "datos": []
             }
 
         hist_url = f"{DUERO_BASE_URL}/{target_href}" if not target_href.startswith("http") else target_href
-        req_hist = urllib.request.Request(hist_url, headers={"User-Agent": USER_AGENT})
-
-        try:
-            with urllib.request.urlopen(req_hist, timeout=15) as resp:
-                hist_html = resp.read().decode("utf-8", errors="ignore")
-        except Exception as e:
-            logger.warning(f"Error descargando histórico {hist_url}: {e}")
+        hist_html = _fetch_url(hist_url, timeout=25)
+        if not hist_html:
+            logger.warning(f"Error descargando histórico {hist_url}")
             return {
-                "id_variable": st_id,
+                "id_variable": real_code,
                 "nombre": st_name,
                 "red": "CHD",
                 "cuenca": "Duero",
                 "variable": target_var_name,
                 "unidad": target_unit,
                 "total_puntos": 0,
+                "puntos_totales": 0,
+                "serie": [],
                 "datos": []
             }
 
         m = re.search(r'var\s+chartData\s*=\s*\[(.*?)\];', hist_html, re.DOTALL)
         if not m:
             return {
-                "id_variable": st_id,
+                "id_variable": real_code,
                 "nombre": st_name,
                 "red": "CHD",
                 "cuenca": "Duero",
                 "variable": target_var_name,
                 "unidad": target_unit,
                 "total_puntos": 0,
+                "puntos_totales": 0,
+                "serie": [],
                 "datos": []
             }
 
@@ -764,15 +850,23 @@ class DueroService:
         data_points.sort(key=lambda x: x["timestamp"])
 
         return {
-            "id_variable": st_id,
-            "id_estacion": f"duero_aforo_{st_id.lower()}",
+            "id_variable": real_code,
+            "id_estacion": f"duero_emb_{real_code.lower()}" if (real_code.startswith("EM") or "emb" in real_code.lower()) else f"duero_aforo_{real_code.lower()}",
+            "codigo": real_code,
             "nombre": st_name,
             "red": "CHD",
             "cuenca": "Duero",
             "variable": target_var_name,
             "unidad": target_unit,
+            "rango": {
+                "desde": cutoff.strftime("%Y-%m-%d %H:%M:%S"),
+                "hasta": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "horas": hours,
+            },
             "horas_solicitadas": hours,
             "total_puntos": len(data_points),
+            "puntos_totales": len(data_points),
+            "serie": data_points,
             "datos": data_points
         }
 

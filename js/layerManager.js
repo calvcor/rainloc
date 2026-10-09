@@ -5398,6 +5398,18 @@ export class LayerManager {
             color = '#f59e0b';
             alertClass = 'caudal-status-yellow';
             alertLevelText = 'Umbral Amarillo (Precaución)';
+          } else if (props.estado_alerta === 'warning3' || props.status === 'warning3' || props.q_status === 'variable_warning3' || props.n_status === 'variable_warning3') {
+            color = '#ef4444';
+            alertClass = 'caudal-status-red caudal-pulse';
+            alertLevelText = 'Umbral Rojo (Alarma SAIH Duero)';
+          } else if (props.estado_alerta === 'warning2' || props.status === 'warning2' || props.q_status === 'variable_warning2' || props.n_status === 'variable_warning2') {
+            color = '#f97316';
+            alertClass = 'caudal-status-orange caudal-pulse';
+            alertLevelText = 'Umbral Naranja (Alerta SAIH Duero)';
+          } else if (props.estado_alerta === 'warning1' || props.status === 'warning1' || props.q_status === 'variable_warning1' || props.n_status === 'variable_warning1') {
+            color = '#f59e0b';
+            alertClass = 'caudal-status-yellow';
+            alertLevelText = 'Umbral Amarillo (Prealerta SAIH Duero)';
           }
         } else {
           color = '#94a3b8';
@@ -5516,6 +5528,15 @@ export class LayerManager {
       } else if (uAmarillo !== null && compareVal >= uAmarillo) {
         alertColor = '#f59e0b';
         alertText = '🟡 Umbral Amarillo (Aviso)';
+      } else if (props.estado_alerta === 'warning3' || props.status === 'warning3' || props.q_status === 'variable_warning3' || props.n_status === 'variable_warning3') {
+        alertColor = '#ef4444';
+        alertText = '🔴 Alarma Hidrológica (SAIH Duero)';
+      } else if (props.estado_alerta === 'warning2' || props.status === 'warning2' || props.q_status === 'variable_warning2' || props.n_status === 'variable_warning2') {
+        alertColor = '#f97316';
+        alertText = '🟠 Alerta Hidrológica (SAIH Duero)';
+      } else if (props.estado_alerta === 'warning1' || props.status === 'warning1' || props.q_status === 'variable_warning1' || props.n_status === 'variable_warning1') {
+        alertColor = '#f59e0b';
+        alertText = '🟡 Prealerta Hidrológica (SAIH Duero)';
       }
     } else {
       alertColor = '#94a3b8';
@@ -5715,7 +5736,7 @@ export class LayerManager {
       const resp = await fetch(`${CONFIG.apiBaseUrl}/saih/caudales/${idVariable}/history?hours=${hours}${varParam}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      const series = data.serie || [];
+      const series = data.serie || data.datos || [];
 
       if (series.length === 0) {
         container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron lecturas registradas en las últimas ${hours} horas.</div>`;
@@ -6219,9 +6240,9 @@ export class LayerManager {
         const props = feature.properties || {};
         props.lat = latlng.lat;
         props.lon = latlng.lng;
-        const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : null;
-        const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : null;
-        const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (vol !== null && cap ? (vol / cap * 100) : null);
+        const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : (props.volumen !== null && props.volumen !== undefined ? Number(props.volumen) : null);
+        const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : (props.capacidad !== null && props.capacidad !== undefined ? Number(props.capacidad) : null);
+        const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (props.porcentaje !== null && props.porcentaje !== undefined ? Number(props.porcentaje) : (vol !== null && cap ? (vol / cap * 100) : null));
         const var24 = props.variacion_24h !== undefined && props.variacion_24h !== null ? Number(props.variacion_24h) : null;
         const varSem = props.variacion_semana !== undefined && props.variacion_semana !== null ? Number(props.variacion_semana) : null;
         const isSurging = (var24 !== null && var24 > 0.5) || (varSem !== null && varSem > 1.5);
@@ -7228,9 +7249,9 @@ export class LayerManager {
     const statCaudalOut = document.getElementById('embalse-stat-caudal-out');
     const saihLink = document.getElementById('embalse-saih-link');
 
-    const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : null;
-    const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : null;
-    const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (vol !== null && cap ? (vol / cap * 100) : null);
+    const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : (props.volumen !== null && props.volumen !== undefined ? Number(props.volumen) : null);
+    const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : (props.capacidad !== null && props.capacidad !== undefined ? Number(props.capacidad) : null);
+    const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (props.porcentaje !== null && props.porcentaje !== undefined ? Number(props.porcentaje) : (vol !== null && cap ? (vol / cap * 100) : null));
     const cota = props.cota_actual !== null && props.cota_actual !== undefined ? Number(props.cota_actual) : null;
     const cotaV = props.cota_vertido !== null && props.cota_vertido !== undefined ? Number(props.cota_vertido) : null;
     const caudalIn = props.caudal_recibido !== null && props.caudal_recibido !== undefined ? Number(props.caudal_recibido) : null;
@@ -7420,7 +7441,7 @@ export class LayerManager {
       const resp = await fetch(`${CONFIG.apiBaseUrl}/saih/embalses/${idOrCode}/history?hours=${hours}&variable_type=volumen`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      const series = data.serie || [];
+      const series = data.serie || data.datos || [];
 
       if (series.length === 0) {
         container.innerHTML = `<div class="caudal-chart-nodata">No se encontraron registros de volumen en las últimas ${hours} horas.</div>`;
