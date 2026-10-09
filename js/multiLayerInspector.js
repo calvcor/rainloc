@@ -1240,8 +1240,9 @@ export class MultiLayerInspector {
             const isEbroC = netRawC === 'EBRO' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('ebro_'));
             const isSeguraC = netRawC === 'CHS' || netRawC === 'SEGURA' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('segura_'));
             const isAcaC = netRawC === 'ACA' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('aca_'));
-            const netNameC = isAcaC ? 'SAIH ACA' : (isHidroC ? 'SAIH HIDROSUR' : (isGuadalC ? 'SAIH GUADALQUIVIR' : (isEbroC ? 'SAIH EBRO' : (isSeguraC ? 'SAIH SEGURA' : 'SAIH JÚCAR'))));
-            const netColorC = isAcaC ? '#0d9488' : (isHidroC ? '#5eead4' : (isGuadalC ? '#818cf8' : (isEbroC ? '#22d3ee' : (isSeguraC ? '#5eead4' : '#38bdf8'))));
+            const isDueroC = netRawC === 'CHD' || netRawC === 'DUERO' || (closestStation.id_variable && String(closestStation.id_variable).startsWith('duero_'));
+            const netNameC = isDueroC ? 'SAIH DUERO' : (isAcaC ? 'SAIH ACA' : (isHidroC ? 'SAIH HIDROSUR' : (isGuadalC ? 'SAIH GUADALQUIVIR' : (isEbroC ? 'SAIH EBRO' : (isSeguraC ? 'SAIH SEGURA' : 'SAIH JÚCAR')))));
+            const netColorC = isDueroC ? '#38bdf8' : (isAcaC ? '#0d9488' : (isHidroC ? '#5eead4' : (isGuadalC ? '#818cf8' : (isEbroC ? '#22d3ee' : (isSeguraC ? '#5eead4' : '#38bdf8')))));
 
             sections.push({
               type: "caudal",
@@ -1349,8 +1350,9 @@ export class MultiLayerInspector {
             const isEbroE = netRawE === 'EBRO' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('ebro_'));
             const isSeguraE = netRawE === 'CHS' || netRawE === 'SEGURA' || closestEmbalse.cuenca === 'Segura' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('segura_'));
             const isAcaE = netRawE === 'ACA' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('aca_'));
-            const netNameE = isAcaE ? 'SAIH ACA' : (isHidroE ? 'SAIH HIDROSUR' : (isGuadalE ? 'SAIH GUADALQUIVIR' : (isEbroE ? 'SAIH EBRO' : (isSeguraE ? 'SAIH SEGURA' : 'SAIH JÚCAR'))));
-            const netColorE = isAcaE ? '#0d9488' : (isHidroE ? '#5eead4' : (isGuadalE ? '#818cf8' : (isEbroE ? '#22d3ee' : (isSeguraE ? '#5eead4' : '#38bdf8'))));
+            const isDueroE = netRawE === 'CHD' || netRawE === 'DUERO' || (closestEmbalse.id_estacion && String(closestEmbalse.id_estacion).startsWith('duero_'));
+            const netNameE = isDueroE ? 'SAIH DUERO' : (isAcaE ? 'SAIH ACA' : (isHidroE ? 'SAIH HIDROSUR' : (isGuadalE ? 'SAIH GUADALQUIVIR' : (isEbroE ? 'SAIH EBRO' : (isSeguraE ? 'SAIH SEGURA' : 'SAIH JÚCAR')))));
+            const netColorE = isDueroE ? '#38bdf8' : (isAcaE ? '#0d9488' : (isHidroE ? '#5eead4' : (isGuadalE ? '#818cf8' : (isEbroE ? '#22d3ee' : (isSeguraE ? '#5eead4' : '#38bdf8')))));
 
             sections.push({
               type: "embalse",
@@ -1525,6 +1527,7 @@ export class MultiLayerInspector {
               const isGuadal = network === 'GUADALQUIVIR' || (closestPluvio.id_estacion && String(closestPluvio.id_estacion).startsWith('guadal_'));
               const isEbro = network === 'EBRO' || (closestPluvio.id_estacion && String(closestPluvio.id_estacion).startsWith('ebro_'));
               const isSegura = network === 'CHS' || network === 'SEGURA' || closestPluvio.cuenca === 'Segura' || (closestPluvio.id_estacion && String(closestPluvio.id_estacion).startsWith('segura_'));
+              const isDuero = network === 'CHD' || network === 'DUERO' || (closestPluvio.id_estacion && String(closestPluvio.id_estacion).startsWith('duero_'));
               
               const networkLabel = isAemet ? 'AEMET'
                 : (isAvamet ? 'AVAMET'
@@ -1532,7 +1535,8 @@ export class MultiLayerInspector {
                 : (isHidrosur ? 'SAIH HIDROSUR'
                 : (isGuadal ? 'SAIH GUADALQUIVIR'
                 : (isEbro ? 'SAIH EBRO'
-                : (isSegura ? 'SAIH SEGURA' : 'SAIH JÚCAR'))))));
+                : (isSegura ? 'SAIH SEGURA'
+                : (isDuero ? 'SAIH DUERO' : 'SAIH JÚCAR')))))));
 
               const sectionHeaderColor = isAemet ? '#2563eb'
                 : (isAvamet ? '#059669'

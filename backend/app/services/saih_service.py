@@ -20,6 +20,7 @@ from app.services.guadalquivir_service import guadalquivir_service
 from app.services.ebro_service import ebro_service
 from app.services.segura_service import segura_service
 from app.services.aca_service import aca_service
+from app.services.duero_service import duero_service
 
 
 logger = logging.getLogger("rainloc-backend.saih_service")
@@ -233,7 +234,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando caudales de ACA: {e}")
             aca_caudales = []
-        return self._stations + hidro_caudales + guadal_caudales + ebro_caudales + segura_caudales + aca_caudales
+        try:
+            duero_caudales = await duero_service.get_caudales()
+        except Exception as e:
+            logger.warning(f"Error cargando caudales de Duero: {e}")
+            duero_caudales = []
+        return self._stations + hidro_caudales + guadal_caudales + ebro_caudales + segura_caudales + aca_caudales + duero_caudales
 
     async def get_stations_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_stations = await self.get_stations(auto_sync=auto_sync)
@@ -268,6 +274,10 @@ class SAIHService:
             or aca_service._aforos_by_id.get(key.upper())
             or aca_service._aforos_by_id.get(key.replace("aca_aforo_", ""))
             or aca_service._aforos_by_id.get(key.replace("aca_aforo_", "").upper())
+            or duero_service._aforos_by_id.get(key)
+            or duero_service._aforos_by_id.get(key.upper())
+            or duero_service._aforos_by_id.get(key.replace("duero_aforo_", ""))
+            or duero_service._aforos_by_id.get(key.replace("duero_aforo_", "").upper())
         )
 
     # ==========================================
@@ -463,7 +473,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando embalses de ACA: {e}")
             aca_embalses = []
-        return self._embalses + hidro_embalses + guadal_embalses + ebro_embalses + segura_embalses + aca_embalses
+        try:
+            duero_embalses = await duero_service.get_embalses()
+        except Exception as e:
+            logger.warning(f"Error cargando embalses de Duero: {e}")
+            duero_embalses = []
+        return self._embalses + hidro_embalses + guadal_embalses + ebro_embalses + segura_embalses + aca_embalses + duero_embalses
 
     async def get_embalses_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_embalses = await self.get_embalses(auto_sync=auto_sync)
@@ -499,6 +514,10 @@ class SAIHService:
             or aca_service._embalses_by_id.get(str(id_or_code))
             or aca_service._embalses_by_id.get(key.replace("ACA_EMB_", "").replace("ACA_EMBALSE_", ""))
             or aca_service._embalses_by_id.get(str(id_or_code).replace("aca_emb_", "").replace("aca_embalse_", ""))
+            or duero_service._embalses_by_id.get(key)
+            or duero_service._embalses_by_id.get(str(id_or_code))
+            or duero_service._embalses_by_id.get(key.replace("DUERO_EMB_", ""))
+            or duero_service._embalses_by_id.get(str(id_or_code).replace("duero_emb_", ""))
         )
 
     # ==========================================
@@ -686,7 +705,12 @@ class SAIHService:
         except Exception as e:
             logger.warning(f"Error cargando pluviómetros de Segura: {e}")
             segura_pluvios = []
-        return self._pluvios + hidro_pluvios + guadal_pluvios + ebro_pluvios + segura_pluvios
+        try:
+            duero_pluvios = await duero_service.get_pluvios()
+        except Exception as e:
+            logger.warning(f"Error cargando pluviómetros de Duero: {e}")
+            duero_pluvios = []
+        return self._pluvios + hidro_pluvios + guadal_pluvios + ebro_pluvios + segura_pluvios + duero_pluvios
 
     async def get_pluvios_geojson(self, auto_sync: bool = True) -> Dict[str, Any]:
         all_pluvios = await self.get_pluvios(auto_sync=auto_sync)
@@ -718,6 +742,10 @@ class SAIHService:
             or segura_service._pluvios_by_id.get(str(id_or_code))
             or segura_service._pluvios_by_id.get(key.replace("SEGURA_PLUV_", ""))
             or segura_service._pluvios_by_id.get(str(id_or_code).replace("segura_pluv_", ""))
+            or duero_service._pluvios_by_id.get(key)
+            or duero_service._pluvios_by_id.get(str(id_or_code))
+            or duero_service._pluvios_by_id.get(key.replace("DUERO_PLUV_", ""))
+            or duero_service._pluvios_by_id.get(str(id_or_code).replace("duero_pluv_", ""))
         )
 
     # ==========================================
@@ -850,6 +878,31 @@ class SAIHService:
                 or "emb" in id_str.lower()
             )
             result = await aca_service.get_history(
+                id_str,
+                hours=hours,
+                is_embalse=is_emb,
+                variable_type=variable_type,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+        elif (
+            id_str.startswith("duero_")
+            or id_str.startswith("DUERO_")
+            or id_str in duero_service._aforos_by_id
+            or id_str in duero_service._embalses_by_id
+            or id_str in duero_service._pluvios_by_id
+            or id_str.upper() in duero_service._aforos_by_id
+            or id_str.upper() in duero_service._embalses_by_id
+            or id_str.upper() in duero_service._pluvios_by_id
+        ):
+            is_emb = (
+                id_str in duero_service._embalses_by_id
+                or id_str.upper() in duero_service._embalses_by_id
+                or "emb" in id_str.lower()
+                or (len(id_str) >= 2 and id_str.upper().startswith("EM") and id_str[2:].isdigit())
+            )
+            result = await duero_service.get_history(
                 id_str,
                 hours=hours,
                 is_embalse=is_emb,

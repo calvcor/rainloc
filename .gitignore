@@ -25,6 +25,8 @@ backend/data/*
 data/*
 !data/.gitkeep
 !data/ccaa.geojson
+public/data/*
+!public/data/.gitkeep
 *.log
 saih_aforos.geojson
 

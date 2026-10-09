@@ -9,6 +9,7 @@ from app.services.avamet_pluvios_service import avamet_pluvios_service
 from app.services.meteocat_pluvios_service import meteocat_pluvios_service
 from app.services.hidrosur_pluvios_service import hidrosur_pluvios_service
 from app.services.segura_service import segura_service
+from app.services.duero_service import duero_service
 from app.services.saih_service import saih_service
 
 router = APIRouter(tags=["Pluviómetros"])
@@ -266,44 +267,98 @@ async def sync_segura_lluvias():
 
 
 # ==========================================
+# SAIH DUERO (CONFEDERACIÓN HIDROGRÁFICA DEL DUERO)
+# ==========================================
+
+@router.get("/duero/lluvias", summary="Obtener pluviómetros del S.A.I.H. Duero (CHD)")
+@router.get("/duero/pluvios", include_in_schema=False)
+async def get_duero_lluvias(
+    format: Literal["geojson", "json"] = Query(
+        "geojson",
+        description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
+    )
+):
+    """
+    Devuelve las ~221 estaciones pluviométricas del SAIH Duero (CHD / MITECO)
+    con lluvia en 1h y temperatura obtenidas bajo demanda.
+    """
+    if format == "geojson":
+        return await duero_service.get_pluvios_geojson()
+    return await duero_service.get_pluvios()
+
+
+@router.get("/duero/lluvias/{id_or_code}", summary="Obtener datos de una estación SAIH Duero específica")
+@router.get("/duero/pluvios/{id_or_code}", include_in_schema=False)
+async def get_duero_pluvio_by_id(id_or_code: str):
+    """
+    Devuelve los datos de una estación SAIH Duero según su código o ID (ej. 'PL551').
+    """
+    await duero_service.ensure_fresh_data()
+    pluvio = duero_service._pluvios_by_id.get(str(id_or_code).strip()) or duero_service._pluvios_by_id.get(str(id_or_code).strip().upper())
+    if not pluvio:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Estación SAIH Duero con identificador o código '{id_or_code}' no encontrada.",
+        )
+    return pluvio
+
+
+@router.post("/duero/lluvias/sync", summary="Forzar sincronización de pluviómetros SAIH Duero")
+async def sync_duero_lluvias():
+    """
+    Fuerza la descarga y actualización de pluviómetros del SAIH Duero.
+    """
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, duero_service.sync_all)
+    return {
+        "status": "success",
+        "message": f"Sincronizados {len(duero_service._pluvios)} pluviómetros de SAIH Duero correctamente.",
+        "total": len(duero_service._pluvios),
+    }
+
+
+# ==========================================
 # CATÁLOGO UNIFICADO
 # ==========================================
 
-@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET + METEOCAT + HIDROSUR + SEGURA)")
+@router.get("/pluvios/todos", summary="Obtener catálogo unificado de pluviómetros (CHJ + AEMET + AVAMET + METEOCAT + HIDROSUR + SEGURA + DUERO)")
 async def get_all_pluvios(
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
     ),
-    source: Literal["all", "chj", "aemet", "avamet", "meteocat", "hidrosur", "segura"] = Query(
+    source: Literal["all", "chj", "aemet", "avamet", "meteocat", "hidrosur", "segura", "duero"] = Query(
         "all",
-        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET), 'avamet' (AVAMET), 'meteocat' (Meteocat), 'hidrosur' (SAIH Hidrosur) o 'segura' (SAIH Segura)",
+        description="Filtro de red: 'all' (todas), 'chj' (SAIH Júcar), 'aemet' (AEMET), 'avamet' (AVAMET), 'meteocat' (Meteocat), 'hidrosur' (SAIH Hidrosur), 'segura' (SAIH Segura) o 'duero' (SAIH Duero)",
     )
 ):
     """
-    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET, AVAMET, Meteocat, Hidrosur y/o Segura en idéntico formato.
+    Devuelve las estaciones pluviométricas unificadas de CHJ, AEMET, AVAMET, Meteocat, Hidrosur, Segura y/o Duero en idéntico formato.
     """
-    chj_list = []
-    aemet_list = []
-    avamet_list = []
-    meteocat_list = []
-    hidrosur_list = []
-    segura_list = []
-
-    if source in ("all", "chj"):
-        chj_list = await saih_service.get_pluvios()
-    if source in ("all", "aemet"):
-        aemet_list = await aemet_pluvios_service.get_pluvios()
-    if source in ("all", "avamet"):
-        avamet_list = await avamet_pluvios_service.get_pluvios()
-    if source in ("all", "meteocat"):
-        meteocat_list = await meteocat_pluvios_service.get_pluvios()
-    if source in ("all", "hidrosur"):
-        hidrosur_list = await hidrosur_pluvios_service.get_pluvios()
-    if source in ("all", "segura"):
-        segura_list = await segura_service.get_pluvios()
-
-    combined = chj_list + aemet_list + avamet_list + meteocat_list + hidrosur_list + segura_list
+    if source == "all":
+        combined = (
+            await saih_service.get_pluvios()
+            + await aemet_pluvios_service.get_pluvios()
+            + await avamet_pluvios_service.get_pluvios()
+            + await meteocat_pluvios_service.get_pluvios()
+        )
+    elif source == "chj":
+        await saih_service.ensure_fresh_pluvios_data()
+        combined = saih_service._pluvios
+    elif source == "aemet":
+        combined = await aemet_pluvios_service.get_pluvios()
+    elif source == "avamet":
+        combined = await avamet_pluvios_service.get_pluvios()
+    elif source == "meteocat":
+        combined = await meteocat_pluvios_service.get_pluvios()
+    elif source == "hidrosur":
+        combined = await hidrosur_pluvios_service.get_pluvios()
+    elif source == "segura":
+        combined = await segura_service.get_pluvios()
+    elif source == "duero":
+        combined = await duero_service.get_pluvios()
+    else:
+        combined = []
 
     if format == "json":
         return combined
