@@ -48,6 +48,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Data-Revalidating"],
 )
 
 app.include_router(api_v1_router)

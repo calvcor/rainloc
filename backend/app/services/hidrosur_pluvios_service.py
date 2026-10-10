@@ -367,6 +367,11 @@ class HidrosurPluviosService:
             if len(self._pluvios) == 0:
                 await asyncio.to_thread(self.sync_pluvios_metadata)
 
+    def is_revalidating(self) -> bool:
+        if getattr(self, "_bg_syncing", False):
+            return True
+        return not self._is_fresh()
+
     async def get_pluvios(self) -> List[Dict[str, Any]]:
         """Obtiene la lista plana de pluviómetros de SAIH Hidrosur."""
         await self.ensure_fresh_data()

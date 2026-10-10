@@ -367,6 +367,11 @@ class MeteocatPluviosService:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self.sync_pluvios_metadata)
 
+    def is_revalidating(self) -> bool:
+        if getattr(self, "_bg_syncing", False):
+            return True
+        return not self._is_fresh()
+
     async def get_pluvios(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
             await self.ensure_fresh_data()

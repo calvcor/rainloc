@@ -5319,12 +5319,14 @@ export class LayerManager {
       const resp = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (resp.ok) {
-        return await resp.json();
+        const isRevalidating = resp.headers.get('X-Data-Revalidating') === 'true';
+        const data = await resp.json();
+        return { data, isRevalidating };
       }
     } catch (e) {
       clearTimeout(timeoutId);
     }
-    return null;
+    return { data: null, isRevalidating: false };
   }
 
   /**
@@ -5363,12 +5365,26 @@ export class LayerManager {
         './backend/data/saih_aforos.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._caudalesRevalidateTimeout) clearTimeout(this._caudalesRevalidateTimeout);
+        this._caudalesRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active) {
+            this._loadCaudalesLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson) {
         for (const fbUrl of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(fbUrl, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(fbUrl, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6258,12 +6274,26 @@ export class LayerManager {
         './backend/data/saih_embalses.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._embalsesRevalidateTimeout) clearTimeout(this._embalsesRevalidateTimeout);
+        this._embalsesRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) {
+            this._loadEmbalsesLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6411,12 +6441,26 @@ export class LayerManager {
         './backend/data/saih_lluvias.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._lluviasRevalidateTimeout) clearTimeout(this._lluviasRevalidateTimeout);
+        this._lluviasRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) {
+            this._loadLluviasLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6559,12 +6603,26 @@ export class LayerManager {
         './backend/data/aemet_lluvias.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._aemetLluviasRevalidateTimeout) clearTimeout(this._aemetLluviasRevalidateTimeout);
+        this._aemetLluviasRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['aemet_lluvias'] && this.layerStates['aemet_lluvias'].active) {
+            this._loadAemetLluviasLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6704,12 +6762,26 @@ export class LayerManager {
         './backend/data/avamet_lluvias.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._avametLluviasRevalidateTimeout) clearTimeout(this._avametLluviasRevalidateTimeout);
+        this._avametLluviasRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['avamet_lluvias'] && this.layerStates['avamet_lluvias'].active) {
+            this._loadAvametLluviasLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6849,12 +6921,26 @@ export class LayerManager {
         './backend/data/meteocat_lluvias.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._meteocatLluviasRevalidateTimeout) clearTimeout(this._meteocatLluviasRevalidateTimeout);
+        this._meteocatLluviasRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['meteocat_lluvias'] && this.layerStates['meteocat_lluvias'].active) {
+            this._loadMeteocatLluviasLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 
@@ -6993,12 +7079,26 @@ export class LayerManager {
         './backend/data/hidrosur_lluvias.geojson'
       ];
 
-      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      const res = await this._fetchJsonWithTimeout(apiUrl, 8000);
+      geojson = res.data;
+
+      // Si el backend notificó que está revalidando en background, programar refresco corto
+      if (res.isRevalidating) {
+        if (this._hidrosurLluviasRevalidateTimeout) clearTimeout(this._hidrosurLluviasRevalidateTimeout);
+        this._hidrosurLluviasRevalidateTimeout = setTimeout(() => {
+          if (this.layerStates['hidrosur_lluvias'] && this.layerStates['hidrosur_lluvias'].active) {
+            this._loadHidrosurLluviasLayer(layerGroup, opacity, true);
+          }
+        }, 18000);
+      }
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          geojson = await this._fetchJsonWithTimeout(url, 3000);
-          if (geojson && geojson.features) break;
+          const fbRes = await this._fetchJsonWithTimeout(url, 3000);
+          if (fbRes.data && fbRes.data.features) {
+            geojson = fbRes.data;
+            break;
+          }
         }
       }
 

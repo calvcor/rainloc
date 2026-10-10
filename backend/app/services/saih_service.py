@@ -218,10 +218,29 @@ class SAIHService:
                 self._trigger_background_caudales_sync()
             return
 
-        async with self._sync_lock:
-            if len(self._stations) == 0 or force:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self.sync_static_metadata)
+    def is_caudales_revalidating(self) -> bool:
+        if getattr(self, "_bg_caudales_syncing", False):
+            return True
+        now = datetime.now()
+        if self._last_sync_time is None or (now - self._last_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
+            return True
+        return False
+
+    def is_embalses_revalidating(self) -> bool:
+        if getattr(self, "_bg_embalses_syncing", False):
+            return True
+        now = datetime.now()
+        if self._last_embalses_sync_time is None or (now - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
+            return True
+        return False
+
+    def is_pluvios_revalidating(self) -> bool:
+        if getattr(self, "_bg_pluvios_syncing", False):
+            return True
+        now = datetime.now()
+        if self._last_pluvios_sync_time is None or (now - self._last_pluvios_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
+            return True
+        return False
 
     async def get_stations(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:

@@ -2,7 +2,7 @@
 Endpoints API para monitorización de caudales en tiempo real y series temporales del SAIH Júcar (CHJ).
 """
 from typing import Optional, Literal
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from app.services.saih_service import saih_service
 
 router = APIRouter(prefix="/saih", tags=["SAIH Júcar - Caudales"])
@@ -11,6 +11,7 @@ router = APIRouter(prefix="/saih", tags=["SAIH Júcar - Caudales"])
 @router.get("/caudales", summary="Obtener catálogo y mediciones de estaciones de caudal")
 @router.get("/aforos", include_in_schema=False)
 async def get_caudales(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -20,6 +21,8 @@ async def get_caudales(
     Devuelve todas las estaciones de caudal registradas en el SAIH con sus coordenadas WGS84,
     último caudal circulante (m³/s), umbrales de alerta y subcuenca.
     """
+    revalidating = saih_service.is_caudales_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await saih_service.get_stations_geojson()
     return await saih_service.get_stations()
@@ -96,6 +99,7 @@ async def sync_saih_caudales():
 
 @router.get("/embalses", summary="Obtener catálogo y estado de embalses CHJ")
 async def get_embalses(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -105,6 +109,8 @@ async def get_embalses(
     Devuelve los 25 embalses del SAIH Júcar con volumen actual (hm³), capacidad total NMN,
     porcentaje de llenado, cota (m.s.n.m.), caudales de entrada/salida y coordenadas WGS84.
     """
+    revalidating = saih_service.is_embalses_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await saih_service.get_embalses_geojson()
     return await saih_service.get_embalses()
@@ -206,6 +212,7 @@ async def sync_saih_embalses():
 @router.get("/lluvias", summary="Obtener catálogo y mediciones de pluviómetros CHJ")
 @router.get("/pluvios", include_in_schema=False)
 async def get_lluvias(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -215,6 +222,8 @@ async def get_lluvias(
     Devuelve las 182 estaciones pluviométricas del SAIH Júcar con lluvia acumulada
     en 1h, 4h, 12h y 24h (mm) y coordenadas WGS84.
     """
+    revalidating = saih_service.is_pluvios_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await saih_service.get_pluvios_geojson()
     return await saih_service.get_pluvios()

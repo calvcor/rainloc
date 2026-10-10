@@ -2,7 +2,7 @@
 Endpoints de la API para consulta de pluviómetros de AEMET OpenData, AVAMET, Meteocat (XEMA) y unificados.
 """
 from typing import Literal, Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.aemet_pluvios_service import aemet_pluvios_service
 from app.services.avamet_pluvios_service import avamet_pluvios_service
@@ -23,6 +23,7 @@ router = APIRouter(tags=["Pluviómetros"])
 @router.get("/aemet/lluvias", summary="Obtener pluviómetros de la red de AEMET OpenData")
 @router.get("/aemet/pluvios", include_in_schema=False)
 async def get_aemet_lluvias(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -32,6 +33,8 @@ async def get_aemet_lluvias(
     Devuelve las ~850 estaciones meteorológicas automáticas (EMA) de AEMET con lluvia acumulada
     en 1h, 4h, 12h y 24h (mm) calculadas bajo demanda.
     """
+    revalidating = aemet_pluvios_service.is_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await aemet_pluvios_service.get_pluvios_geojson()
     return await aemet_pluvios_service.get_pluvios()
@@ -73,6 +76,7 @@ async def sync_aemet_lluvias():
 @router.get("/avamet/lluvias", summary="Obtener pluviómetros de la red de AVAMET (MeteoXarxa)")
 @router.get("/avamet/pluvios", include_in_schema=False)
 async def get_avamet_lluvias(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -82,6 +86,8 @@ async def get_avamet_lluvias(
     Devuelve las ~860 estaciones pluviométricas de AVAMET con lluvia acumulada
     en 1h, 4h, 12h y 24h (mm) obtenidas bajo demanda.
     """
+    revalidating = avamet_pluvios_service.is_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await avamet_pluvios_service.get_pluvios_geojson()
     return await avamet_pluvios_service.get_pluvios()
@@ -123,6 +129,7 @@ async def sync_avamet_lluvias():
 @router.get("/meteocat/lluvias", summary="Obtener pluviómetros de la red de Meteocat (XEMA)")
 @router.get("/meteocat/pluvios", include_in_schema=False)
 async def get_meteocat_lluvias(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -132,6 +139,8 @@ async def get_meteocat_lluvias(
     Devuelve las ~245 estaciones meteorológicas automáticas (XEMA) de Meteocat con lluvia acumulada
     en 1h, 4h, 12h y 24h (mm) obtenidas bajo demanda desde el portal oficial de Dades Obertes.
     """
+    revalidating = meteocat_pluvios_service.is_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await meteocat_pluvios_service.get_pluvios_geojson()
     return await meteocat_pluvios_service.get_pluvios()
@@ -173,6 +182,7 @@ async def sync_meteocat_lluvias():
 @router.get("/hidrosur/lluvias", summary="Obtener pluviómetros del S.A.I.H. Hidrosur (Junta de Andalucía)")
 @router.get("/hidrosur/pluvios", include_in_schema=False)
 async def get_hidrosur_lluvias(
+    response: Response,
     format: Literal["geojson", "json"] = Query(
         "geojson",
         description="Formato de respuesta: 'geojson' (FeatureCollection) o 'json' (lista plana)",
@@ -182,6 +192,8 @@ async def get_hidrosur_lluvias(
     Devuelve las ~147 estaciones pluviométricas del SAIH Hidrosur (Cuencas Mediterráneas Andaluzas)
     con lluvia acumulada en 1h, 4h, 12h y 24h (mm) obtenidas bajo demanda.
     """
+    revalidating = hidrosur_pluvios_service.is_revalidating()
+    response.headers["X-Data-Revalidating"] = "true" if revalidating else "false"
     if format == "geojson":
         return await hidrosur_pluvios_service.get_pluvios_geojson()
     return await hidrosur_pluvios_service.get_pluvios()
