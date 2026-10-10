@@ -277,14 +277,22 @@ export class LayerManager {
    */
   _findSaihFeatureAtPoint(latlng, containerPoint) {
     if (!this.map || !latlng) return null;
+
+    // Si estamos en la pestaña de predicción o hay cualquier modelo activo, no interceptar clics de tiempo real
+    if (!this.isRealtimeTabActive() || this.isAnyPredictionActive()) {
+      return null;
+    }
+
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
-    if (!isMasterActive) return null;
+    if (!isMasterActive || !this.isLayerOnMap('saih_hidrologia')) {
+      return null;
+    }
 
     const pt = containerPoint || this.map.latLngToContainerPoint(latlng);
     let bestHit = null;
 
     // 1. Embalses (radio visual 10.5px -> hit radius 16px)
-    if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active && this._embalsesFeatures) {
+    if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active && this.isLayerOnMap('saih_embalses') && this._embalsesFeatures) {
       const hitRadius = 16;
       for (const feature of this._embalsesFeatures) {
         if (!feature) continue;
@@ -310,7 +318,7 @@ export class LayerManager {
     if (bestHit) return bestHit;
 
     // 2. Caudales (radio visual 6.5px -> hit radius 14px)
-    if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active && this._caudalesFeatures) {
+    if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active && this.isLayerOnMap('saih_caudales') && this._caudalesFeatures) {
       const hitRadius = 14;
       for (const feature of this._caudalesFeatures) {
         if (!feature) continue;
@@ -341,6 +349,7 @@ export class LayerManager {
    */
   _onMapCanvasClick(e) {
     if (!e || !e.latlng) return;
+    if (!this.isRealtimeTabActive() || this.isAnyPredictionActive()) return;
     const hit = this._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
     if (!hit) return;
 
@@ -378,6 +387,14 @@ export class LayerManager {
    */
   _onMapCanvasMouseMove(e) {
     if (!e || !e.latlng || !this.map) return;
+    if (!this.isRealtimeTabActive() || this.isAnyPredictionActive()) {
+      if (this._customCursorActive) {
+        const container = this.map.getContainer();
+        if (container) container.style.cursor = '';
+        this._customCursorActive = false;
+      }
+      return;
+    }
     const hit = this._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
     const container = this.map.getContainer();
     if (!container) return;
@@ -870,6 +887,19 @@ export class LayerManager {
     return tab === 'realtime';
   }
 
+  isAnyPredictionActive() {
+    if (this.currentTab === 'prediction') {
+      return true;
+    }
+    if (this.uiManager && this.uiManager.activeTab === 'prediction') {
+      return true;
+    }
+    if (CONFIG && CONFIG.overlayLayers && Array.isArray(CONFIG.overlayLayers.prediction)) {
+      return CONFIG.overlayLayers.prediction.some(p => this.isLayerOnMap(p.id));
+    }
+    return false;
+  }
+
   _showLayerOnMap(layerId) {
     const layer = this.layers[layerId];
     if (layer && this.map && !this.map.hasLayer(layer)) {
@@ -967,6 +997,17 @@ export class LayerManager {
         this.map.removeLayer(this.pluvioLabelsGroup);
       }
     }
+
+    // 6. Restaurar cursor y cerrar modales de tiempo real si estuvieran abiertos
+    if (this._customCursorActive && this.map) {
+      const container = this.map.getContainer();
+      if (container) container.style.cursor = '';
+      this._customCursorActive = false;
+    }
+    const caudalBackdrop = document.getElementById('caudal-modal-backdrop');
+    if (caudalBackdrop) caudalBackdrop.style.display = 'none';
+    const embalseBackdrop = document.getElementById('embalse-modal-backdrop');
+    if (embalseBackdrop) embalseBackdrop.style.display = 'none';
   }
 
   /**
