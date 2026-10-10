@@ -280,16 +280,31 @@ export class LayerManager {
     }
 
     const isMasterActive = Boolean(this.layerStates['saih_hidrologia'] && this.layerStates['saih_hidrologia'].active);
-    if (!isMasterActive || !this.isLayerOnMap('saih_hidrologia')) {
+    if (!isMasterActive) {
+      return null;
+    }
+
+    const isEmbalsesActive = Boolean(
+      this.layerStates['saih_embalses'] && 
+      this.layerStates['saih_embalses'].active && 
+      this.isLayerOnMap('saih_embalses')
+    );
+    const isCaudalesActive = Boolean(
+      this.layerStates['saih_caudales'] && 
+      this.layerStates['saih_caudales'].active && 
+      this.isLayerOnMap('saih_caudales')
+    );
+
+    if (!isEmbalsesActive && !isCaudalesActive) {
       return null;
     }
 
     const pt = containerPoint || this.map.latLngToContainerPoint(latlng);
     let bestHit = null;
 
-    // 1. Embalses (radio visual 10.5px -> hit radius 16px)
-    if (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active && this.isLayerOnMap('saih_embalses') && this._embalsesFeatures) {
-      const hitRadius = 16;
+    // 1. Embalses (radio visual 10.5px -> hit radius 18px)
+    if (isEmbalsesActive && this._embalsesFeatures) {
+      const hitRadius = 18;
       for (const feature of this._embalsesFeatures) {
         if (!feature) continue;
         let lat = null, lon = null;
@@ -311,11 +326,9 @@ export class LayerManager {
       }
     }
 
-    if (bestHit) return bestHit;
-
-    // 2. Caudales (radio visual 6.5px -> hit radius 14px)
-    if (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active && this.isLayerOnMap('saih_caudales') && this._caudalesFeatures) {
-      const hitRadius = 14;
+    // 2. Caudales (radio visual 6.5px -> hit radius 16px)
+    if (isCaudalesActive && this._caudalesFeatures) {
+      const hitRadius = 16;
       for (const feature of this._caudalesFeatures) {
         if (!feature) continue;
         let lat = null, lon = null;
@@ -345,6 +358,9 @@ export class LayerManager {
    */
   _onMapCanvasClick(e) {
     if (!e || !e.latlng) return;
+    if (e.originalEvent && (e.originalEvent._caudalMarkerClicked || e.originalEvent._embalseMarkerClicked)) {
+      return;
+    }
     if (!this.isRealtimeTabActive() || this.isAnyPredictionActive()) return;
     const hit = this._findSaihFeatureAtPoint(e.latlng, e.containerPoint);
     if (!hit) return;
