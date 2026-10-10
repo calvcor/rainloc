@@ -226,27 +226,8 @@ export class LayerManager {
     CONFIG.overlayLayers.prediction.forEach(def => {
       this._registerLayerDefinition(def, savedActive[def.id], savedOpacities[def.id]);
     });
-
-    // Iniciar conexión SSE en tiempo real para el radar (actualización instantánea push)
-    this._startRadarSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo ECMWF IFS (aviso reactivo de nuevos pasos)
-    this._startEcmwfSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo NOAA GFS (aviso reactivo de nuevos pasos)
-    this._startGfsSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo AROME (aviso reactivo de nuevos pasos)
-    this._startAromeSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo AEMET HARMONIE-AROME (aviso reactivo de nuevos pasos)
-    this._startHarmonieSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo DWD ICON-EU (aviso reactivo de nuevos pasos)
-    this._startIconSSE();
-
-    // Iniciar conexión SSE en tiempo real para el modelo MSC GEM-GDPS (aviso reactivo de nuevos pasos)
-    this._startGemSSE();
+    // Las conexiones SSE de radar y modelos de predicción se inician de forma perezosa (lazy)
+    // únicamente cuando la capa correspondiente está activa en el mapa, evitando agotar los sockets HTTP/1.1.
 
     // Iniciar autorrefresco periódico de capas SAIH y AEMET (por defecto cada 5 min = 300s)
     const refreshSec = (prefs.autoRefreshInterval !== undefined && prefs.autoRefreshInterval > 0) ? prefs.autoRefreshInterval : 300;
@@ -489,9 +470,24 @@ export class LayerManager {
     const leafletLayer = this._createLeafletLayer(def, opacity, shouldLoad);
     this.layers[def.id] = leafletLayer;
 
-    // Montar en el mapa según la pestaña activa actual
+    // Montar en el mapa según la pestaña activa actual e iniciar SSE de forma perezosa
     if (leafletLayer && shouldLoad) {
       leafletLayer.addTo(this.map);
+      if (def.id === 'radar') {
+        this._startRadarSSE();
+      } else if (def.id === 'ecmwf_ifs') {
+        this._startEcmwfSSE();
+      } else if (def.id === 'gfs_0p25') {
+        this._startGfsSSE();
+      } else if (def.id === 'arome_precip') {
+        this._startAromeSSE();
+      } else if (def.id === 'harmonie_aemet') {
+        this._startHarmonieSSE();
+      } else if (def.id === 'icon_eu') {
+        this._startIconSSE();
+      } else if (def.id === 'gem_gdps') {
+        this._startGemSSE();
+      }
     }
   }
 
@@ -942,10 +938,11 @@ export class LayerManager {
     if (this._meteocatLluviasPollInterval) { clearInterval(this._meteocatLluviasPollInterval); this._meteocatLluviasPollInterval = null; }
     if (this._hidrosurLluviasPollInterval) { clearInterval(this._hidrosurLluviasPollInterval); this._hidrosurLluviasPollInterval = null; }
 
-    // 4. Rayos, cobertura y animación de radar
+    // 4. Rayos, cobertura, radar SSE y animación de radar
     if (this.lightningGroup && this.map && this.map.hasLayer(this.lightningGroup)) {
       this.map.removeLayer(this.lightningGroup);
     }
+    this._stopRadarSSE();
     this._stopLightningSSE();
     this._stopLightningAgingTimer();
 
@@ -993,6 +990,9 @@ export class LayerManager {
     if (this.modelMaxMarkerGroup) {
       this.modelMaxMarkerGroup.clearLayers();
     }
+
+    // 4. Detener todas las conexiones SSE de modelos
+    this._stopAllModelSSE();
   }
 
   /**
@@ -1057,6 +1057,7 @@ export class LayerManager {
             this._updateRadarCoverageOverlay();
           }
           this.reloadRadarLayer();
+          this._startRadarSSE();
         } else if (def.id === 'aemet_warnings') {
           if (!this.currentAemetPeriod) {
             this.currentAemetPeriod = 'now';
@@ -1102,6 +1103,9 @@ export class LayerManager {
           }
         }
       });
+
+      // 3. Iniciar SSE exclusivamente para el modelo activo
+      this._startActiveModelSSE(activePredId);
 
       if (activePredId === 'ecmwf_ifs') {
         this.reloadEcmwfLayer();
@@ -1166,6 +1170,9 @@ export class LayerManager {
         StorageManager.setLayerActive(layerId, true);
         if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, true);
 
+        // Iniciar SSE exclusivamente para el modelo activo
+        this._startActiveModelSSE(layerId);
+
         if (layerId === 'ecmwf_ifs') {
           this.reloadEcmwfLayer();
         } else if (layerId === 'gfs_0p25') {
@@ -1191,6 +1198,7 @@ export class LayerManager {
         if (layerId === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
         if (layerId === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
         if (this.modelMaxMarkerGroup) this.modelMaxMarkerGroup.clearLayers();
+        this._stopModelSSE(layerId);
       }
       if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
         this.uiManager.updateUnifiedTimelinePlayer();
@@ -1489,7 +1497,9 @@ export class LayerManager {
             this._updateRadarCoverageOverlay();
           }
           this.reloadRadarLayer();
+          this._startRadarSSE();
         } else {
+          this._stopRadarSSE();
           if (this.isRadarPlaying) {
             this.pauseRadarPlayback();
           }
@@ -4180,7 +4190,11 @@ export class LayerManager {
       this.radarEventSource.onerror = (err) => {
         console.warn('Stream SSE de radar desconectado. Intentando reconexión en 5s...', err);
         this._stopRadarSSE();
-        setTimeout(() => this._startRadarSSE(), 5000);
+        if (this.isLayerOnMap('radar')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('radar')) this._startRadarSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para radar:', err);
@@ -4192,7 +4206,9 @@ export class LayerManager {
    */
   _stopRadarSSE() {
     if (this.radarEventSource) {
-      this.radarEventSource.close();
+      try {
+        this.radarEventSource.close();
+      } catch (e) {}
       this.radarEventSource = null;
     }
   }
@@ -4260,7 +4276,11 @@ export class LayerManager {
       this.ecmwfEventSource.onerror = (err) => {
         console.warn('Stream SSE de ECMWF IFS desconectado. Intentando reconexión en 5s...', err);
         this._stopEcmwfSSE();
-        setTimeout(() => this._startEcmwfSSE(), 5000);
+        if (this.isLayerOnMap('ecmwf_ifs')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('ecmwf_ifs')) this._startEcmwfSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para ECMWF IFS:', err);
@@ -4272,7 +4292,9 @@ export class LayerManager {
    */
   _stopEcmwfSSE() {
     if (this.ecmwfEventSource) {
-      this.ecmwfEventSource.close();
+      try {
+        this.ecmwfEventSource.close();
+      } catch (e) {}
       this.ecmwfEventSource = null;
     }
   }
@@ -4341,7 +4363,11 @@ export class LayerManager {
       this.gfsEventSource.onerror = (err) => {
         console.warn('Stream SSE de NOAA GFS desconectado. Intentando reconexión en 5s...', err);
         this._stopGfsSSE();
-        setTimeout(() => this._startGfsSSE(), 5000);
+        if (this.isLayerOnMap('gfs_0p25')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('gfs_0p25')) this._startGfsSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para NOAA GFS:', err);
@@ -4422,7 +4448,11 @@ export class LayerManager {
       this.aromeEventSource.onerror = (err) => {
         console.warn('Stream SSE de AROME desconectado. Intentando reconexión en 5s...', err);
         this._stopAromeSSE();
-        setTimeout(() => this._startAromeSSE(), 5000);
+        if (this.isLayerOnMap('arome_precip')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('arome_precip')) this._startAromeSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para AROME:', err);
@@ -4434,7 +4464,9 @@ export class LayerManager {
    */
   _stopAromeSSE() {
     if (this.aromeEventSource) {
-      this.aromeEventSource.close();
+      try {
+        this.aromeEventSource.close();
+      } catch (e) {}
       this.aromeEventSource = null;
     }
   }
@@ -4503,7 +4535,11 @@ export class LayerManager {
       this.harmonieEventSource.onerror = (err) => {
         console.warn('Stream SSE de Harmonie desconectado. Intentando reconexión en 5s...', err);
         this._stopHarmonieSSE();
-        setTimeout(() => this._startHarmonieSSE(), 5000);
+        if (this.isLayerOnMap('harmonie_aemet')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('harmonie_aemet')) this._startHarmonieSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para Harmonie:', err);
@@ -4515,7 +4551,9 @@ export class LayerManager {
    */
   _stopHarmonieSSE() {
     if (this.harmonieEventSource) {
-      this.harmonieEventSource.close();
+      try {
+        this.harmonieEventSource.close();
+      } catch (e) {}
       this.harmonieEventSource = null;
     }
   }
@@ -4582,7 +4620,11 @@ export class LayerManager {
       this.iconEventSource.onerror = (err) => {
         console.warn('Stream SSE de ICON-EU desconectado. Intentando reconexión en 5s...', err);
         this._stopIconSSE();
-        setTimeout(() => this._startIconSSE(), 5000);
+        if (this.isLayerOnMap('icon_eu')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('icon_eu')) this._startIconSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para ICON-EU:', err);
@@ -4594,7 +4636,9 @@ export class LayerManager {
    */
   _stopIconSSE() {
     if (this.iconEventSource) {
-      this.iconEventSource.close();
+      try {
+        this.iconEventSource.close();
+      } catch (e) {}
       this.iconEventSource = null;
     }
   }
@@ -4661,7 +4705,11 @@ export class LayerManager {
       this.gemEventSource.onerror = (err) => {
         console.warn('Stream SSE de GEM-GDPS desconectado. Intentando reconexión en 5s...', err);
         this._stopGemSSE();
-        setTimeout(() => this._startGemSSE(), 5000);
+        if (this.isLayerOnMap('gem_gdps')) {
+          setTimeout(() => {
+            if (this.isLayerOnMap('gem_gdps')) this._startGemSSE();
+          }, 5000);
+        }
       };
     } catch (err) {
       console.warn('No se pudo inicializar EventSource para GEM-GDPS:', err);
@@ -4673,9 +4721,48 @@ export class LayerManager {
    */
   _stopGemSSE() {
     if (this.gemEventSource) {
-      this.gemEventSource.close();
+      try {
+        this.gemEventSource.close();
+      } catch (e) {}
       this.gemEventSource = null;
     }
+  }
+
+  /**
+   * Detiene el stream SSE de un modelo de predicción específico
+   */
+  _stopModelSSE(modelId) {
+    if (modelId === 'ecmwf_ifs') this._stopEcmwfSSE();
+    else if (modelId === 'gfs_0p25') this._stopGfsSSE();
+    else if (modelId === 'arome_precip') this._stopAromeSSE();
+    else if (modelId === 'harmonie_aemet') this._stopHarmonieSSE();
+    else if (modelId === 'icon_eu') this._stopIconSSE();
+    else if (modelId === 'gem_gdps') this._stopGemSSE();
+  }
+
+  /**
+   * Detiene todos los streams SSE de modelos de predicción
+   */
+  _stopAllModelSSE() {
+    this._stopEcmwfSSE();
+    this._stopGfsSSE();
+    this._stopAromeSSE();
+    this._stopHarmonieSSE();
+    this._stopIconSSE();
+    this._stopGemSSE();
+  }
+
+  /**
+   * Inicia el stream SSE exclusivamente para el modelo de predicción activo
+   */
+  _startActiveModelSSE(modelId) {
+    this._stopAllModelSSE();
+    if (modelId === 'ecmwf_ifs') this._startEcmwfSSE();
+    else if (modelId === 'gfs_0p25') this._startGfsSSE();
+    else if (modelId === 'arome_precip') this._startAromeSSE();
+    else if (modelId === 'harmonie_aemet') this._startHarmonieSSE();
+    else if (modelId === 'icon_eu') this._startIconSSE();
+    else if (modelId === 'gem_gdps') this._startGemSSE();
   }
 
   /**
