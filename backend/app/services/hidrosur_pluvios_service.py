@@ -338,14 +338,34 @@ class HidrosurPluviosService:
 
         return self._pluvios
 
+    def _trigger_bg_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_syncing", False):
+                self._bg_syncing = True
+                loop.create_task(self._do_bg_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_sync(self):
+        try:
+            async with self._sync_lock:
+                await asyncio.to_thread(self.sync_pluvios_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sync background Hidrosur pluvios: {e}")
+        finally:
+            self._bg_syncing = False
+
     async def ensure_fresh_data(self):
-        """Garantiza datos frescos de SAIH Hidrosur (< 5 min) bajo demanda."""
-        if self._is_fresh():
+        """Garantiza datos frescos de SAIH Hidrosur (< 5 min) sin bloquear si ya hay datos."""
+        if len(self._pluvios) > 0:
+            if not self._is_fresh():
+                self._trigger_bg_sync()
             return
+
         async with self._sync_lock:
-            if self._is_fresh():
-                return
-            await asyncio.to_thread(self.sync_pluvios_metadata)
+            if len(self._pluvios) == 0:
+                await asyncio.to_thread(self.sync_pluvios_metadata)
 
     async def get_pluvios(self) -> List[Dict[str, Any]]:
         """Obtiene la lista plana de pluviómetros de SAIH Hidrosur."""

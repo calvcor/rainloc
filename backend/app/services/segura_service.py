@@ -970,6 +970,25 @@ class SeguraService:
     # GETTERS CON FRESHNESS BAJO DEMANDA
     # ==========================================
 
+    def _trigger_bg_pluvios_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_pluvios_syncing", False):
+                self._bg_pluvios_syncing = True
+                loop.create_task(self._do_bg_pluvios_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_pluvios_sync(self):
+        try:
+            async with self._sync_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_pluvios)
+        except Exception as e:
+            logger.warning(f"Error en sync background pluvios Segura: {e}")
+        finally:
+            self._bg_pluvios_syncing = False
+
     async def ensure_fresh_pluvios_data(self):
         now = datetime.now()
         is_stale = (
@@ -977,8 +996,13 @@ class SeguraService:
             or (now - self._last_pluvios_sync_time).total_seconds() >= SYNC_TTL_SECONDS
             or len(self._pluvios) == 0
         )
-        if is_stale:
-            async with self._sync_lock:
+        if len(self._pluvios) > 0:
+            if is_stale:
+                self._trigger_bg_pluvios_sync()
+            return
+
+        async with self._sync_lock:
+            if len(self._pluvios) == 0:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self.sync_pluvios)
 
@@ -1009,6 +1033,25 @@ class SeguraService:
             or self._pluvios_by_id.get(str(id_or_code).replace("segura_pluv_", ""))
         )
 
+    def _trigger_bg_aforos_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_aforos_syncing", False):
+                self._bg_aforos_syncing = True
+                loop.create_task(self._do_bg_aforos_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_aforos_sync(self):
+        try:
+            async with self._sync_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_aforos)
+        except Exception as e:
+            logger.warning(f"Error en sync background aforos Segura: {e}")
+        finally:
+            self._bg_aforos_syncing = False
+
     async def ensure_fresh_aforos_data(self):
         now = datetime.now()
         is_stale = (
@@ -1016,8 +1059,13 @@ class SeguraService:
             or (now - self._last_aforos_sync_time).total_seconds() >= SYNC_TTL_SECONDS
             or len(self._aforos) == 0
         )
-        if is_stale:
-            async with self._sync_lock:
+        if len(self._aforos) > 0:
+            if is_stale:
+                self._trigger_bg_aforos_sync()
+            return
+
+        async with self._sync_lock:
+            if len(self._aforos) == 0:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self.sync_aforos)
 
@@ -1048,6 +1096,25 @@ class SeguraService:
             or self._aforos_by_id.get(str(id_or_code).replace("segura_aforo_", ""))
         )
 
+    def _trigger_bg_embalses_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_embalses_syncing", False):
+                self._bg_embalses_syncing = True
+                loop.create_task(self._do_bg_embalses_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_embalses_sync(self):
+        try:
+            async with self._sync_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_embalses)
+        except Exception as e:
+            logger.warning(f"Error en sync background embalses Segura: {e}")
+        finally:
+            self._bg_embalses_syncing = False
+
     async def ensure_fresh_embalses_data(self):
         now = datetime.now()
         is_stale = (
@@ -1055,8 +1122,13 @@ class SeguraService:
             or (now - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS
             or len(self._embalses) == 0
         )
-        if is_stale:
-            async with self._sync_lock:
+        if len(self._embalses) > 0:
+            if is_stale:
+                self._trigger_bg_embalses_sync()
+            return
+
+        async with self._sync_lock:
+            if len(self._embalses) == 0:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self.sync_embalses)
 

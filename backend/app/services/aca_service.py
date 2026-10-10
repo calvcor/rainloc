@@ -396,11 +396,34 @@ class ACAService:
 
         return self._aforos
 
-    async def get_caudales(self) -> List[Dict[str, Any]]:
-        if not self._last_aforos_sync_time or (datetime.now() - self._last_aforos_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
+    def _trigger_bg_aforos_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_aforos_syncing", False):
+                self._bg_aforos_syncing = True
+                loop.create_task(self._do_bg_aforos_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_aforos_sync(self):
+        try:
             async with self._sync_lock:
-                if not self._last_aforos_sync_time or (datetime.now() - self._last_aforos_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
-                    await asyncio.to_thread(self.sync_aforos_metadata)
+                await asyncio.to_thread(self.sync_aforos_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sync background aforos ACA: {e}")
+        finally:
+            self._bg_aforos_syncing = False
+
+    async def get_caudales(self) -> List[Dict[str, Any]]:
+        is_stale = not self._last_aforos_sync_time or (datetime.now() - self._last_aforos_sync_time).total_seconds() >= SYNC_TTL_SECONDS
+        if len(self._aforos) > 0:
+            if is_stale:
+                self._trigger_bg_aforos_sync()
+            return self._aforos
+
+        async with self._sync_lock:
+            if len(self._aforos) == 0:
+                await asyncio.to_thread(self.sync_aforos_metadata)
         return self._aforos
 
     async def get_caudales_geojson(self) -> Dict[str, Any]:
@@ -566,11 +589,34 @@ class ACAService:
 
         return self._embalses
 
-    async def get_embalses(self) -> List[Dict[str, Any]]:
-        if not self._last_embalses_sync_time or (datetime.now() - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
+    def _trigger_bg_embalses_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_embalses_syncing", False):
+                self._bg_embalses_syncing = True
+                loop.create_task(self._do_bg_embalses_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_embalses_sync(self):
+        try:
             async with self._sync_lock:
-                if not self._last_embalses_sync_time or (datetime.now() - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS:
-                    await asyncio.to_thread(self.sync_embalses_metadata)
+                await asyncio.to_thread(self.sync_embalses_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sync background embalses ACA: {e}")
+        finally:
+            self._bg_embalses_syncing = False
+
+    async def get_embalses(self) -> List[Dict[str, Any]]:
+        is_stale = not self._last_embalses_sync_time or (datetime.now() - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS
+        if len(self._embalses) > 0:
+            if is_stale:
+                self._trigger_bg_embalses_sync()
+            return self._embalses
+
+        async with self._sync_lock:
+            if len(self._embalses) == 0:
+                await asyncio.to_thread(self.sync_embalses_metadata)
         return self._embalses
 
     async def get_embalses_geojson(self) -> Dict[str, Any]:

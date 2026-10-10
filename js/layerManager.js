@@ -1010,14 +1010,18 @@ export class LayerManager {
             const subState = this.layerStates[sub.id];
             if (subState && subState.active) {
               this._showLayerOnMap(sub.id);
-              const op = subState.opacity || 0.95;
-              if (sub.id === 'saih_caudales') this.reloadCaudalesLayer();
-              else if (sub.id === 'saih_embalses') this.reloadEmbalsesLayer();
-              else if (sub.id === 'saih_lluvias') this.reloadLluviasLayer();
-              else if (sub.id === 'aemet_lluvias') this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
-              else if (sub.id === 'avamet_lluvias') this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
-              else if (sub.id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
-              else if (sub.id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+              const targetLayer = this.layers[sub.id];
+              const hasMarkers = targetLayer && targetLayer.getLayers && targetLayer.getLayers().length > 0;
+              if (!hasMarkers) {
+                const op = subState.opacity || 0.95;
+                if (sub.id === 'saih_caudales') this._loadCaudalesLayer(targetLayer, op, false);
+                else if (sub.id === 'saih_embalses') this._loadEmbalsesLayer(targetLayer, op, false);
+                else if (sub.id === 'saih_lluvias') this._loadLluviasLayer(targetLayer, op, false);
+                else if (sub.id === 'aemet_lluvias') this._loadAemetLluviasLayer(targetLayer, op, false);
+                else if (sub.id === 'avamet_lluvias') this._loadAvametLluviasLayer(targetLayer, op, false);
+                else if (sub.id === 'meteocat_lluvias') this._loadMeteocatLluviasLayer(targetLayer, op, false);
+                else if (sub.id === 'hidrosur_lluvias') this._loadHidrosurLluviasLayer(targetLayer, op, false);
+              }
             } else {
               this._hideLayerFromMap(sub.id);
             }
@@ -1225,21 +1229,25 @@ export class LayerManager {
         subLayers.forEach(s => {
           if (this.layerStates[s.id] && this.layerStates[s.id].active) {
             this._showLayerOnMap(s.id);
-            const op = (this.layerStates[s.id] && this.layerStates[s.id].opacity) || 0.95;
-            if (s.id === 'saih_caudales') {
-              this._loadCaudalesLayer(this.layers['saih_caudales'], op);
-            } else if (s.id === 'saih_embalses') {
-              this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
-            } else if (s.id === 'saih_lluvias') {
-              this._loadLluviasLayer(this.layers['saih_lluvias'], op);
-            } else if (s.id === 'aemet_lluvias') {
-              this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
-            } else if (s.id === 'avamet_lluvias') {
-              this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
-            } else if (s.id === 'meteocat_lluvias') {
-              this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
-            } else if (s.id === 'hidrosur_lluvias') {
-              this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+            const targetLayer = this.layers[s.id];
+            const hasMarkers = targetLayer && targetLayer.getLayers && targetLayer.getLayers().length > 0;
+            if (!hasMarkers) {
+              const op = (this.layerStates[s.id] && this.layerStates[s.id].opacity) || 0.95;
+              if (s.id === 'saih_caudales') {
+                this._loadCaudalesLayer(targetLayer, op, false);
+              } else if (s.id === 'saih_embalses') {
+                this._loadEmbalsesLayer(targetLayer, op, false);
+              } else if (s.id === 'saih_lluvias') {
+                this._loadLluviasLayer(targetLayer, op, false);
+              } else if (s.id === 'aemet_lluvias') {
+                this._loadAemetLluviasLayer(targetLayer, op, false);
+              } else if (s.id === 'avamet_lluvias') {
+                this._loadAvametLluviasLayer(targetLayer, op, false);
+              } else if (s.id === 'meteocat_lluvias') {
+                this._loadMeteocatLluviasLayer(targetLayer, op, false);
+              } else if (s.id === 'hidrosur_lluvias') {
+                this._loadHidrosurLluviasLayer(targetLayer, op, false);
+              }
             }
           } else {
             this._hideLayerFromMap(s.id);
@@ -1546,21 +1554,25 @@ export class LayerManager {
       StorageManager.setLayerActive(sublayerId, true);
       this._showLayerOnMap(sublayerId);
 
-      const op = (this.layerStates[sublayerId] && this.layerStates[sublayerId].opacity) || 0.95;
-      if (sublayerId === 'saih_caudales') {
-        this._loadCaudalesLayer(this.layers['saih_caudales'], op);
-      } else if (sublayerId === 'saih_embalses') {
-        this._loadEmbalsesLayer(this.layers['saih_embalses'], op);
-      } else if (sublayerId === 'saih_lluvias') {
-        this._loadLluviasLayer(this.layers['saih_lluvias'], op);
-      } else if (sublayerId === 'aemet_lluvias') {
-        this._loadAemetLluviasLayer(this.layers['aemet_lluvias'], op);
-      } else if (sublayerId === 'avamet_lluvias') {
-        this._loadAvametLluviasLayer(this.layers['avamet_lluvias'], op);
-      } else if (sublayerId === 'meteocat_lluvias') {
-        this._loadMeteocatLluviasLayer(this.layers['meteocat_lluvias'], op);
-      } else if (sublayerId === 'hidrosur_lluvias') {
-        this._loadHidrosurLluviasLayer(this.layers['hidrosur_lluvias'], op);
+      const targetLayer = this.layers[sublayerId];
+      const hasMarkers = targetLayer && targetLayer.getLayers && targetLayer.getLayers().length > 0;
+      if (!hasMarkers) {
+        const op = (this.layerStates[sublayerId] && this.layerStates[sublayerId].opacity) || 0.95;
+        if (sublayerId === 'saih_caudales') {
+          this._loadCaudalesLayer(targetLayer, op, false);
+        } else if (sublayerId === 'saih_embalses') {
+          this._loadEmbalsesLayer(targetLayer, op, false);
+        } else if (sublayerId === 'saih_lluvias') {
+          this._loadLluviasLayer(targetLayer, op, false);
+        } else if (sublayerId === 'aemet_lluvias') {
+          this._loadAemetLluviasLayer(targetLayer, op, false);
+        } else if (sublayerId === 'avamet_lluvias') {
+          this._loadAvametLluviasLayer(targetLayer, op, false);
+        } else if (sublayerId === 'meteocat_lluvias') {
+          this._loadMeteocatLluviasLayer(targetLayer, op, false);
+        } else if (sublayerId === 'hidrosur_lluvias') {
+          this._loadHidrosurLluviasLayer(targetLayer, op, false);
+        }
       }
 
       if (this.isPluvioMeshActive && this.isPluvioMeshActive()) {
@@ -4669,7 +4681,7 @@ export class LayerManager {
   /**
    * Recarga la capa de caudales
    */
-  reloadCaudalesLayer(force = true) {
+  reloadCaudalesLayer(force = false) {
     const group = this.layers['saih_caudales'];
     if (!group) return;
     const opacity = (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].opacity) || 0.95;
@@ -4679,7 +4691,7 @@ export class LayerManager {
   /**
    * Recarga la capa de embalses
    */
-  reloadEmbalsesLayer(force = true) {
+  reloadEmbalsesLayer(force = false) {
     const group = this.layers['saih_embalses'];
     if (!group) return;
     const opacity = (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].opacity) || 0.95;
@@ -4689,7 +4701,7 @@ export class LayerManager {
   /**
    * Recarga la capa de pluviómetros / lluvias del SAIH
    */
-  reloadLluviasLayer(force = true) {
+  reloadLluviasLayer(force = false) {
     const group = this.layers['saih_lluvias'];
     if (!group) return;
     const opacity = (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].opacity) || 0.95;
@@ -5251,21 +5263,21 @@ export class LayerManager {
         this.isLayerOnMap('saih_caudales')
       );
       if (isCaudalesActive) {
-        this.reloadCaudalesLayer(true);
+        this.reloadCaudalesLayer(false);
       }
       const isEmbalsesActive = Boolean(
         (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active) ||
         this.isLayerOnMap('saih_embalses')
       );
       if (isEmbalsesActive) {
-        this.reloadEmbalsesLayer(true);
+        this.reloadEmbalsesLayer(false);
       }
       const isLluviasActive = Boolean(
         (this.layerStates['saih_lluvias'] && this.layerStates['saih_lluvias'].active) ||
         this.isLayerOnMap('saih_lluvias')
       );
       if (isLluviasActive) {
-        this.reloadLluviasLayer(true);
+        this.reloadLluviasLayer(false);
       }
     }, sec * 1000);
 
@@ -5276,12 +5288,12 @@ export class LayerManager {
           const now = Date.now();
           if (this._caudalesGeojsonTime && (now - this._caudalesGeojsonTime > 180000)) {
             if (this.isLayerOnMap('saih_caudales') || (this.layerStates['saih_caudales'] && this.layerStates['saih_caudales'].active)) {
-              this.reloadCaudalesLayer(true);
+              this.reloadCaudalesLayer(false);
             }
           }
           if (this._embalsesGeojsonTime && (now - this._embalsesGeojsonTime > 180000)) {
             if (this.isLayerOnMap('saih_embalses') || (this.layerStates['saih_embalses'] && this.layerStates['saih_embalses'].active)) {
-              this.reloadEmbalsesLayer(true);
+              this.reloadEmbalsesLayer(false);
             }
           }
           if (this.layerStates['radar'] && this.layerStates['radar'].active) {
@@ -5298,11 +5310,48 @@ export class LayerManager {
 
 
   /**
+   * Helper para realizar peticiones fetch con timeout para evitar peticiones colgadas
+   */
+  async _fetchJsonWithTimeout(url, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (resp.ok) {
+        return await resp.json();
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+    }
+    return null;
+  }
+
+  /**
    * Carga asíncrona de estaciones de medición de caudal del SAIH Júcar (CHJ)
    */
   async _loadCaudalesLayer(layerGroup, opacity, force = false) {
     const now = Date.now();
     let geojson = null;
+
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._caudalesGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_caudales_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._caudalesGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._caudalesGeojson && !hasMarkers) {
+      this._renderCaudalesGeojson(layerGroup, this._caudalesGeojson, opacity);
+    }
 
     if (!force && this._caudalesGeojson && (now - (this._caudalesGeojsonTime || 0) < 180000)) {
       geojson = this._caudalesGeojson;
@@ -5314,37 +5363,30 @@ export class LayerManager {
         './backend/data/saih_aforos.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('No se pudo conectar a la API de caudales, buscando en rutas locales:', err);
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson) {
         for (const fbUrl of fallbackUrls) {
-          try {
-            const fbResp = await fetch(fbUrl);
-            if (fbResp.ok) {
-              geojson = await fbResp.json();
-              break;
-            }
-          } catch (fbErr) {
-            // continuar con el siguiente
-          }
+          geojson = await this._fetchJsonWithTimeout(fbUrl, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._caudalesGeojson = geojson;
         this._caudalesGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_caudales_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) return;
 
+    this._renderCaudalesGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderCaudalesGeojson(layerGroup, geojson, opacity) {
     this._caudalesFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6187,6 +6229,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._embalsesGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_embalses_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._embalsesGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._embalsesGeojson && !hasMarkers) {
+      this._renderEmbalsesGeojson(layerGroup, this._embalsesGeojson, opacity);
+    }
+
     if (!force && this._embalsesGeojson && (now - (this._embalsesGeojsonTime || 0) < 180000)) {
       geojson = this._embalsesGeojson;
     } else {
@@ -6197,38 +6258,32 @@ export class LayerManager {
         './backend/data/saih_embalses.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de embalses no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._embalsesGeojson = geojson;
         this._embalsesGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_embalses_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de embalses.');
       return;
     }
 
+    this._renderEmbalsesGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderEmbalsesGeojson(layerGroup, geojson, opacity) {
     this._embalsesFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6327,6 +6382,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._lluviasGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_lluvias_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._lluviasGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._lluviasGeojson && !hasMarkers) {
+      this._renderLluviasGeojson(layerGroup, this._lluviasGeojson, opacity);
+    }
+
     if (!force && this._lluviasGeojson && (now - (this._lluviasGeojsonTime || 0) < 180000)) {
       geojson = this._lluviasGeojson;
     } else {
@@ -6337,38 +6411,32 @@ export class LayerManager {
         './backend/data/saih_lluvias.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de pluviómetros no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._lluviasGeojson = geojson;
         this._lluviasGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_lluvias_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de pluviómetros.');
       return;
     }
 
+    this._renderLluviasGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderLluviasGeojson(layerGroup, geojson, opacity) {
     this._lluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6462,6 +6530,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._aemetLluviasGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_aemet_lluvias_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._aemetLluviasGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._aemetLluviasGeojson && !hasMarkers) {
+      this._renderAemetLluviasGeojson(layerGroup, this._aemetLluviasGeojson, opacity);
+    }
+
     if (!force && this._aemetLluviasGeojson && (now - (this._aemetLluviasGeojsonTime || 0) < 180000)) {
       geojson = this._aemetLluviasGeojson;
     } else {
@@ -6472,38 +6559,32 @@ export class LayerManager {
         './backend/data/aemet_lluvias.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de pluviómetros AEMET no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._aemetLluviasGeojson = geojson;
         this._aemetLluviasGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_aemet_lluvias_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de pluviómetros de AEMET.');
       return;
     }
 
+    this._renderAemetLluviasGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderAemetLluviasGeojson(layerGroup, geojson, opacity) {
     this._aemetLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6594,6 +6675,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._avametLluviasGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_avamet_lluvias_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._avametLluviasGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._avametLluviasGeojson && !hasMarkers) {
+      this._renderAvametLluviasGeojson(layerGroup, this._avametLluviasGeojson, opacity);
+    }
+
     if (!force && this._avametLluviasGeojson && (now - (this._avametLluviasGeojsonTime || 0) < 180000)) {
       geojson = this._avametLluviasGeojson;
     } else {
@@ -6604,38 +6704,32 @@ export class LayerManager {
         './backend/data/avamet_lluvias.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de pluviómetros AVAMET no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._avametLluviasGeojson = geojson;
         this._avametLluviasGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_avamet_lluvias_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de pluviómetros de AVAMET.');
       return;
     }
 
+    this._renderAvametLluviasGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderAvametLluviasGeojson(layerGroup, geojson, opacity) {
     this._avametLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6726,6 +6820,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._meteocatLluviasGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_meteocat_lluvias_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._meteocatLluviasGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._meteocatLluviasGeojson && !hasMarkers) {
+      this._renderMeteocatLluviasGeojson(layerGroup, this._meteocatLluviasGeojson, opacity);
+    }
+
     if (!force && this._meteocatLluviasGeojson && (now - (this._meteocatLluviasGeojsonTime || 0) < 180000)) {
       geojson = this._meteocatLluviasGeojson;
     } else {
@@ -6736,38 +6849,32 @@ export class LayerManager {
         './backend/data/meteocat_lluvias.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de pluviómetros Meteocat no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._meteocatLluviasGeojson = geojson;
         this._meteocatLluviasGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_meteocat_lluvias_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de pluviómetros de Meteocat.');
       return;
     }
 
+    this._renderMeteocatLluviasGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderMeteocatLluviasGeojson(layerGroup, geojson, opacity) {
     this._meteocatLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 
@@ -6857,6 +6964,25 @@ export class LayerManager {
     const now = Date.now();
     let geojson = null;
 
+    // Intentar recuperar de memoria o de sessionStorage para render inmediato
+    if (!this._hidrosurLluviasGeojson) {
+      try {
+        const stored = sessionStorage.getItem('rl_hidrosur_lluvias_geojson');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.features) {
+            this._hidrosurLluviasGeojson = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Si ya tenemos datos previos y la capa está vacía, dibujarlos INMEDIATAMENTE
+    const hasMarkers = layerGroup && layerGroup.getLayers && layerGroup.getLayers().length > 0;
+    if (this._hidrosurLluviasGeojson && !hasMarkers) {
+      this._renderHidrosurLluviasGeojson(layerGroup, this._hidrosurLluviasGeojson, opacity);
+    }
+
     if (!force && this._hidrosurLluviasGeojson && (now - (this._hidrosurLluviasGeojsonTime || 0) < 180000)) {
       geojson = this._hidrosurLluviasGeojson;
     } else {
@@ -6867,38 +6993,32 @@ export class LayerManager {
         './backend/data/hidrosur_lluvias.geojson'
       ];
 
-      try {
-        const resp = await fetch(apiUrl);
-        if (resp.ok) {
-          geojson = await resp.json();
-        }
-      } catch (err) {
-        console.warn('API de pluviómetros SAIH Hidrosur no accesible directamente, buscando fallback local...');
-      }
+      geojson = await this._fetchJsonWithTimeout(apiUrl, 8000);
 
       if (!geojson || !geojson.features) {
         for (const url of fallbackUrls) {
-          try {
-            const resp = await fetch(url);
-            if (resp.ok) {
-              geojson = await resp.json();
-              break;
-            }
-          } catch (e) {}
+          geojson = await this._fetchJsonWithTimeout(url, 3000);
+          if (geojson && geojson.features) break;
         }
       }
 
       if (geojson && geojson.features) {
         this._hidrosurLluviasGeojson = geojson;
         this._hidrosurLluviasGeojsonTime = now;
+        try {
+          sessionStorage.setItem('rl_hidrosur_lluvias_geojson', JSON.stringify(geojson));
+        } catch (e) {}
       }
     }
 
     if (!geojson || !geojson.features) {
-      console.warn('No se pudieron cargar datos de pluviómetros de SAIH Hidrosur.');
       return;
     }
 
+    this._renderHidrosurLluviasGeojson(layerGroup, geojson, opacity);
+  }
+
+  _renderHidrosurLluviasGeojson(layerGroup, geojson, opacity) {
     this._hidrosurLluviasFeatures = geojson.features;
     layerGroup.clearLayers();
 

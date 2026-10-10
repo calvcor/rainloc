@@ -185,8 +185,27 @@ class SAIHService:
             logger.error(f"Error al sincronizar caudales SAIH: {e}")
             return self._stations
 
+    def _trigger_background_caudales_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_caudales_syncing", False):
+                self._bg_caudales_syncing = True
+                loop.create_task(self._do_background_caudales_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_background_caudales_sync(self):
+        try:
+            async with self._sync_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_static_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sincronización background caudales CHJ: {e}")
+        finally:
+            self._bg_caudales_syncing = False
+
     async def ensure_fresh_data(self, force: bool = False):
-        """Garantiza que los datos de caudales tengan menos de 5 minutos de antigüedad."""
+        """Garantiza que los datos de caudales tengan menos de 5 minutos de antigüedad sin bloquear si ya hay datos."""
         now = datetime.now()
         is_stale = (
             self._last_sync_time is None
@@ -194,17 +213,15 @@ class SAIHService:
             or len(self._stations) == 0
         )
 
-        if is_stale or force:
-            async with self._sync_lock:
-                now_check = datetime.now()
-                if (
-                    self._last_sync_time is None
-                    or (now_check - self._last_sync_time).total_seconds() >= SYNC_TTL_SECONDS
-                    or len(self._stations) == 0
-                    or force
-                ):
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self.sync_static_metadata)
+        if len(self._stations) > 0:
+            if is_stale or force:
+                self._trigger_background_caudales_sync()
+            return
+
+        async with self._sync_lock:
+            if len(self._stations) == 0 or force:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_static_metadata)
 
     async def get_stations(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
@@ -424,8 +441,27 @@ class SAIHService:
             logger.error(f"Error al sincronizar embalses SAIH: {e}")
             return self._embalses
 
+    def _trigger_background_embalses_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_embalses_syncing", False):
+                self._bg_embalses_syncing = True
+                loop.create_task(self._do_background_embalses_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_background_embalses_sync(self):
+        try:
+            async with self._embalses_sync_lock:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_embalses_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sincronización background embalses CHJ: {e}")
+        finally:
+            self._bg_embalses_syncing = False
+
     async def ensure_fresh_embalses_data(self, force: bool = False):
-        """Garantiza que los datos de embalses tengan menos de 5 minutos de antigüedad."""
+        """Garantiza que los datos de embalses tengan menos de 5 minutos de antigüedad sin bloquear si ya hay datos."""
         now = datetime.now()
         is_stale = (
             self._last_embalses_sync_time is None
@@ -433,17 +469,15 @@ class SAIHService:
             or len(self._embalses) == 0
         )
 
-        if is_stale or force:
-            async with self._embalses_sync_lock:
-                now_check = datetime.now()
-                if (
-                    self._last_embalses_sync_time is None
-                    or (now_check - self._last_embalses_sync_time).total_seconds() >= SYNC_TTL_SECONDS
-                    or len(self._embalses) == 0
-                    or force
-                ):
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self.sync_embalses_metadata)
+        if len(self._embalses) > 0:
+            if is_stale or force:
+                self._trigger_background_embalses_sync()
+            return
+
+        async with self._embalses_sync_lock:
+            if len(self._embalses) == 0 or force:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_embalses_metadata)
 
     async def get_embalses(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:
@@ -672,12 +706,35 @@ class SAIHService:
             logger.error(f"Error sincronizando pluviómetros del SAIH: {e}")
             return self._pluvios
 
-    async def ensure_fresh_pluvios_data(self):
-        if not self._is_pluvios_fresh():
+    def _trigger_background_pluvios_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_pluvios_syncing", False):
+                self._bg_pluvios_syncing = True
+                loop.create_task(self._do_background_pluvios_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_background_pluvios_sync(self):
+        try:
             async with self._pluvios_sync_lock:
-                if not self._is_pluvios_fresh():
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self.sync_pluvios_metadata)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_pluvios_metadata)
+        except Exception as e:
+            logger.warning(f"Error en sincronización background pluvios CHJ: {e}")
+        finally:
+            self._bg_pluvios_syncing = False
+
+    async def ensure_fresh_pluvios_data(self):
+        if len(self._pluvios) > 0:
+            if not self._is_pluvios_fresh():
+                self._trigger_background_pluvios_sync()
+            return
+
+        async with self._pluvios_sync_lock:
+            if len(self._pluvios) == 0:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_pluvios_metadata)
 
     async def get_pluvios(self, auto_sync: bool = True) -> List[Dict[str, Any]]:
         if auto_sync:

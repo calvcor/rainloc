@@ -6,6 +6,16 @@ import logging
 from typing import Optional
 from app.config import settings
 from app.services.saih_service import saih_service
+from app.services.hidrosur_service import hidrosur_service
+from app.services.hidrosur_pluvios_service import hidrosur_pluvios_service
+from app.services.guadalquivir_service import guadalquivir_service
+from app.services.ebro_service import ebro_service
+from app.services.segura_service import segura_service
+from app.services.aca_service import aca_service
+from app.services.duero_service import duero_service
+from app.services.aemet_pluvios_service import aemet_pluvios_service
+from app.services.avamet_pluvios_service import avamet_pluvios_service
+from app.services.meteocat_pluvios_service import meteocat_pluvios_service
 from app.services.aemet_atom import aemet_atom_service
 from app.services.radar_worker import radar_service
 from app.services.lightning_service import lightning_service
@@ -213,35 +223,59 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de MSC GEM-GDPS: {e}")
 
+    async def _sync_all_basins(self):
+        """Sincroniza todas las cuencas y redes pluviométricas en paralelo en segundo plano."""
+        loop = asyncio.get_running_loop()
+        tasks = [
+            loop.run_in_executor(None, saih_service.sync_static_metadata),
+            loop.run_in_executor(None, saih_service.sync_embalses_metadata),
+            loop.run_in_executor(None, saih_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, hidrosur_service.sync_aforos_metadata),
+            loop.run_in_executor(None, hidrosur_service.sync_embalses_metadata),
+            loop.run_in_executor(None, hidrosur_pluvios_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, guadalquivir_service.sync_aforos_metadata),
+            loop.run_in_executor(None, guadalquivir_service.sync_embalses_metadata),
+            loop.run_in_executor(None, guadalquivir_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, ebro_service.sync_aforos_metadata),
+            loop.run_in_executor(None, ebro_service.sync_embalses_metadata),
+            loop.run_in_executor(None, ebro_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, segura_service.sync_aforos),
+            loop.run_in_executor(None, segura_service.sync_embalses),
+            loop.run_in_executor(None, segura_service.sync_pluvios),
+            loop.run_in_executor(None, aca_service.sync_aforos_metadata),
+            loop.run_in_executor(None, aca_service.sync_embalses_metadata),
+            loop.run_in_executor(None, duero_service.sync_all),
+            loop.run_in_executor(None, aemet_pluvios_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, avamet_pluvios_service.sync_pluvios_metadata),
+            loop.run_in_executor(None, meteocat_pluvios_service.sync_pluvios_metadata),
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning(f"Error sincronizando cuenca/red en background: {r}")
+
     async def _saih_loop(self):
-        # Primera sincronización de SAIH (caudales, embalses y lluvias)
+        # Primera sincronización en background de todas las redes hidrológicas y pluviométricas
         try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, saih_service.sync_static_metadata)
-            await loop.run_in_executor(None, saih_service.sync_embalses_metadata)
-            await loop.run_in_executor(None, saih_service.sync_pluvios_metadata)
+            await self._sync_all_basins()
         except Exception as e:
-            logger.error(f"Error inicial sincronizando datos SAIH: {e}")
+            logger.error(f"Error inicial sincronizando datos hidrológicos: {e}")
 
         while self._running:
             try:
                 await asyncio.sleep(self.saih_interval)
                 if self._running:
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, saih_service.sync_static_metadata)
-                    await loop.run_in_executor(None, saih_service.sync_embalses_metadata)
-                    await loop.run_in_executor(None, saih_service.sync_pluvios_metadata)
+                    await self._sync_all_basins()
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error en bucle de SAIH: {e}")
+                logger.error(f"Error en bucle hidrológico periódico: {e}")
 
     def start(self):
         if not self._running:
             self._running = True
             self._aemet_task = asyncio.create_task(self._aemet_loop())
             self._radar_task = asyncio.create_task(self._radar_loop())
-            self._saih_task = asyncio.create_task(self._saih_loop())
             self._ecmwf_task = asyncio.create_task(self._ecmwf_loop())
             self._gfs_task = asyncio.create_task(self._gfs_loop())
             self._arome_task = asyncio.create_task(self._arome_loop())
@@ -252,7 +286,7 @@ class BackgroundScheduler:
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + SAIH + Modelos NWP).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + Modelos NWP).")
 
     def stop(self):
         if self._running:

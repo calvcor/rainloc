@@ -534,12 +534,35 @@ class DueroService:
         except Exception as e:
             logger.warning(f"Error guardando ficheros de pluviómetros de Duero: {e}")
 
-    async def ensure_fresh_data(self, force: bool = False):
-        if not self._is_fresh() or force:
+    def _trigger_bg_sync(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if not getattr(self, "_bg_syncing", False):
+                self._bg_syncing = True
+                loop.create_task(self._do_bg_sync())
+        except RuntimeError:
+            pass
+
+    async def _do_bg_sync(self):
+        try:
             async with self._sync_lock:
-                if not self._is_fresh() or force:
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self.sync_all)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_all)
+        except Exception as e:
+            logger.warning(f"Error en sync background Duero: {e}")
+        finally:
+            self._bg_syncing = False
+
+    async def ensure_fresh_data(self, force: bool = False):
+        if len(self._aforos) > 0 and len(self._embalses) > 0:
+            if not self._is_fresh() or force:
+                self._trigger_bg_sync()
+            return
+
+        async with self._sync_lock:
+            if not self._is_fresh() or force:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.sync_all)
 
     # ==========================================
     # GETTERS DE COLECCIONES Y GEOJSON
