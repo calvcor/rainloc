@@ -23,6 +23,62 @@ logger = logging.getLogger("rainloc-backend.models-api")
 router = APIRouter(prefix="/models", tags=["NWP Models"])
 
 
+@router.get("/stream", summary="Stream unificado de actualizaciones de todos los modelos de predicción (SSE)")
+async def stream_all_models():
+    """
+    Canal Server-Sent Events (SSE) unificado para transmitir en tiempo real
+    el estado y las actualizaciones de todos los modelos de predicción numérica
+    (ECMWF IFS, NOAA GFS, AROME, HARMONIE-AROME, ICON-EU, GEM-GDPS)
+    a través de una única conexión HTTP persistente.
+    """
+    queue: asyncio.Queue = asyncio.Queue(maxsize=120)
+
+    workers = [
+        ("ecmwf", ecmwf_worker),
+        ("gfs", gfs_worker),
+        ("arome", arome_worker),
+        ("harmonie", harmonie_worker),
+        ("icon", icon_worker),
+        ("gem", gem_worker),
+    ]
+
+    async def forward_worker(name, worker):
+        try:
+            async for event in worker.subscribe_stream():
+                if event.get("event") != "ping":
+                    if "model" not in event:
+                        event["model"] = name
+                    await queue.put(event)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"Error en sub-stream de modelo {name}: {e}")
+
+    tasks = [asyncio.create_task(forward_worker(name, w)) for name, w in workers]
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            for t in tasks:
+                t.cancel()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
 @router.get("/ecmwf/stream", summary="Stream de actualizaciones del modelo ECMWF IFS en tiempo real (SSE)")
 async def stream_ecmwf():
     """

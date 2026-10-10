@@ -80,11 +80,7 @@ export class LayerManager {
     this._activeLightningStrikes = new Map(); // key -> { strike, marker, tierId }
     this._lightningAgingInterval = null;
     this.radarEventSource = null;
-    this.ecmwfEventSource = null;
-    this.gfsEventSource = null;
-    this.aromeEventSource = null;
-    this.iconEventSource = null;
-    this.gemEventSource = null;
+    this.modelsEventSource = null;
     this.lightningCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'lluviasPane' }) : null;
     this.caudalesCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'caudalesPane' }) : null;
     this.embalsesCanvasRenderer = (typeof L !== 'undefined' && L.canvas) ? L.canvas({ padding: 0.5, pane: 'embalsesPane' }) : null;
@@ -492,18 +488,8 @@ export class LayerManager {
       leafletLayer.addTo(this.map);
       if (def.id === 'radar') {
         this._startRadarSSE();
-      } else if (def.id === 'ecmwf_ifs') {
-        this._startEcmwfSSE();
-      } else if (def.id === 'gfs_0p25') {
-        this._startGfsSSE();
-      } else if (def.id === 'arome_precip') {
-        this._startAromeSSE();
-      } else if (def.id === 'harmonie_aemet') {
-        this._startHarmonieSSE();
-      } else if (def.id === 'icon_eu') {
-        this._startIconSSE();
-      } else if (def.id === 'gem_gdps') {
-        this._startGemSSE();
+      } else if (def.type === 'prediction' || def.type === 'model' || ['ecmwf_ifs', 'gfs_0p25', 'arome_precip', 'harmonie_aemet', 'icon_eu', 'gem_gdps'].includes(def.id)) {
+        this._startModelsSSE();
       }
     }
   }
@@ -1145,8 +1131,10 @@ export class LayerManager {
         }
       });
 
-      // 3. Iniciar SSE exclusivamente para el modelo activo
-      this._startActiveModelSSE(activePredId);
+      // 3. Iniciar SSE para modelos si hay uno activo
+      if (activePredId) {
+        this._startModelsSSE();
+      }
 
       if (activePredId === 'ecmwf_ifs') {
         this.reloadEcmwfLayer();
@@ -1211,8 +1199,8 @@ export class LayerManager {
         StorageManager.setLayerActive(layerId, true);
         if (this.uiManager) this.uiManager.updateLayerCardActiveState(layerId, true);
 
-        // Iniciar SSE exclusivamente para el modelo activo
-        this._startActiveModelSSE(layerId);
+        // Iniciar SSE unificado para los modelos de predicción
+        this._startModelsSSE();
 
         if (layerId === 'ecmwf_ifs') {
           this.reloadEcmwfLayer();
@@ -1239,7 +1227,9 @@ export class LayerManager {
         if (layerId === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
         if (layerId === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
         if (this.modelMaxMarkerGroup) this.modelMaxMarkerGroup.clearLayers();
-        this._stopModelSSE(layerId);
+        if (!this.isAnyPredictionActive()) {
+          this._stopModelsSSE();
+        }
       }
       if (this.uiManager && this.uiManager.updateUnifiedTimelinePlayer) {
         this.uiManager.updateUnifiedTimelinePlayer();
@@ -4255,556 +4245,340 @@ export class LayerManager {
   }
 
   /**
-   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de ECMWF IFS
+   * Inicia el stream de Server-Sent Events (SSE) multiplexado para todos los modelos numéricos de predicción
    */
-  _startEcmwfSSE() {
-    if (this.ecmwfEventSource) {
+  _startModelsSSE() {
+    if (this.modelsEventSource) {
       return;
     }
 
-    const sseUrl = `${CONFIG.apiBaseUrl}/models/ecmwf/stream`;
+    const sseUrl = `${CONFIG.apiBaseUrl}/models/stream`;
     try {
-      this.ecmwfEventSource = new EventSource(sseUrl);
+      this.modelsEventSource = new EventSource(sseUrl);
 
-      this.ecmwfEventSource.onmessage = async (event) => {
+      this.modelsEventSource.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data && (data.event === 'ecmwf_update' || data.event === 'ecmwf_init')) {
-            const isMounted = this.isLayerOnMap('ecmwf_ifs');
-            if (data.event === 'ecmwf_init' && !isMounted && this.ecmwfMetadata) {
-              return;
-            }
+          if (!data || !data.event) return;
 
-            console.log('🌐 Notificación SSE ECMWF IFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.ecmwfMetadata = metadata;
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentEcmwfStep)) {
-                this.currentEcmwfStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('ecmwf_ifs', formatEcmwfTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateEcmwfPlayerUI) {
-                this.uiManager.updateEcmwfPlayerUI(
-                  metadata,
-                  this.currentEcmwfStep,
-                  this.currentEcmwfType || 'total',
-                  this.isEcmwfPlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadEcmwfLayer();
-              }
-            }
+          const eventName = data.event;
+          if (eventName.startsWith('ecmwf_')) {
+            await this._handleEcmwfSSEEvent(data);
+          } else if (eventName.startsWith('gfs_')) {
+            await this._handleGfsSSEEvent(data);
+          } else if (eventName.startsWith('arome_')) {
+            await this._handleAromeSSEEvent(data);
+          } else if (eventName.startsWith('harmonie_')) {
+            await this._handleHarmonieSSEEvent(data);
+          } else if (eventName.startsWith('icon_')) {
+            await this._handleIconSSEEvent(data);
+          } else if (eventName.startsWith('gem_')) {
+            await this._handleGemSSEEvent(data);
           }
         } catch (e) {
-          console.debug('Error procesando evento SSE de ECMWF:', e);
+          console.debug('Error procesando evento SSE de modelos:', e);
         }
       };
 
-      this.ecmwfEventSource.onerror = (err) => {
-        console.warn('Stream SSE de ECMWF IFS desconectado. Intentando reconexión en 5s...', err);
-        this._stopEcmwfSSE();
-        if (this.isLayerOnMap('ecmwf_ifs')) {
+      this.modelsEventSource.onerror = (err) => {
+        console.warn('Stream SSE de modelos de predicción desconectado. Intentando reconexión en 5s...', err);
+        this._stopModelsSSE();
+        if (this.isAnyPredictionActive()) {
           setTimeout(() => {
-            if (this.isLayerOnMap('ecmwf_ifs')) this._startEcmwfSSE();
+            if (this.isAnyPredictionActive()) this._startModelsSSE();
           }, 5000);
         }
       };
     } catch (err) {
-      console.warn('No se pudo inicializar EventSource para ECMWF IFS:', err);
+      console.warn('No se pudo inicializar EventSource unificado para modelos:', err);
     }
   }
 
   /**
-   * Detiene el stream SSE de ECMWF IFS
+   * Detiene el stream SSE unificado de modelos de predicción
    */
-  _stopEcmwfSSE() {
-    if (this.ecmwfEventSource) {
+  _stopModelsSSE() {
+    if (this.modelsEventSource) {
       try {
-        this.ecmwfEventSource.close();
+        this.modelsEventSource.close();
       } catch (e) {}
-      this.ecmwfEventSource = null;
+      this.modelsEventSource = null;
     }
   }
 
   /**
-   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de NOAA GFS
+   * Procesa evento SSE para ECMWF IFS
    */
-  _startGfsSSE() {
-    if (this.gfsEventSource) {
-      return;
-    }
+  async _handleEcmwfSSEEvent(data) {
+    if (data && (data.event === 'ecmwf_update' || data.event === 'ecmwf_init')) {
+      const isMounted = this.isLayerOnMap('ecmwf_ifs');
+      if (data.event === 'ecmwf_init' && !isMounted && this.ecmwfMetadata) {
+        return;
+      }
 
-    const sseUrl = `${CONFIG.apiBaseUrl}/models/gfs/stream`;
-    try {
-      this.gfsEventSource = new EventSource(sseUrl);
+      console.log('🌐 Notificación SSE ECMWF IFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
-      this.gfsEventSource.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && (data.event === 'gfs_update' || data.event === 'gfs_init')) {
-            const isMounted = this.isLayerOnMap('gfs_0p25');
-            if (data.event === 'gfs_init' && !isMounted && this.gfsMetadata) {
-              return;
-            }
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ecmwf/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.ecmwfMetadata = metadata;
 
-            console.log('🌐 Notificación SSE NOAA GFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gfs/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.gfsMetadata = metadata;
-              this._gfsImageCache.clear();
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentGfsStep)) {
-                this.currentGfsStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('gfs_0p25', formatGfsTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateGfsPlayerUI) {
-                this.uiManager.updateGfsPlayerUI(
-                  metadata,
-                  this.currentGfsStep,
-                  this.currentGfsType || 'total',
-                  this.isGfsPlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadGfsLayer();
-              }
-            }
-          }
-        } catch (e) {
-          console.debug('Error procesando evento SSE de GFS:', e);
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentEcmwfStep)) {
+          this.currentEcmwfStep = availSteps[0];
         }
-      };
 
-      this.gfsEventSource.onerror = (err) => {
-        console.warn('Stream SSE de NOAA GFS desconectado. Intentando reconexión en 5s...', err);
-        this._stopGfsSSE();
-        if (this.isLayerOnMap('gfs_0p25')) {
-          setTimeout(() => {
-            if (this.isLayerOnMap('gfs_0p25')) this._startGfsSSE();
-          }, 5000);
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('ecmwf_ifs', formatEcmwfTimestamp(metadata));
         }
-      };
-    } catch (err) {
-      console.warn('No se pudo inicializar EventSource para NOAA GFS:', err);
-    }
-  }
 
-  /**
-   * Detiene el stream SSE de NOAA GFS
-   */
-  _stopGfsSSE() {
-    if (this.gfsEventSource) {
-      this.gfsEventSource.close();
-      this.gfsEventSource = null;
-    }
-  }
-
-  /**
-   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de AROME
-   */
-  _startAromeSSE() {
-    if (this.aromeEventSource) {
-      return;
-    }
-
-    const sseUrl = `${CONFIG.apiBaseUrl}/models/arome/stream`;
-    try {
-      this.aromeEventSource = new EventSource(sseUrl);
-
-      this.aromeEventSource.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && (data.event === 'arome_update' || data.event === 'arome_init')) {
-            const isMounted = this.isLayerOnMap('arome_precip');
-            if (data.event === 'arome_init' && !isMounted && this.aromeMetadata) {
-              return;
-            }
-
-            console.log('🌐 Notificación SSE AROME recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/arome/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.aromeMetadata = metadata;
-              this._aromeImageCache.clear();
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentAromeStep)) {
-                this.currentAromeStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('arome_precip', formatAromeTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateAromePlayerUI) {
-                this.uiManager.updateAromePlayerUI(
-                  metadata,
-                  this.currentAromeStep,
-                  this.currentAromeType || 'total',
-                  this.isAromePlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadAromeLayer();
-              }
-            }
-          }
-        } catch (e) {
-          console.debug('Error procesando evento SSE de AROME:', e);
+        if (this.uiManager && this.uiManager.updateEcmwfPlayerUI) {
+          this.uiManager.updateEcmwfPlayerUI(
+            metadata,
+            this.currentEcmwfStep,
+            this.currentEcmwfType || 'total',
+            this.isEcmwfPlaying
+          );
         }
-      };
 
-      this.aromeEventSource.onerror = (err) => {
-        console.warn('Stream SSE de AROME desconectado. Intentando reconexión en 5s...', err);
-        this._stopAromeSSE();
-        if (this.isLayerOnMap('arome_precip')) {
-          setTimeout(() => {
-            if (this.isLayerOnMap('arome_precip')) this._startAromeSSE();
-          }, 5000);
+        if (isMounted) {
+          this.reloadEcmwfLayer();
         }
-      };
-    } catch (err) {
-      console.warn('No se pudo inicializar EventSource para AROME:', err);
+      }
     }
   }
 
   /**
-   * Detiene el stream SSE de AROME
+   * Procesa evento SSE para NOAA GFS
    */
-  _stopAromeSSE() {
-    if (this.aromeEventSource) {
-      try {
-        this.aromeEventSource.close();
-      } catch (e) {}
-      this.aromeEventSource = null;
-    }
-  }
+  async _handleGfsSSEEvent(data) {
+    if (data && (data.event === 'gfs_update' || data.event === 'gfs_init')) {
+      const isMounted = this.isLayerOnMap('gfs_0p25');
+      if (data.event === 'gfs_init' && !isMounted && this.gfsMetadata) {
+        return;
+      }
 
-  /**
-   * Inicia el stream de Server-Sent Events (SSE) para recibir avisos de nuevos pasos/ciclos de AEMET Harmonie-Arome
-   */
-  _startHarmonieSSE() {
-    if (this.harmonieEventSource) {
-      return;
-    }
+      console.log('🌐 Notificación SSE NOAA GFS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
-    const sseUrl = `${CONFIG.apiBaseUrl}/models/harmonie/stream`;
-    try {
-      this.harmonieEventSource = new EventSource(sseUrl);
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gfs/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.gfsMetadata = metadata;
+        if (this._gfsImageCache) this._gfsImageCache.clear();
 
-      this.harmonieEventSource.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && (data.event === 'harmonie_update' || data.event === 'harmonie_init')) {
-            const isMounted = this.isLayerOnMap('harmonie_aemet');
-            if (data.event === 'harmonie_init' && !isMounted && this.harmonieMetadata) {
-              return;
-            }
-
-            console.log('🌐 Notificación SSE Harmonie recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/harmonie/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.harmonieMetadata = metadata;
-              this._harmonieImageCache.clear();
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentHarmonieStep)) {
-                this.currentHarmonieStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('harmonie_aemet', formatHarmonieTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateHarmoniePlayerUI) {
-                this.uiManager.updateHarmoniePlayerUI(
-                  metadata,
-                  this.currentHarmonieStep,
-                  this.currentHarmonieType || 'total',
-                  this.isHarmoniePlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadHarmonieLayer();
-              }
-            }
-          }
-        } catch (e) {
-          console.debug('Error procesando evento SSE de Harmonie:', e);
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentGfsStep)) {
+          this.currentGfsStep = availSteps[0];
         }
-      };
 
-      this.harmonieEventSource.onerror = (err) => {
-        console.warn('Stream SSE de Harmonie desconectado. Intentando reconexión en 5s...', err);
-        this._stopHarmonieSSE();
-        if (this.isLayerOnMap('harmonie_aemet')) {
-          setTimeout(() => {
-            if (this.isLayerOnMap('harmonie_aemet')) this._startHarmonieSSE();
-          }, 5000);
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('gfs_0p25', formatGfsTimestamp(metadata));
         }
-      };
-    } catch (err) {
-      console.warn('No se pudo inicializar EventSource para Harmonie:', err);
-    }
-  }
 
-  /**
-   * Detiene el stream SSE de Harmonie
-   */
-  _stopHarmonieSSE() {
-    if (this.harmonieEventSource) {
-      try {
-        this.harmonieEventSource.close();
-      } catch (e) {}
-      this.harmonieEventSource = null;
-    }
-  }
-
-  /**
-   * Inicia la suscripción SSE para el modelo DWD ICON-EU
-   */
-  _startIconSSE() {
-    if (this.iconEventSource) return;
-
-    try {
-      this.iconEventSource = new EventSource(`${CONFIG.apiBaseUrl}/models/icon/stream`);
-
-      this.iconEventSource.onmessage = async (event) => {
-        try {
-          if (!event.data) return;
-          const data = JSON.parse(event.data);
-          if (data && (data.event === 'icon_update' || data.event === 'icon_init')) {
-            const isMounted = this.isLayerOnMap('icon_eu');
-            if (data.event === 'icon_init' && !isMounted && this.iconMetadata) {
-              return;
-            }
-
-            console.log('🌐 Notificación SSE ICON-EU recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/icon/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.iconMetadata = metadata;
-              this._iconImageCache.clear();
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentIconStep)) {
-                this.currentIconStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('icon_eu', formatIconTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateIconPlayerUI) {
-                this.uiManager.updateIconPlayerUI(
-                  metadata,
-                  this.currentIconStep,
-                  this.currentIconType || 'total',
-                  this.isIconPlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadIconLayer();
-              }
-            }
-          }
-        } catch (e) {
-          console.debug('Error procesando evento SSE de ICON-EU:', e);
+        if (this.uiManager && this.uiManager.updateGfsPlayerUI) {
+          this.uiManager.updateGfsPlayerUI(
+            metadata,
+            this.currentGfsStep,
+            this.currentGfsType || 'total',
+            this.isGfsPlaying
+          );
         }
-      };
 
-      this.iconEventSource.onerror = (err) => {
-        console.warn('Stream SSE de ICON-EU desconectado. Intentando reconexión en 5s...', err);
-        this._stopIconSSE();
-        if (this.isLayerOnMap('icon_eu')) {
-          setTimeout(() => {
-            if (this.isLayerOnMap('icon_eu')) this._startIconSSE();
-          }, 5000);
+        if (isMounted) {
+          this.reloadGfsLayer();
         }
-      };
-    } catch (err) {
-      console.warn('No se pudo inicializar EventSource para ICON-EU:', err);
+      }
     }
   }
 
   /**
-   * Detiene el stream SSE de ICON-EU
+   * Procesa evento SSE para Meteo-France AROME
    */
-  _stopIconSSE() {
-    if (this.iconEventSource) {
-      try {
-        this.iconEventSource.close();
-      } catch (e) {}
-      this.iconEventSource = null;
-    }
-  }
+  async _handleAromeSSEEvent(data) {
+    if (data && (data.event === 'arome_update' || data.event === 'arome_init')) {
+      const isMounted = this.isLayerOnMap('arome_precip');
+      if (data.event === 'arome_init' && !isMounted && this.aromeMetadata) {
+        return;
+      }
 
-  /**
-   * Inicia la suscripción SSE para el modelo MSC GEM-GDPS
-   */
-  _startGemSSE() {
-    if (this.gemEventSource) return;
+      console.log('🌐 Notificación SSE AROME recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
 
-    try {
-      this.gemEventSource = new EventSource(`${CONFIG.apiBaseUrl}/models/gem/stream`);
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/arome/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.aromeMetadata = metadata;
+        if (this._aromeImageCache) this._aromeImageCache.clear();
 
-      this.gemEventSource.onmessage = async (event) => {
-        try {
-          if (!event.data) return;
-          const data = JSON.parse(event.data);
-          if (data && (data.event === 'gem_update' || data.event === 'gem_init')) {
-            const isMounted = this.isLayerOnMap('gem_gdps');
-            if (data.event === 'gem_init' && !isMounted && this.gemMetadata) {
-              return;
-            }
-
-            console.log('🌐 Notificación SSE GEM-GDPS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
-
-            // Refrescar metadatos completos desde la API
-            const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gem/metadata?_t=${Date.now()}`);
-            if (metaResp.ok) {
-              const metadata = await metaResp.json();
-              this.gemMetadata = metadata;
-              if (this._gemPreloadSet) this._gemPreloadSet.clear();
-
-              const availSteps = metadata.available_steps || [];
-              if (availSteps.length > 0 && !availSteps.includes(this.currentGemStep)) {
-                this.currentGemStep = availSteps[0];
-              }
-
-              // Actualizar timestamp y estado de actualización en la tarjeta
-              if (this.uiManager && this.uiManager.updateLayerTimestamp) {
-                this.uiManager.updateLayerTimestamp('gem_gdps', formatGemTimestamp(metadata));
-              }
-
-              // Actualizar reproductor en la interfaz
-              if (this.uiManager && this.uiManager.updateGemPlayerUI) {
-                this.uiManager.updateGemPlayerUI(
-                  metadata,
-                  this.currentGemStep,
-                  this.currentGemType || 'total',
-                  this.isGemPlaying
-                );
-              }
-
-              // Si la capa está montada en el mapa, refrescar el raster
-              if (isMounted) {
-                this.reloadGemLayer();
-              }
-            }
-          }
-        } catch (e) {
-          console.debug('Error procesando evento SSE de GEM-GDPS:', e);
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentAromeStep)) {
+          this.currentAromeStep = availSteps[0];
         }
-      };
 
-      this.gemEventSource.onerror = (err) => {
-        console.warn('Stream SSE de GEM-GDPS desconectado. Intentando reconexión en 5s...', err);
-        this._stopGemSSE();
-        if (this.isLayerOnMap('gem_gdps')) {
-          setTimeout(() => {
-            if (this.isLayerOnMap('gem_gdps')) this._startGemSSE();
-          }, 5000);
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('arome_precip', formatAromeTimestamp(metadata));
         }
-      };
-    } catch (err) {
-      console.warn('No se pudo inicializar EventSource para GEM-GDPS:', err);
+
+        if (this.uiManager && this.uiManager.updateAromePlayerUI) {
+          this.uiManager.updateAromePlayerUI(
+            metadata,
+            this.currentAromeStep,
+            this.currentAromeType || 'total',
+            this.isAromePlaying
+          );
+        }
+
+        if (isMounted) {
+          this.reloadAromeLayer();
+        }
+      }
     }
   }
 
   /**
-   * Detiene el stream SSE de GEM-GDPS
+   * Procesa evento SSE para AEMET Harmonie-Arome
    */
-  _stopGemSSE() {
-    if (this.gemEventSource) {
-      try {
-        this.gemEventSource.close();
-      } catch (e) {}
-      this.gemEventSource = null;
+  async _handleHarmonieSSEEvent(data) {
+    if (data && (data.event === 'harmonie_update' || data.event === 'harmonie_init')) {
+      const isMounted = this.isLayerOnMap('harmonie_aemet');
+      if (data.event === 'harmonie_init' && !isMounted && this.harmonieMetadata) {
+        return;
+      }
+
+      console.log('🌐 Notificación SSE Harmonie recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/harmonie/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.harmonieMetadata = metadata;
+        if (this._harmonieImageCache) this._harmonieImageCache.clear();
+
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentHarmonieStep)) {
+          this.currentHarmonieStep = availSteps[0];
+        }
+
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('harmonie_aemet', formatHarmonieTimestamp(metadata));
+        }
+
+        if (this.uiManager && this.uiManager.updateHarmoniePlayerUI) {
+          this.uiManager.updateHarmoniePlayerUI(
+            metadata,
+            this.currentHarmonieStep,
+            this.currentHarmonieType || 'total',
+            this.isHarmoniePlaying
+          );
+        }
+
+        if (isMounted) {
+          this.reloadHarmonieLayer();
+        }
+      }
     }
   }
 
   /**
-   * Detiene el stream SSE de un modelo de predicción específico
+   * Procesa evento SSE para DWD ICON-EU
    */
-  _stopModelSSE(modelId) {
-    if (modelId === 'ecmwf_ifs') this._stopEcmwfSSE();
-    else if (modelId === 'gfs_0p25') this._stopGfsSSE();
-    else if (modelId === 'arome_precip') this._stopAromeSSE();
-    else if (modelId === 'harmonie_aemet') this._stopHarmonieSSE();
-    else if (modelId === 'icon_eu') this._stopIconSSE();
-    else if (modelId === 'gem_gdps') this._stopGemSSE();
+  async _handleIconSSEEvent(data) {
+    if (data && (data.event === 'icon_update' || data.event === 'icon_init')) {
+      const isMounted = this.isLayerOnMap('icon_eu');
+      if (data.event === 'icon_init' && !isMounted && this.iconMetadata) {
+        return;
+      }
+
+      console.log('🌐 Notificación SSE ICON-EU recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/icon/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.iconMetadata = metadata;
+        if (this._iconImageCache) this._iconImageCache.clear();
+
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentIconStep)) {
+          this.currentIconStep = availSteps[0];
+        }
+
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('icon_eu', formatIconTimestamp(metadata));
+        }
+
+        if (this.uiManager && this.uiManager.updateIconPlayerUI) {
+          this.uiManager.updateIconPlayerUI(
+            metadata,
+            this.currentIconStep,
+            this.currentIconType || 'total',
+            this.isIconPlaying
+          );
+        }
+
+        if (isMounted) {
+          this.reloadIconLayer();
+        }
+      }
+    }
   }
 
   /**
-   * Detiene todos los streams SSE de modelos de predicción
+   * Procesa evento SSE para MSC GEM-GDPS
    */
-  _stopAllModelSSE() {
-    this._stopEcmwfSSE();
-    this._stopGfsSSE();
-    this._stopAromeSSE();
-    this._stopHarmonieSSE();
-    this._stopIconSSE();
-    this._stopGemSSE();
+  async _handleGemSSEEvent(data) {
+    if (data && (data.event === 'gem_update' || data.event === 'gem_init')) {
+      const isMounted = this.isLayerOnMap('gem_gdps');
+      if (data.event === 'gem_init' && !isMounted && this.gemMetadata) {
+        return;
+      }
+
+      console.log('🌐 Notificación SSE GEM-GDPS recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/gem/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.gemMetadata = metadata;
+        if (this._gemPreloadSet) this._gemPreloadSet.clear();
+
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentGemStep)) {
+          this.currentGemStep = availSteps[0];
+        }
+
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('gem_gdps', formatGemTimestamp(metadata));
+        }
+
+        if (this.uiManager && this.uiManager.updateGemPlayerUI) {
+          this.uiManager.updateGemPlayerUI(
+            metadata,
+            this.currentGemStep,
+            this.currentGemType || 'total',
+            this.isGemPlaying
+          );
+        }
+
+        if (isMounted) {
+          this.reloadGemLayer();
+        }
+      }
+    }
   }
 
-  /**
-   * Inicia el stream SSE exclusivamente para el modelo de predicción activo
-   */
-  _startActiveModelSSE(modelId) {
-    this._stopAllModelSSE();
-    if (modelId === 'ecmwf_ifs') this._startEcmwfSSE();
-    else if (modelId === 'gfs_0p25') this._startGfsSSE();
-    else if (modelId === 'arome_precip') this._startAromeSSE();
-    else if (modelId === 'harmonie_aemet') this._startHarmonieSSE();
-    else if (modelId === 'icon_eu') this._startIconSSE();
-    else if (modelId === 'gem_gdps') this._startGemSSE();
-  }
+  /* --- Métodos de compatibilidad y delegación --- */
+  _startEcmwfSSE() { this._startModelsSSE(); }
+  _stopEcmwfSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _startGfsSSE() { this._startModelsSSE(); }
+  _stopGfsSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _startAromeSSE() { this._startModelsSSE(); }
+  _stopAromeSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _startHarmonieSSE() { this._startModelsSSE(); }
+  _stopHarmonieSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _startIconSSE() { this._startModelsSSE(); }
+  _stopIconSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _startGemSSE() { this._startModelsSSE(); }
+  _stopGemSSE() { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _stopModelSSE(modelId) { if (!this.isAnyPredictionActive()) this._stopModelsSSE(); }
+  _stopAllModelSSE() { this._stopModelsSSE(); }
+  _startActiveModelSSE(modelId) { this._startModelsSSE(); }
 
   /**
    * Recarga la capa de caudales
