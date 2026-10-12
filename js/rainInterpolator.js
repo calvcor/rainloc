@@ -82,7 +82,8 @@ export class RainInterpolator {
         val = Number(props.lluvia_hoy);
       }
 
-      if (val === null || isNaN(val) || val < 0) return;
+      // Filtrar lecturas corruptas o anomalías físicas de sensor (> 1000 mm)
+      if (val === null || isNaN(val) || val < 0 || val > 1000) return;
 
       // Evitar duplicados muy cercanos (< 0.003 grados) dando prioridad al mayor valor
       const locKey = `${lat.toFixed(3)}_${lon.toFixed(3)}`;

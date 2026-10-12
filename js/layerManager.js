@@ -6414,20 +6414,17 @@ export class LayerManager {
           props.lat = latlng.lat;
           props.lon = latlng.lng;
 
-          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-            ? Number(props.lluvia_1h)
-            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-            ? Number(props.lluvia_4h)
-            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-            ? Number(props.lluvia_12h)
-            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-            ? Number(props.lluvia_24h)
-            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const _cleanRain = (v, max = 1000) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0 && n <= max) ? n : 0;
+          };
+          const r1h = _cleanRain(props.lluvia_1h ?? props.precipitacion_1h, 300);
+          const r4h = _cleanRain(props.lluvia_4h ?? props.precipitacion_4h, 500);
+          const r12h = _cleanRain(props.lluvia_12h ?? props.precipitacion_12h, 800);
+          const r24h = _cleanRain(props.lluvia_24h ?? props.precipitacion_24h, 1000);
+          const rHoy = _cleanRain(props.lluvia_hoy, 1000);
 
-          const refRain = Math.max(r24h, r12h, r4h, r1h, Number(props.lluvia_hoy || 0));
+          const refRain = Math.max(r24h, r12h, r4h, r1h, rHoy);
 
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
@@ -6576,25 +6573,23 @@ export class LayerManager {
           props.lat = latlng.lat;
           props.lon = latlng.lng;
 
-          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-            ? Number(props.lluvia_1h)
-            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-            ? Number(props.lluvia_4h)
-            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-            ? Number(props.lluvia_12h)
-            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-            ? Number(props.lluvia_24h)
-            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const _cleanRain = (v, max = 1000) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0 && n <= max) ? n : 0;
+          };
+          const r1h = _cleanRain(props.lluvia_1h ?? props.precipitacion_1h, 300);
+          const r4h = _cleanRain(props.lluvia_4h ?? props.precipitacion_4h, 500);
+          const r12h = _cleanRain(props.lluvia_12h ?? props.precipitacion_12h, 800);
+          const r24h = _cleanRain(props.lluvia_24h ?? props.precipitacion_24h, 1000);
+          const rHoy = _cleanRain(props.lluvia_hoy, 1000);
+          const refRain = Math.max(r24h, r12h, r4h, r1h, rHoy);
 
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
           let alertClass = 'pluvio-status-zero';
           let alertLevelText = 'Sin lluvia acumulada';
 
-          if (r24h >= 100 || r1h >= 20) {
+          if (refRain >= 100 || r1h >= 20) {
             color = '#ef4444'; // Rojo / Torrencial
             alertClass = 'pluvio-status-extreme caudal-pulse';
             alertLevelText = 'Lluvia Torrencial';
@@ -6735,25 +6730,23 @@ export class LayerManager {
           props.lat = latlng.lat;
           props.lon = latlng.lng;
 
-          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-            ? Number(props.lluvia_1h)
-            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-            ? Number(props.lluvia_4h)
-            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-            ? Number(props.lluvia_12h)
-            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-            ? Number(props.lluvia_24h)
-            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const _cleanRain = (v, max = 1000) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0 && n <= max) ? n : 0;
+          };
+          const r1h = _cleanRain(props.lluvia_1h ?? props.precipitacion_1h, 300);
+          const r4h = _cleanRain(props.lluvia_4h ?? props.precipitacion_4h, 500);
+          const r12h = _cleanRain(props.lluvia_12h ?? props.precipitacion_12h, 800);
+          const r24h = _cleanRain(props.lluvia_24h ?? props.precipitacion_24h, 1000);
+          const rHoy = _cleanRain(props.lluvia_hoy, 1000);
+          const refRain = Math.max(r24h, r12h, r4h, r1h, rHoy);
 
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
           let alertClass = 'pluvio-status-zero';
           let alertLevelText = 'Sin lluvia acumulada';
 
-          if (r24h >= 100 || r1h >= 20) {
+          if (refRain >= 100 || r1h >= 20) {
             color = '#ef4444'; // Rojo / Torrencial
             alertClass = 'pluvio-status-extreme caudal-pulse';
             alertLevelText = 'Lluvia Torrencial';
@@ -6894,25 +6887,23 @@ export class LayerManager {
           props.lat = latlng.lat;
           props.lon = latlng.lng;
 
-          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-            ? Number(props.lluvia_1h)
-            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-            ? Number(props.lluvia_4h)
-            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-            ? Number(props.lluvia_12h)
-            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-            ? Number(props.lluvia_24h)
-            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const _cleanRain = (v, max = 1000) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0 && n <= max) ? n : 0;
+          };
+          const r1h = _cleanRain(props.lluvia_1h ?? props.precipitacion_1h, 300);
+          const r4h = _cleanRain(props.lluvia_4h ?? props.precipitacion_4h, 500);
+          const r12h = _cleanRain(props.lluvia_12h ?? props.precipitacion_12h, 800);
+          const r24h = _cleanRain(props.lluvia_24h ?? props.precipitacion_24h, 1000);
+          const rHoy = _cleanRain(props.lluvia_hoy, 1000);
+          const refRain = Math.max(r24h, r12h, r4h, r1h, rHoy);
 
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
           let alertClass = 'pluvio-status-zero';
           let alertLevelText = 'Sin lluvia acumulada';
 
-          if (r24h >= 100 || r1h >= 20) {
+          if (refRain >= 100 || r1h >= 20) {
             color = '#ef4444'; // Rojo / Torrencial
             alertClass = 'pluvio-status-extreme caudal-pulse';
             alertLevelText = 'Lluvia Torrencial';
@@ -7052,25 +7043,23 @@ export class LayerManager {
           props.lat = latlng.lat;
           props.lon = latlng.lng;
 
-          const r1h = props.lluvia_1h !== null && props.lluvia_1h !== undefined
-            ? Number(props.lluvia_1h)
-            : (props.precipitacion_1h !== null && props.precipitacion_1h !== undefined ? Number(props.precipitacion_1h) : 0);
-          const r4h = props.lluvia_4h !== null && props.lluvia_4h !== undefined
-            ? Number(props.lluvia_4h)
-            : (props.precipitacion_4h !== null && props.precipitacion_4h !== undefined ? Number(props.precipitacion_4h) : 0);
-          const r12h = props.lluvia_12h !== null && props.lluvia_12h !== undefined
-            ? Number(props.lluvia_12h)
-            : (props.precipitacion_12h !== null && props.precipitacion_12h !== undefined ? Number(props.precipitacion_12h) : 0);
-          const r24h = props.lluvia_24h !== null && props.lluvia_24h !== undefined
-            ? Number(props.lluvia_24h)
-            : (props.precipitacion_24h !== null && props.precipitacion_24h !== undefined ? Number(props.precipitacion_24h) : 0);
+          const _cleanRain = (v, max = 1000) => {
+            const n = Number(v);
+            return (!isNaN(n) && n >= 0 && n <= max) ? n : 0;
+          };
+          const r1h = _cleanRain(props.lluvia_1h ?? props.precipitacion_1h, 300);
+          const r4h = _cleanRain(props.lluvia_4h ?? props.precipitacion_4h, 500);
+          const r12h = _cleanRain(props.lluvia_12h ?? props.precipitacion_12h, 800);
+          const r24h = _cleanRain(props.lluvia_24h ?? props.precipitacion_24h, 1000);
+          const rHoy = _cleanRain(props.lluvia_hoy, 1000);
+          const refRain = Math.max(r24h, r12h, r4h, r1h, rHoy);
 
           // Escala de colores según precipitación acumulada
           let color = '#64748b'; // 0 mm (gris pizarra)
           let alertClass = 'pluvio-status-zero';
           let alertLevelText = 'Sin lluvia acumulada';
 
-          if (r24h >= 100 || r1h >= 20) {
+          if (refRain >= 100 || r1h >= 20) {
             color = '#ef4444'; // Rojo / Torrencial
             alertClass = 'pluvio-status-extreme caudal-pulse';
             alertLevelText = 'Lluvia Torrencial';
