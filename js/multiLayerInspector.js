@@ -1484,15 +1484,18 @@ export class MultiLayerInspector {
             });
 
             if (closestPluvio) {
-              const sanitizeRain = (v, max = 1000) => {
-                if (v === undefined || v === null) return null;
-                const n = Number(v);
-                return (!isNaN(n) && n >= 0 && n <= max) ? n : null;
-              };
-              const r1h = sanitizeRain(closestPluvio.lluvia_1h ?? closestPluvio.precipitacion_1h, 300);
-              const r4h = sanitizeRain(closestPluvio.lluvia_4h ?? closestPluvio.precipitacion_4h, 500);
-              const r12h = sanitizeRain(closestPluvio.lluvia_12h ?? closestPluvio.precipitacion_12h, 800);
-              const r24h = sanitizeRain(closestPluvio.lluvia_24h ?? closestPluvio.precipitacion_24h, 1000);
+              const r1h = (closestPluvio.lluvia_1h !== undefined && closestPluvio.lluvia_1h !== null)
+                ? Number(closestPluvio.lluvia_1h)
+                : ((closestPluvio.precipitacion_1h !== undefined && closestPluvio.precipitacion_1h !== null) ? Number(closestPluvio.precipitacion_1h) : null);
+              const r4h = (closestPluvio.lluvia_4h !== undefined && closestPluvio.lluvia_4h !== null)
+                ? Number(closestPluvio.lluvia_4h)
+                : ((closestPluvio.precipitacion_4h !== undefined && closestPluvio.precipitacion_4h !== null) ? Number(closestPluvio.precipitacion_4h) : null);
+              const r12h = (closestPluvio.lluvia_12h !== undefined && closestPluvio.lluvia_12h !== null)
+                ? Number(closestPluvio.lluvia_12h)
+                : ((closestPluvio.precipitacion_12h !== undefined && closestPluvio.precipitacion_12h !== null) ? Number(closestPluvio.precipitacion_12h) : null);
+              const r24h = (closestPluvio.lluvia_24h !== undefined && closestPluvio.lluvia_24h !== null)
+                ? Number(closestPluvio.lluvia_24h)
+                : ((closestPluvio.precipitacion_24h !== undefined && closestPluvio.precipitacion_24h !== null) ? Number(closestPluvio.precipitacion_24h) : null);
 
               const maxRef = Math.max(r24h ?? 0, r12h ?? 0, r4h ?? 0, r1h ?? 0);
               let badgeBg = "#38bdf8";

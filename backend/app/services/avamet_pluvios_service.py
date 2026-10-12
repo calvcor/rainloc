@@ -117,39 +117,22 @@ class AvametPluviosService:
                 if len(tds) < 11:
                     continue
 
-                st_name = clean_str(re.sub(r"<[^>]+>", "", tds[0]))
-
-                def _clean_val(td_html, max_limit: float = 1000.0) -> float:
+                def _clean_val(td_html):
                     txt = re.sub(r"<[^>]+>", "", td_html).strip().replace(".", "").replace(",", ".")
                     try:
-                        val = round(float(txt), 2)
-                        if val < 0 or val > max_limit:
-                            if val > max_limit:
-                                logger.warning(
-                                    f"AVAMET: Descartado valor anómalo ({val} mm > límite {max_limit} mm) "
-                                    f"en estación {st_id} ({st_name}). Posible fallo de sensor o registro corrupto."
-                                )
-                            return 0.0
-                        return val
+                        return round(float(txt), 2)
                     except Exception:
                         return 0.0
 
-                prec_hoy = _clean_val(tds[1], max_limit=800.0)
-                prec_mes = _clean_val(tds[4], max_limit=3000.0) if len(tds) > 4 else 0.0
-                prec_any = _clean_val(tds[5], max_limit=6000.0) if len(tds) > 5 else 0.0
-                prec_1h = _clean_val(tds[6], max_limit=300.0) if len(tds) > 6 else 0.0
-                prec_4h = _clean_val(tds[7], max_limit=500.0) if len(tds) > 7 else 0.0
-                prec_8h = _clean_val(tds[8], max_limit=700.0) if len(tds) > 8 else 0.0
-                prec_12h = _clean_val(tds[9], max_limit=800.0) if len(tds) > 9 else 0.0
-                prec_24h = _clean_val(tds[10], max_limit=1000.0) if len(tds) > 10 else 0.0
-
-                # Verificación de coherencia con el acumulado anual
-                if prec_any > 0 and prec_24h > (prec_any * 2.0) and prec_24h > 200.0:
-                    logger.warning(
-                        f"AVAMET: Descartado valor anómalo de 24h ({prec_24h} mm) en estación {st_id} ({st_name}) "
-                        f"por incoherencia con el acumulado anual ({prec_any} mm)."
-                    )
-                    prec_24h = 0.0
+                st_name = clean_str(re.sub(r"<[^>]+>", "", tds[0]))
+                prec_hoy = _clean_val(tds[1])
+                prec_mes = _clean_val(tds[4]) if len(tds) > 4 else 0.0
+                prec_any = _clean_val(tds[5]) if len(tds) > 5 else 0.0
+                prec_1h = _clean_val(tds[6]) if len(tds) > 6 else 0.0
+                prec_4h = _clean_val(tds[7]) if len(tds) > 7 else 0.0
+                prec_8h = _clean_val(tds[8]) if len(tds) > 8 else 0.0
+                prec_12h = _clean_val(tds[9]) if len(tds) > 9 else 0.0
+                prec_24h = _clean_val(tds[10]) if len(tds) > 10 else 0.0
 
                 title_match = re.search(r"title=[\"\x27]([\d\- :]+)[\"\x27]", r)
                 ultima_hora = title_match.group(1).strip() if title_match else ""
