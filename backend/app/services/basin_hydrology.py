@@ -366,6 +366,8 @@ class BasinHydrologyService:
         avail_steps = meta.get("available_steps", [])
         cycle_str = meta.get("cycle_str", "")
         run_str = meta.get("run", "")
+        is_complete = bool(meta.get("is_complete", False))
+        is_updating = bool(meta.get("is_updating", False))
 
         rows = basin["rows"]
         cols = basin["cols"]
@@ -443,6 +445,9 @@ class BasinHydrologyService:
             "model_name": model_name,
             "cycle_str": cycle_str,
             "run": run_str,
+            "is_complete": is_complete,
+            "is_updating": is_updating,
+            "total_possible_steps": len(steps_info),
             "total_accumulated_hm3": max_total_vol_hm3,
             "peak_interval_hm3": peak_interval_hm3,
             "peak_step": peak_step,

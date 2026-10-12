@@ -859,7 +859,8 @@ export class MultiLayerInspector {
         const shortModel = shortModelNames[activeModel] || activeModel.toUpperCase();
         const cacheKey = `${activeModel}_${cuencaFound.feature.id}`;
         if (this.layerManager._basinHydroCache && this.layerManager._basinHydroCache.has(cacheKey)) {
-          const hData = this.layerManager._basinHydroCache.get(cacheKey);
+          const entry = this.layerManager._basinHydroCache.get(cacheKey);
+          const hData = (entry && entry.data) ? entry.data : entry;
           if (hData) {
             hydroDetails = `
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 6px;">

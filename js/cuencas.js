@@ -460,7 +460,8 @@ export class CuencasLayer {
     const cacheKey = `${cleanModel}_${basinId}`;
     let cachedHydro = null;
     if (this.layerManager && this.layerManager._basinHydroCache && this.layerManager._basinHydroCache.has(cacheKey)) {
-      const c = this.layerManager._basinHydroCache.get(cacheKey);
+      const entry = this.layerManager._basinHydroCache.get(cacheKey);
+      const c = (entry && entry.data) ? entry.data : entry;
       if (c && c.series && c.series.length > 0) {
         cachedHydro = c;
       }

@@ -4157,6 +4157,31 @@ body.has-timeline-player .quick-maps-panel {
   color: #ffffff;
 }
 
+.btn-modal-refresh {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-modal-refresh:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-modal-refresh.is-spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
 /* Stats Bar */
 .caudal-modal-stats-bar {
   display: grid;

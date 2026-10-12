@@ -864,7 +864,7 @@ async def list_model_basins():
 async def get_model_basin_hydrograph(
     model: str,
     basin_id: str = Query(..., description="ID o nombre del subsistema de la cuenca (ej: '1', '2', 'TURIA')")
-) -> Dict[str, Any]:
+):
     """
     Calcula al vuelo (<2ms) la serie completa de precipitación media ponderada (mm),
     volumen hídrico acumulado e intervalar (hm³) y puntos de máxima precipitación
@@ -873,7 +873,14 @@ async def get_model_basin_hydrograph(
     result = basin_hydrology_service.calculate_basin_hydrograph(model_key=model, basin_id=basin_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
-    return result
+    return JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 
 @router.get("/{model}/basin-volume", summary="Volumen y precipitación en cuenca para un paso específico")
@@ -882,7 +889,7 @@ async def get_model_basin_volume(
     basin_id: str = Query(..., description="ID o nombre del subsistema de la cuenca"),
     step: int = Query(..., description="Paso de pronóstico en horas"),
     type: str = Query("total", description="Tipo de cálculo: 'total' (acumulado) o 'interval' (intervalo)")
-) -> Dict[str, Any]:
+):
     """
     Calcula al vuelo (<0.2ms) los valores hidrológicos de una cuenca en un único paso temporal.
     """
@@ -900,7 +907,7 @@ async def get_model_basin_volume(
     avg_mm = step_match["avg_interval_mm"] if clean_type == "interval" else step_match["avg_total_mm"]
     max_mm = step_match["max_point_interval_mm"] if clean_type == "interval" else step_match["max_point_mm"]
 
-    return {
+    payload = {
         "model": hydro["model_name"],
         "model_key": hydro["model_key"],
         "cycle_str": hydro["cycle_str"],
@@ -910,11 +917,18 @@ async def get_model_basin_volume(
         "area_km2": hydro["area_km2"],
         "step": step,
         "type": clean_type,
-        "valid_time_iso": step_match["valid_time_iso"],
-        "valid_time_local": step_match["valid_time_local"],
         "volume_hm3": vol_hm3,
         "avg_precip_mm": avg_mm,
-        "max_point_mm": max_mm,
-        "total_accumulated_hm3": hydro["total_accumulated_hm3"]
+        "max_precip_mm": max_mm,
+        "valid_time_iso": step_match.get("valid_time_iso", ""),
+        "valid_time_local": step_match.get("valid_time_local", ""),
     }
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 

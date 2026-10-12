@@ -4323,6 +4323,21 @@ export class LayerManager {
   }
 
   /**
+   * Notifica actualización de datos/pasos de un modelo para invalidar caché y refrescar UI
+   */
+  _onModelDataUpdated(modelKey) {
+    const clean = (modelKey || '').toLowerCase();
+    this.invalidateBasinHydroCache(clean);
+
+    // Si el modal de hidrograma de cuenca está visible con este modelo, refrescarlo en caliente
+    const backdrop = document.getElementById('basin-hydro-modal-backdrop');
+    if (backdrop && backdrop.style.display !== 'none' && this._currentModalBasinId && this._currentModalBasinModel === clean) {
+      console.log(`🔄 [RainLoc Hydro] Actualizando hidrograma en caliente para cuenca ${this._currentModalBasinId} tras actualización de ${clean.toUpperCase()}`);
+      this.loadBasinHydroForModal(this._currentModalBasinId, clean, this._currentModalBasinProps, true);
+    }
+  }
+
+  /**
    * Procesa evento SSE para ECMWF IFS
    */
   async _handleEcmwfSSEEvent(data) {
@@ -4360,6 +4375,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadEcmwfLayer();
         }
+        this._onModelDataUpdated('ecmwf');
       }
     }
   }
@@ -4403,6 +4419,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadGfsLayer();
         }
+        this._onModelDataUpdated('gfs');
       }
     }
   }
@@ -4446,6 +4463,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadAromeLayer();
         }
+        this._onModelDataUpdated('arome');
       }
     }
   }
@@ -4489,6 +4507,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadHarmonieLayer();
         }
+        this._onModelDataUpdated('harmonie');
       }
     }
   }
@@ -4532,6 +4551,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadIconLayer();
         }
+        this._onModelDataUpdated('icon');
       }
     }
   }
@@ -4575,6 +4595,7 @@ export class LayerManager {
         if (isMounted) {
           this.reloadGemLayer();
         }
+        this._onModelDataUpdated('gem');
       }
     }
   }
@@ -7960,6 +7981,37 @@ export class LayerManager {
     svgEl.addEventListener('touchend', onHoverLeave);
   }
   /**
+   * Obtiene la metadata actual en memoria para un modelo dado
+   */
+  _getModelMetadata(modelKey) {
+    const clean = (modelKey || '').toLowerCase();
+    if (clean === 'ecmwf') return this.ecmwfMetadata;
+    if (clean === 'gfs') return this.gfsMetadata;
+    if (clean === 'arome') return this.aromeMetadata;
+    if (clean === 'harmonie') return this.harmonieMetadata;
+    if (clean === 'icon') return this.iconMetadata;
+    if (clean === 'gem') return this.gemMetadata;
+    return null;
+  }
+
+  /**
+   * Invalida la caché de hidrogramas para un modelo específico o para todos
+   */
+  invalidateBasinHydroCache(modelKey = null) {
+    if (!this._basinHydroCache) return;
+    if (!modelKey) {
+      this._basinHydroCache.clear();
+      return;
+    }
+    const prefix = `${String(modelKey).toLowerCase()}_`;
+    for (const key of Array.from(this._basinHydroCache.keys())) {
+      if (key.startsWith(prefix)) {
+        this._basinHydroCache.delete(key);
+      }
+    }
+  }
+
+  /**
    * Determina el modelo de predicción activo en el mapa
    */
   getActivePredictionModel() {
@@ -7973,9 +8025,9 @@ export class LayerManager {
   }
 
   /**
-   * Consulta al vuelo la serie de hidrograma y volumen de una cuenca
+   * Consulta al vuelo la serie de hidrograma y volumen de una cuenca con validación estricta de ciclo y pasos
    */
-  async fetchBasinHydrograph(modelKey, basinId) {
+  async fetchBasinHydrograph(modelKey, basinId, forceRefresh = false) {
     const cleanModel = (modelKey || 'ecmwf').toLowerCase();
     const cleanBasinId = String(basinId || '').trim();
     if (!cleanBasinId) return null;
@@ -7984,30 +8036,72 @@ export class LayerManager {
     if (!this._basinHydroCache) {
       this._basinHydroCache = new Map();
     }
-    if (this._basinHydroCache.has(cacheKey)) {
-      const cached = this._basinHydroCache.get(cacheKey);
-      if (cached && cached.series && cached.series.length > 0) {
+
+    const now = Date.now();
+    const meta = this._getModelMetadata(cleanModel);
+    const clientCycle = meta && meta.cycle_str ? meta.cycle_str : null;
+    const clientAvailSteps = meta && meta.available_steps ? meta.available_steps.length : 0;
+
+    if (!forceRefresh && this._basinHydroCache.has(cacheKey)) {
+      const entry = this._basinHydroCache.get(cacheKey);
+      const cached = entry && entry.data ? entry.data : entry;
+      const cachedTs = (entry && entry.timestamp) || 0;
+      const cachedCycle = (entry && entry.cycle) || (cached && cached.cycle_str);
+      const cachedSteps = (entry && entry.stepsCount !== undefined) ? entry.stepsCount : (cached && (cached.steps_count || (cached.series ? cached.series.length : 0)));
+      const cachedComplete = (entry && entry.isComplete !== undefined) ? entry.isComplete : (cached && cached.is_complete);
+
+      let isValid = Boolean(cached && cached.series && cached.series.length > 0);
+
+      // Si ha cambiado el ciclo del modelo en el cliente, invalidar
+      if (isValid && clientCycle && cachedCycle && clientCycle !== cachedCycle) {
+        isValid = false;
+      }
+
+      // Si el cliente ya dispone de más pasos del modelo que los que teníamos en caché, invalidar
+      if (isValid && clientAvailSteps > 0 && clientAvailSteps > cachedSteps) {
+        isValid = false;
+      }
+
+      // Si el modelo aún no ha completado todos sus pasos, TTL máximo de 20 segundos para refrescar en progreso
+      if (isValid && !cachedComplete && (now - cachedTs > 20000)) {
+        isValid = false;
+      }
+
+      // TTL máximo general de 3 minutos
+      if (isValid && (now - cachedTs > 180000)) {
+        isValid = false;
+      }
+
+      if (isValid) {
         return cached;
+      } else {
+        this._basinHydroCache.delete(cacheKey);
       }
     }
 
     if (!this._inFlightBasinHydro) {
       this._inFlightBasinHydro = new Map();
     }
-    if (this._inFlightBasinHydro.has(cacheKey)) {
+    if (!forceRefresh && this._inFlightBasinHydro.has(cacheKey)) {
       return this._inFlightBasinHydro.get(cacheKey);
     }
 
     const fetchPromise = (async () => {
       try {
-        const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(cleanBasinId)}`);
+        const resp = await fetch(`${CONFIG.apiBaseUrl}/models/${cleanModel}/basin-hydrograph?basin_id=${encodeURIComponent(cleanBasinId)}&_t=${Date.now()}`);
         if (!resp.ok) {
           console.warn(`[RainLoc Hydro] HTTP ${resp.status} al consultar cuenca ${cleanBasinId} para modelo ${cleanModel}`);
           return null;
         }
         const data = await resp.json();
         if (data && data.series && data.series.length > 0) {
-          this._basinHydroCache.set(cacheKey, data);
+          this._basinHydroCache.set(cacheKey, {
+            data: data,
+            timestamp: Date.now(),
+            cycle: data.cycle_str,
+            stepsCount: data.steps_count || data.series.length,
+            isComplete: Boolean(data.is_complete)
+          });
         }
         return data;
       } catch (err) {
@@ -8044,6 +8138,7 @@ export class LayerManager {
     const badgeModel = document.getElementById('basin-hydro-modal-model-badge');
     const badgeSub = document.getElementById('basin-hydro-modal-subcuenca-badge');
     const closeBtn = document.getElementById('basin-hydro-modal-close');
+    const refreshBtn = document.getElementById('basin-hydro-modal-refresh');
     const modelTabs = document.querySelectorAll('#basin-hydro-model-tabs .btn-range');
 
     const subsistema = basinProps.Subsistema || basinProps.NomSistExp || basinProps.name || basinProps.NOMBRE || `Cuenca ${basinId}`;
@@ -8071,6 +8166,18 @@ export class LayerManager {
         this.loadBasinHydroForModal(basinId, m, basinProps);
       };
     });
+
+    if (refreshBtn) {
+      refreshBtn.onclick = async (ev) => {
+        ev.stopPropagation();
+        refreshBtn.classList.add('is-spinning');
+        try {
+          await this.loadBasinHydroForModal(this._currentModalBasinId, this._currentModalBasinModel, this._currentModalBasinProps, true);
+        } finally {
+          setTimeout(() => refreshBtn.classList.remove('is-spinning'), 400);
+        }
+      };
+    }
 
     const closeModal = () => {
       if (document.activeElement && backdrop.contains(document.activeElement)) {
@@ -8102,7 +8209,7 @@ export class LayerManager {
   /**
    * Carga los datos del hidrograma y dibuja la gráfica interactiva
    */
-  async loadBasinHydroForModal(basinId, modelKey, basinProps = {}) {
+  async loadBasinHydroForModal(basinId, modelKey, basinProps = {}, forceRefresh = false) {
     const container = document.getElementById('basin-hydro-chart-canvas-container');
     const badgeModel = document.getElementById('basin-hydro-modal-model-badge');
     const statVolTotal = document.getElementById('basin-stat-vol-total');
@@ -8114,7 +8221,7 @@ export class LayerManager {
     const statMaxPoint = document.getElementById('basin-stat-max-point');
     const statStepsCount = document.getElementById('basin-stat-steps-count');
 
-    if (container) {
+    if (container && !forceRefresh) {
       container.innerHTML = `
         <div class="caudal-chart-modal-loading">
           <div class="caudal-spinner"></div>
@@ -8161,7 +8268,7 @@ export class LayerManager {
       }
     }
 
-    const data = await this.fetchBasinHydrograph(modelKey, basinId);
+    const data = await this.fetchBasinHydrograph(modelKey, basinId, forceRefresh);
     if (!data || !data.series || data.series.length === 0) {
       if (container) {
         container.innerHTML = `
@@ -8175,7 +8282,13 @@ export class LayerManager {
 
     // Actualizar tarjetas de métricas
     if (statVolTotal) statVolTotal.textContent = `${data.total_accumulated_hm3.toFixed(2)} hm³`;
-    if (statCycle) statCycle.textContent = `Ciclo: ${data.cycle_str || '--'}`;
+    if (statCycle) {
+      if (!data.is_complete || data.is_updating) {
+        statCycle.innerHTML = `Ciclo: <strong>${data.cycle_str || '--'}</strong> <span style="color:#f59e0b; font-weight:600; font-size:0.75rem;">(actualizándose: ${data.steps_count}p)</span>`;
+      } else {
+        statCycle.textContent = `Ciclo: ${data.cycle_str || '--'}`;
+      }
+    }
     if (statPeakVol) statPeakVol.textContent = `${data.peak_interval_hm3.toFixed(2)} hm³`;
     if (statPeakTime) statPeakTime.textContent = data.peak_time_local ? `Pico: ${data.peak_time_local}` : (data.peak_step ? `Paso: +${data.peak_step}h` : 'Sin precipitación');
     
@@ -8187,7 +8300,13 @@ export class LayerManager {
     if (statAvgMm) statAvgMm.textContent = `${avgFinalMm.toFixed(1)} mm`;
     if (statArea) statArea.textContent = `Superficie: ${Number(data.area_km2).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²`;
     if (statMaxPoint) statMaxPoint.textContent = `${maxPointMm.toFixed(1)} mm`;
-    if (statStepsCount) statStepsCount.textContent = `Pasos calculados: ${data.steps_count}`;
+    if (statStepsCount) {
+      if (!data.is_complete || data.is_updating) {
+        statStepsCount.innerHTML = `Pasos calculados: <strong>${data.steps_count}</strong> <span style="color:#f59e0b;">(en descarga)</span>`;
+      } else {
+        statStepsCount.textContent = `Pasos calculados: ${data.steps_count}`;
+      }
+    }
 
     // Renderizar gráfico interactivo SVG
     if (container) {
