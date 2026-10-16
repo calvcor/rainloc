@@ -14,6 +14,7 @@ import re
 import subprocess
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,7 @@ EMBALSES_LIVE_URL = f"{DUERO_BASE_URL}/situacion-embalses"
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "public" / "data"
+ROOT_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 STATIC_DUERO_AFOROS_FILE = DATA_DIR / "duero_aforos_estaciones.json"
 STATIC_DUERO_EMBALSES_FILE = DATA_DIR / "duero_embalses_estaciones.json"
@@ -40,6 +42,24 @@ STATIC_DUERO_PLUVIOS_FILE = DATA_DIR / "duero_lluvias_estaciones.json"
 DUERO_AFOROS_GEOJSON_FILE = DATA_DIR / "duero_aforos.geojson"
 DUERO_EMBALSES_GEOJSON_FILE = DATA_DIR / "duero_embalses.geojson"
 DUERO_PLUVIOS_GEOJSON_FILE = DATA_DIR / "duero_lluvias.geojson"
+DUERO_CUENCAS_GEOJSON_FILE = DATA_DIR / "duero_subcuencas.geojson"
+DUERO_CUENCAS_KML_URL = f"{DUERO_BASE_URL}/mapas/local/layers/kml/Zona_prueba.kml"
+
+DUERO_ZONES_MAPPING: Dict[int, Dict[str, str]] = {
+    1: {"name": "Támega - Manzanas", "code": "ES020SE01"},
+    2: {"name": "Tera", "code": "ES020SE02"},
+    3: {"name": "Órbigo", "code": "ES020SE03"},
+    4: {"name": "Esla - Valderaduey", "code": "ES020SE04"},
+    5: {"name": "Carrión", "code": "ES020SE05"},
+    6: {"name": "Pisuerga", "code": "ES020SE06"},
+    7: {"name": "Arlanza", "code": "ES020SE07"},
+    8: {"name": "Alto Duero", "code": "ES020SE08"},
+    9: {"name": "Riaza - Duratón", "code": "ES020SE09"},
+    10: {"name": "Cega - Eresma - Adaja", "code": "ES020SE10"},
+    11: {"name": "Bajo Duero", "code": "ES020SE11"},
+    12: {"name": "Tormes", "code": "ES020SE12"},
+    13: {"name": "Águeda", "code": "ES020SE13"},
+}
 
 
 def _fetch_url(url: str, timeout: int = 20) -> str:
@@ -147,6 +167,9 @@ class DueroService:
 
         self._history_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
         self._history_cache_lock = asyncio.Lock()
+
+        self._cuencas_geojson_cache: Optional[Dict[str, Any]] = None
+        self._cuencas_lock = asyncio.Lock()
 
         self._load_from_disk()
 
@@ -892,6 +915,147 @@ class DueroService:
             "serie": data_points,
             "datos": data_points
         }
+
+    def _download_and_process_cuencas_geojson(self) -> Dict[str, Any]:
+        """
+        Descarga dinámicamente desde el portal oficial del SAIH Duero el KML de zonas / subcuencas,
+        o como alternativa desde el shapefile oficial de Sistemas de Explotación del MITECO (ES020),
+        y genera una FeatureCollection GeoJSON optimizada.
+        """
+        features = []
+        raw_kml = _fetch_url(DUERO_CUENCAS_KML_URL, timeout=20)
+        if raw_kml and "<kml" in raw_kml:
+            try:
+                root = ET.fromstring(raw_kml)
+                for pm in root.findall(".//{*}Placemark"):
+                    poly = pm.find(".//{*}Polygon")
+                    if poly is None:
+                        continue
+                    coords_el = poly.find(".//{*}coordinates")
+                    if coords_el is None or not coords_el.text:
+                        continue
+
+                    meta = pm.find("{*}Metadata")
+                    subzona_raw = ""
+                    numsubzona = None
+                    area_km2 = None
+                    if meta is not None:
+                        s_el = meta.find("{*}subzonachd")
+                        if s_el is not None and s_el.text:
+                            subzona_raw = s_el.text.strip()
+                        n_el = meta.find("{*}numsubzona")
+                        if n_el is not None and n_el.text:
+                            try:
+                                numsubzona = int(float(n_el.text.strip()))
+                            except ValueError:
+                                pass
+                        a_el = meta.find("{*}area")
+                        if a_el is not None and a_el.text:
+                            try:
+                                area_km2 = round(float(a_el.text.strip()), 2)
+                            except ValueError:
+                                pass
+
+                    zone_info = DUERO_ZONES_MAPPING.get(numsubzona, {})
+                    name = zone_info.get("name") or (subzona_raw.split("-", 1)[1].strip() if "-" in subzona_raw else subzona_raw)
+                    code = zone_info.get("code") or (f"ES020SE{numsubzona:02d}" if numsubzona else f"DUERO_{len(features)+1}")
+
+                    ring = []
+                    for pt_str in coords_el.text.strip().split():
+                        parts = pt_str.split(",")
+                        if len(parts) >= 2:
+                            lon = round(float(parts[0]), 5)
+                            lat = round(float(parts[1]), 5)
+                            ring.append([lon, lat])
+
+                    if ring and ring[0] != ring[-1]:
+                        ring.append(ring[0])
+
+                    if len(ring) >= 4:
+                        features.append({
+                            "type": "Feature",
+                            "id": code,
+                            "properties": {
+                                "id": code,
+                                "NomSistExp": name,
+                                "Subsistema": name,
+                                "Sistema": name,
+                                "nombre": name,
+                                "Demarcacion": "Demarcación Hidrográfica del Duero (CHD)",
+                                "demarcacion": "Duero",
+                                "cod_demar": "ES020",
+                                "cod_sisexp": code,
+                                "cod_subse": code,
+                                "numsubzona": numsubzona,
+                                "zona": f"Zona {numsubzona} - {name}" if numsubzona else name,
+                                "Superf km2": area_km2,
+                                "Area km2": area_km2,
+                                "Superficie": area_km2,
+                            },
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [ring],
+                            },
+                        })
+
+                features.sort(key=lambda f: f["properties"].get("numsubzona") or 0)
+            except Exception as e:
+                logger.warning(f"Error procesando KML de zonas del SAIH Duero: {e}")
+
+        if not features:
+            raise RuntimeError("No se pudieron obtener las geometrías de las subcuencas del SAIH Duero")
+
+        fc = {"type": "FeatureCollection", "features": features}
+
+        # Guardar en disco para persistencia y caché local
+        for target_path in [DUERO_CUENCAS_GEOJSON_FILE, ROOT_DATA_DIR / "duero_subcuencas.geojson", PUBLIC_DATA_DIR / "duero_subcuencas.geojson"]:
+            try:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(target_path, "w", encoding="utf-8") as f:
+                    json.dump(fc, f, ensure_ascii=False, separators=(",", ":"))
+                logger.info("GeoJSON de cuencas del Duero guardado en %s (%d subcuencas)", target_path, len(features))
+            except Exception as e:
+                logger.warning("No se pudo escribir archivo %s: %s", target_path, e)
+
+        return fc
+
+    async def get_cuencas_geojson(self) -> Dict[str, Any]:
+        """Devuelve la FeatureCollection de cuencas/subcuencas del Duero con descarga y caché dinámicas."""
+        if self._cuencas_geojson_cache is not None:
+            return self._cuencas_geojson_cache
+
+        async with self._cuencas_lock:
+            if self._cuencas_geojson_cache is not None:
+                return self._cuencas_geojson_cache
+
+            # 1. Verificar si ya existe en disco
+            candidates = [
+                DUERO_CUENCAS_GEOJSON_FILE,
+                ROOT_DATA_DIR / "duero_subcuencas.geojson",
+                DATA_DIR / "duero_subcuencas.geojson",
+                DATA_DIR / "duero_cuencas.geojson",
+                PUBLIC_DATA_DIR / "duero_subcuencas.geojson" if PUBLIC_DATA_DIR else None,
+            ]
+            for cand in candidates:
+                if cand and cand.exists():
+                    try:
+                        with open(cand, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            if data and "features" in data and len(data["features"]) > 0:
+                                self._cuencas_geojson_cache = data
+                                return self._cuencas_geojson_cache
+                    except Exception as e:
+                        logger.warning("Error leyendo archivo local %s: %s", cand, e)
+
+            # 2. Descargar y procesar dinámicamente
+            logger.info("GeoJSON de cuencas del Duero no encontrado localmente. Descargando desde SAIH Duero...")
+            try:
+                data = await asyncio.to_thread(self._download_and_process_cuencas_geojson)
+                self._cuencas_geojson_cache = data
+                return self._cuencas_geojson_cache
+            except Exception as e:
+                logger.error("Error al descargar dinámicamente cuencas del Duero: %s", e)
+                raise
 
 
 # Instancia singleton del servicio para todo RainLoc

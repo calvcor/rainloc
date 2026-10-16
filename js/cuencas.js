@@ -149,6 +149,7 @@ export class CuencasLayer {
     const hasEbro = Array.from(featureMap.values()).some(f => isDemarcation(f, 'ebro') || isDemarcation(f, 'che'));
     const hasSegura = Array.from(featureMap.values()).some(f => isDemarcation(f, 'segura') || isDemarcation(f, 'chs'));
     const hasGuadalquivir = Array.from(featureMap.values()).some(f => isDemarcation(f, 'guadalquivir') || isDemarcation(f, 'chg'));
+    const hasDuero = Array.from(featureMap.values()).some(f => isDemarcation(f, 'duero') || isDemarcation(f, 'chd'));
 
     // Cargar cuencas del Ebro (CHE) si no estaban en el fichero base
     if (!hasEbro && CONFIG.dataSources.ebroCuencasGeoJson) {
@@ -200,6 +201,24 @@ export class CuencasLayer {
           }
         } catch (err) {
           console.warn('No se pudo cargar la capa de cuencas del Guadalquivir:', err);
+        }
+      }
+    }
+
+    // Cargar cuencas del Duero (CHD / SAIH Duero) si no estaban en el fichero base
+    if (!hasDuero && CONFIG.dataSources.dueroCuencasGeoJson) {
+      for (const url of CONFIG.dataSources.dueroCuencasGeoJson) {
+        try {
+          const dueroRes = await fetch(url);
+          if (dueroRes.ok) {
+            const dueroData = await dueroRes.json();
+            if (dueroData && Array.isArray(dueroData.features)) {
+              replaceDemarcation(dueroData.features, 'duero');
+            }
+            break;
+          }
+        } catch (err) {
+          console.warn('No se pudo cargar la capa de cuencas del Duero:', err);
         }
       }
     }
@@ -436,7 +455,8 @@ export class CuencasLayer {
     const isEbro = (props.Demarcacion && props.Demarcacion.includes('Ebro')) || (props.demarcacion === 'Ebro');
     const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
     const isGuadalquivir = (props.Demarcacion && props.Demarcacion.includes('Guadalquivir')) || (props.demarcacion === 'Guadalquivir');
-    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (isGuadalquivir ? 'Demarcación Hidrográfica del Guadalquivir (CHG)' : (props.NomSistExp || 'Demarcación CHJ'))));
+    const isDuero = (props.Demarcacion && props.Demarcacion.includes('Duero')) || (props.demarcacion === 'Duero') || (props.cod_demar === 'ES020');
+    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (isGuadalquivir ? 'Demarcación Hidrográfica del Guadalquivir (CHG)' : (isDuero ? 'Demarcación Hidrográfica del Duero (CHD)' : (props.NomSistExp || 'Demarcación CHJ')))));
     const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${basinId || 'N/D'}`;
     const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
     const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;

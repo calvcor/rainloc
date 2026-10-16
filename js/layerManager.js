@@ -5625,24 +5625,20 @@ export class LayerManager {
         const rawNivel = props.ultimo_nivel !== undefined ? props.ultimo_nivel : (props.nivel !== undefined ? props.nivel : (props.nivel_actual !== undefined ? props.nivel_actual : (props.cota_actual !== undefined ? props.cota_actual : props.cota)));
         const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
-        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.red === 'HIDROSUR';
-        let compareVal = null;
-        if (isNivelThreshold) {
-          if (nivel !== null) {
-            compareVal = nivel;
-          }
-        } else {
-          if (caudal !== null) {
-            compareVal = caudal;
-          } else if (nivel !== null) {
-            compareVal = nivel;
-          }
-        }
-
         const umbrales = props.umbrales || {};
         const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
         const uNaranja = (umbrales.naranja && Number(umbrales.naranja) > 0) ? Number(umbrales.naranja) : ((umbrales.prealerta && Number(umbrales.prealerta) > 0) ? Number(umbrales.prealerta) : null);
         const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
+
+        const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.unidad_grafica === 'm' || props.red === 'HIDROSUR';
+        const hasLevelThreshold = isNivelThreshold && (uAmarillo !== null || uNaranja !== null || uRojo !== null);
+        const shouldCompareLevel = hasLevelThreshold || (caudal === null && nivel !== null);
+        let compareVal = null;
+        if (shouldCompareLevel) {
+          compareVal = (nivel !== null) ? nivel : caudal;
+        } else {
+          compareVal = (caudal !== null) ? caudal : nivel;
+        }
 
         // Determinar nivel de alerta y color
         let color = '#10b981'; // Normal (Verde)

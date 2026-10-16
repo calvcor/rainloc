@@ -44,6 +44,11 @@ export const CONFIG = {
       './data/guadalquivir_subcuencas.geojson',
       './guadalquivir_subcuencas.geojson'
     ],
+    dueroCuencasGeoJson: [
+      `${apiBase}/cuencas/duero?v=3.71`,
+      './data/duero_subcuencas.geojson',
+      './duero_subcuencas.geojson'
+    ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,
       `${apiBase}/cuencas/ccaa`,
@@ -167,6 +172,22 @@ export const CONFIG = {
     'Regulación General': '#2563eb',
     'Abastecimiento de Córdoba': '#d946ef',
     'Abastecimiento de Jaén': '#e11d48',
+
+    // Confederación Hidrográfica del Duero (CHDuero / SAIH Duero)
+    'Támega - Manzanas': '#059669',
+    'Tera': '#0d9488',
+    'Órbigo': '#0284c7',
+    'Esla - Valderaduey': '#2563eb',
+    'Esla': '#2563eb',
+    'Carrión': '#8b5cf6',
+    'Pisuerga': '#06b6d4',
+    'Arlanza': '#d97706',
+    'Alto Duero': '#ea580c',
+    'Riaza - Duratón': '#f59e0b',
+    'Cega - Eresma - Adaja': '#e11d48',
+    'Bajo Duero': '#4f46e5',
+    'Tormes': '#d946ef',
+    'Águeda': '#10b981',
 
     'Default': '#3b82f6'                // Azul estándar
   },

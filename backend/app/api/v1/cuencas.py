@@ -9,6 +9,7 @@ from app.config import settings
 from app.services.ebro_service import ebro_service
 from app.services.segura_service import segura_service
 from app.services.guadalquivir_service import guadalquivir_service
+from app.services.duero_service import duero_service
 from app.services.rios_service import rios_service
 
 router = APIRouter(prefix="/cuencas", tags=["Cuencas y Subsistemas"])
@@ -203,6 +204,31 @@ async def get_guadalquivir_cuencas():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Guadalquivir: {str(e)}")
+
+
+@router.get("/duero", summary="Obtener GeoJSON de cuencas y subcuencas de la CHD (Duero)")
+async def get_duero_cuencas():
+    """
+    Devuelve la FeatureCollection con geometrías optimizadas y propiedades de los
+    sistemas de explotación y zonas/subcuencas de la Confederación Hidrográfica del Duero (CHD / SAIH Duero).
+    Si el archivo no existe localmente, se descarga y optimiza dinámicamente desde fuentes oficiales.
+    """
+    try:
+        data = await duero_service.get_cuencas_geojson()
+        try:
+            basin_hydrology_service.ingest_feature_collection(data, default_demarcation="Demarcación Hidrográfica del Duero (CHD)")
+        except Exception:
+            pass
+        return Response(
+            content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+            media_type="application/geo+json",
+            headers={
+                **CUENCAS_CACHE_HEADERS,
+                "X-Feature-Count": str(len(data.get("features", []))),
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Duero: {str(e)}")
 
 
 @router.get("/sistemas", summary="Resumen estadístico por Sistema de Explotación")

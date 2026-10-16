@@ -152,8 +152,13 @@ class BasinHydrologyService:
                         if norm.startswith("es050se"):
                             aliases.add(norm[7:])
                             aliases.add("se" + norm[7:])
+                        if norm.startswith("es020se"):
+                            aliases.add(norm[7:])
+                            aliases.add("se" + norm[7:])
                         if norm.startswith("guad_"):
                             aliases.add(norm[5:])
+                        if norm.startswith("duero_"):
+                            aliases.add(norm[6:])
 
             self.basins[basin_id] = {
                 "id": basin_id,
@@ -246,10 +251,26 @@ class BasinHydrologyService:
                 except Exception as e:
                     logger.warning(f"BasinHydrology: Error leyendo GeoJSON Guadalquivir ({p}): {e}")
 
-        # 5. Cualquier otro archivo *cuencas*.geojson en data_dir
+        # 5. CHDuero: Subcuencas
+        duero_candidates = [
+            data_dir / "duero_subcuencas.geojson",
+            BASE_DIR / "backend" / "data" / "duero_subcuencas.geojson",
+            BASE_DIR / "duero_subcuencas.geojson",
+        ]
+        for p in duero_candidates:
+            if p and p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        fc = json.load(f)
+                    self.ingest_feature_collection(fc, default_demarcation="Demarcación Hidrográfica del Duero (CHD)")
+                    break
+                except Exception as e:
+                    logger.warning(f"BasinHydrology: Error leyendo GeoJSON Duero ({p}): {e}")
+
+        # 6. Cualquier otro archivo *cuencas*.geojson en data_dir
         try:
             for p in data_dir.glob("*cuencas*.geojson"):
-                if "ebro" in p.name or "segura" in p.name or "guadalquivir" in p.name:
+                if "ebro" in p.name or "segura" in p.name or "guadalquivir" in p.name or "duero" in p.name:
                     continue
                 try:
                     with open(p, "r", encoding="utf-8") as f:

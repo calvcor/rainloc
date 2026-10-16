@@ -9,6 +9,7 @@ import concurrent.futures
 import json
 import logging
 import re
+import subprocess
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -32,13 +33,35 @@ ARCGIS_AFOROS_N_URL = "https://www.chsegura.es/arcgis/rest/services/VISOR_CHSIC3
 ARCGIS_EMBALSES_V_URL = "https://www.chsegura.es/arcgis/rest/services/VISOR_CHSIC3/VISOR_PUBLICO_ETRS89_v5_Web_Capas_2025/MapServer/8/query?where=1%3D1&outFields=*&f=json"
 ARCGIS_EMBALSES_N_URL = "https://www.chsegura.es/arcgis/rest/services/VISOR_CHSIC3/VISOR_PUBLICO_ETRS89_v5_Web_Capas_2025/MapServer/9/query?where=1%3D1&outFields=*&f=json"
 
-# SAIH Segura Web iVisor endpoints
-SAIH_CAUCES_LIVE_URL = "http://saihweb.chsegura.es/apps/ivisor/cauces3.php"
-SAIH_EMBALSES_LIVE_URL = "http://saihweb.chsegura.es/apps/ivisor/embalses3.php"
-SAIH_CHART_URL = "http://saihweb.chsegura.es/apps/ivisor/graficas/graficaVar.php"
+# SAIH Segura Web iVisor endpoints (usando HTTPS y ruta exacta iVisor con 'V' mayúscula)
+SAIH_CAUCES_LIVE_URL = "https://saihweb.chsegura.es/apps/iVisor/cauces3.php"
+SAIH_EMBALSES_LIVE_URL = "https://saihweb.chsegura.es/apps/iVisor/embalses3.php"
+SAIH_CHART_URL = "https://saihweb.chsegura.es/apps/iVisor/graficas/graficaVar.php"
+
+
+def _fetch_url(url: str, timeout: int = 10) -> str:
+    """Descarga el contenido de una URL de forma robusta con curl y fallback a urllib."""
+    try:
+        proc = subprocess.run(
+            ["curl", "-s", "-L", "--compressed", "-m", str(timeout), "-A", USER_AGENT, url],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.stdout:
+            return proc.stdout
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        logger.warning(f"Error descargando {url}: {e}")
+        return ""
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "public" / "data"
+PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 STATIC_SEGURA_PLUVIOS_FILE = DATA_DIR / "segura_lluvias_estaciones.json"
 STATIC_SEGURA_AFOROS_FILE = DATA_DIR / "segura_aforos_estaciones.json"
@@ -162,9 +185,13 @@ def _parse_num(val: Any) -> Optional[float]:
         .replace("*", "")
         .strip()
     )
-    if not cleaned or cleaned in ("--", "-"):
+    if not cleaned or cleaned in ("--", "-", "N/D", "null"):
         return None
-    cleaned = cleaned.replace(",", ".")
+    # Eliminar separador de miles con punto si hay coma decimal (ej. 1.288,4 -> 1288.4)
+    if "." in cleaned and "," in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        cleaned = cleaned.replace(",", ".")
     try:
         return float(cleaned)
     except ValueError:
@@ -492,17 +519,32 @@ class SeguraService:
 
         # 2. Descargar lecturas en tiempo real de cauces3.php (tipo=0 cauces, tipo=1 canales, tipo=2 acequias)
         rows = []
-        pattern_divs = r"<div[^>]*><a\s+title='([^']*)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*title='([^']*)'[^>]*>([^<]*)</div>\s*<div[^>]*title='([^']*)'[^>]*>([^<]*)</div>"
-        pattern_links = r"title='([^']+)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a></div>\s*<div[^>]*>\s*<a[^>]*title='([^']*)'[^>]*>([^<]*)</a>"
+        row_pattern = re.compile(
+            r"<div[^>]*style='width:5[0-9]%[^']*'[^>]*><a\s+title='([^']*)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*"
+            r"<div[^>]*style='width:2[0-9]%[^']*'([^>]*)>(.*?)</div>\s*"
+            r"<div[^>]*style='width:2[0-9]%[^']*'([^>]*)>(.*?)</div>",
+            re.DOTALL
+        )
+
+        def extract_tag_val(div_attrs, div_body):
+            a_match = re.search(r"<a[^>]*title='([^']*)'[^>]*>([^<]*)</a>", div_body)
+            if a_match:
+                return a_match.group(1).strip(), a_match.group(2).strip()
+            t_match = re.search(r"title='([^']*)'", div_attrs)
+            tag = t_match.group(1).strip() if t_match else ""
+            val = re.sub(r"<[^>]+>", "", div_body).strip()
+            return tag, val
 
         for t in [0, 1, 2]:
             try:
                 url_t = f"{SAIH_CAUCES_LIVE_URL}?tipo={t}"
-                req_live = urllib.request.Request(url_t, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req_live, timeout=10) as resp:
-                    html = resp.read().decode("utf-8", errors="ignore")
-                parsed = re.findall(pattern_divs, html) or re.findall(pattern_links, html)
-                rows.extend(parsed)
+                html = _fetch_url(url_t, timeout=10)
+                matches = row_pattern.findall(html)
+                for m in matches:
+                    title_codes, punto_code, raw_name, n_attrs, n_body, q_attrs, q_body = m
+                    tag_n, val_n = extract_tag_val(n_attrs, n_body)
+                    tag_q, val_q = extract_tag_val(q_attrs, q_body)
+                    rows.append((title_codes, punto_code, raw_name, tag_n, val_n, tag_q, val_q))
             except Exception as err:
                 logger.warning(f"Error descargando cauces3.php?tipo={t}: {err}")
 
@@ -578,6 +620,7 @@ class SeguraService:
                 }
 
             aforo_obj = {
+                "id": f"segura_aforo_{cod_clean.lower()}",
                 "id_variable": id_variable,
                 "id_estacion": f"segura_aforo_{cod_clean.lower()}",
                 "codigo": cod_clean,
@@ -645,6 +688,7 @@ class SeguraService:
                             val_nivel = prev.get("nivel")
 
                 aforo_obj = {
+                    "id": f"segura_aforo_{cod.lower()}",
                     "id_variable": id_var,
                     "id_estacion": f"segura_aforo_{cod.lower()}",
                     "codigo": cod,
@@ -753,14 +797,31 @@ class SeguraService:
 
         # 2. Descargar lecturas en tiempo real de embalses3.php
         rows = []
-        pattern_divs = r"<div[^>]*><a[^>]*title='([^']*)'[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*title='([^']*)'[^>]*>([^<]*)</div>\s*<div[^>]*title='([^']*)'[^>]*>([^<]*)</div>\s*<div[^>]*>([^<]*)</div>"
-        pattern_links = r"title='([^']+)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*<div[^>]*><a[^>]*title='([^']*)'[^>]*>([^<]*)</a></div>\s*<div[^>]*><a[^>]*title='([^']*)'[^>]*>([^<]*)</a></div>\s*<div[^>]*>([^<]*)</div>"
+        emb_pattern = re.compile(
+            r"<div[^>]*style='width:4[0-9]%[^']*'[^>]*><a\s+[^>]*title='([^']*)'\s+href=[^>]*set_punto\('([^']+)'\)[^>]*>&nbsp;([^<]+)</a></div>\s*"
+            r"<div[^>]*style='width:1[0-9]%[^']*'([^>]*)>(.*?)</div>\s*"
+            r"<div[^>]*style='width:2[0-9]%[^']*'([^>]*)>(.*?)</div>\s*"
+            r"<div[^>]*style='width:1[0-9]%[^']*'([^>]*)>(.*?)</div>",
+            re.DOTALL
+        )
+
+        def extract_emb_tag_val(div_attrs, div_body):
+            a_match = re.search(r"<a[^>]*title='([^']*)'[^>]*>([^<]*)</a>", div_body)
+            if a_match:
+                return a_match.group(1).strip(), a_match.group(2).strip()
+            t_match = re.search(r"title='([^']*)'", div_attrs)
+            tag = t_match.group(1).strip() if t_match else ""
+            val = re.sub(r"<[^>]+>", "", div_body).strip()
+            return tag, val
 
         try:
-            req_live = urllib.request.Request(SAIH_EMBALSES_LIVE_URL, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_live, timeout=12) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-            rows = re.findall(pattern_divs, html) or re.findall(pattern_links, html)
+            html = _fetch_url(SAIH_EMBALSES_LIVE_URL, timeout=12)
+            for m in emb_pattern.findall(html):
+                title_code, punto_code, raw_name, c_attrs, c_body, v_attrs, v_body, p_attrs, p_body = m
+                tag_c, val_c = extract_emb_tag_val(c_attrs, c_body)
+                tag_v, val_v = extract_emb_tag_val(v_attrs, v_body)
+                val_p = re.sub(r"<[^>]+>", "", p_body).strip()
+                rows.append((title_code, punto_code, raw_name, tag_c, val_c, tag_v, val_v, val_p))
         except Exception as e:
             logger.warning(f"Error descargando embalses3.php: {e}")
 
@@ -841,6 +902,7 @@ class SeguraService:
                 val_pct = round((val_vol / capacidad_nmn) * 100, 1)
 
             emb_obj = {
+                "id": f"segura_emb_{cod_clean.lower()}",
                 "id_estacion": f"segura_emb_{cod_clean.lower()}",
                 "codigo": cod_clean,
                 "nombre": full_name,
@@ -909,6 +971,7 @@ class SeguraService:
                 val_pct = round((val_vol / capacidad_nmn) * 100, 1) if (val_vol is not None and capacidad_nmn and capacidad_nmn > 0) else None
 
                 emb_obj = {
+                    "id": f"segura_emb_{cod_clean.lower()}",
                     "id_estacion": f"segura_emb_{cod_clean.lower()}",
                     "codigo": cod_clean,
                     "nombre": meta.get("nombre") or f"Embalse {cod_clean}",

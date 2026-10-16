@@ -37,6 +37,7 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-full: 9999px;
+  --sidebar-width: 360px;
 }
 
 /* Reset y base */
@@ -587,7 +588,7 @@ body {
   top: calc(78px + env(safe-area-inset-top, 0px));
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: calc(14px + env(safe-area-inset-left, 0px));
-  width: 320px;
+  width: var(--sidebar-width);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -1763,7 +1764,7 @@ body {
 .radar-bottom-player {
   position: absolute;
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  left: calc(348px + env(safe-area-inset-left, 0px));
+  left: calc(var(--sidebar-width) + 28px + env(safe-area-inset-left, 0px));
   right: calc(14px + env(safe-area-inset-right, 0px));
   height: 48px;
   max-height: 48px;
@@ -2605,7 +2606,7 @@ body.has-timeline-player .quick-maps-panel {
 .prediction-time-banner {
   position: absolute;
   top: calc(78px + env(safe-area-inset-top, 0px));
-  left: calc(348px + env(safe-area-inset-left, 0px));
+  left: calc(var(--sidebar-width) + 28px + env(safe-area-inset-left, 0px));
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -5322,7 +5323,7 @@ body.has-timeline-player .quick-maps-panel {
 ------------------------------------------------------------- */
 @media (min-width: 768px) and (max-width: 1180px) {
   .left-sidebar-container {
-    width: 320px;
+    width: var(--sidebar-width);
     left: calc(14px + env(safe-area-inset-left, 0px));
     top: calc(78px + env(safe-area-inset-top, 0px));
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));

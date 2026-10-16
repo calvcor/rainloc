@@ -96,7 +96,7 @@ class PlacesService:
             if subsistemas_path.exists():
                 total_mtime += subsistemas_path.stat().st_mtime
 
-            for pattern in ("*_embalses.geojson", "*_aforos.geojson", "*_lluvias.geojson"):
+            for pattern in ("*_embalses.geojson", "*_aforos.geojson", "*_lluvias.geojson", "*_subcuencas.geojson"):
                 for p in DATA_DIR.glob(pattern):
                     total_mtime += p.stat().st_mtime
         except Exception:
@@ -425,14 +425,16 @@ class PlacesService:
             Path("/app/subsistemas.optimized.geojson")
         ]
         subsistemas_path = next((p for p in subsistemas_candidates if p.exists()), None)
-        if subsistemas_path:
+        cuencas_files = ([subsistemas_path] if subsistemas_path else []) + list(DATA_DIR.glob("*_subcuencas.geojson"))
+        for c_file in cuencas_files:
             try:
-                with open(subsistemas_path, 'r', encoding='utf-8') as f:
+                with open(c_file, 'r', encoding='utf-8') as f:
                     sub_data = json.load(f)
                 for feat in sub_data.get("features", []):
                     props = feat.get("properties", {})
-                    nom_sis = clean_str(props.get("NomSistExp") or props.get("nom_sis") or "")
-                    subsistema = clean_str(props.get("Subsistema") or props.get("subsistema") or "")
+                    nom_sis = clean_str(props.get("NomSistExp") or props.get("Sistema") or props.get("nom_sis") or "")
+                    subsistema = clean_str(props.get("Subsistema") or props.get("nombre") or props.get("subsistema") or "")
+                    demarcacion = clean_str(props.get("Demarcacion") or props.get("demarcacion") or "CHJ")
                     if not subsistema:
                         continue
 
@@ -449,16 +451,16 @@ class PlacesService:
 
                     full_name = f"Cuenca {subsistema}"
                     alt = f"Sistema {nom_sis}" if nom_sis and nom_sis != subsistema else None
-                    norm = normalize_text(f"{full_name} {alt or ''} cuenca subsistema demarcacion")
+                    norm = normalize_text(f"{full_name} {alt or ''} {demarcacion} cuenca subsistema demarcacion")
 
                     places_to_insert.append((
-                        sid, full_name, alt, norm, 'cuenca', 'chj',
-                        'CHJ', 'Comunitat Valenciana', lat, lon, 10, 85,
-                        json.dumps({"sistema": nom_sis, "area_km2": props.get("Superf km2")})
+                        sid, full_name, alt, norm, 'cuenca', demarcacion.lower(),
+                        demarcacion, '', lat, lon, 10, 85,
+                        json.dumps({"sistema": nom_sis, "demarcacion": demarcacion, "area_km2": props.get("Superf km2") or props.get("Area km2")})
                     ))
-                    fts_to_insert.append((full_name, alt or "", norm, 'cuenca', 'CHJ', 'Comunitat Valenciana'))
+                    fts_to_insert.append((full_name, alt or "", norm, 'cuenca', demarcacion, ''))
             except Exception as e:
-                logger.error(f"Error procesando subsistemas.geojson: {e}")
+                logger.error(f"Error procesando {c_file.name}: {e}")
 
         # 2. Embalses locales (saih_embalses, ebro_embalses, aca_embalses, etc.)
         embalse_files = list(DATA_DIR.glob("*_embalses.geojson"))
