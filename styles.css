@@ -1800,22 +1800,9 @@ body {
 .radar-player-left-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
-}
-
-.timeline-bottom-player.is-model .timeline-player-left-group {
-  width: 584px;
-  min-width: 584px;
-  max-width: 584px;
-  flex: 0 0 584px;
-}
-
-.timeline-bottom-player.is-radar .timeline-player-left-group {
-  width: 456px;
-  min-width: 456px;
-  max-width: 456px;
-  flex: 0 0 456px;
+  min-width: 0;
 }
 
 .timeline-player-header,
@@ -1841,20 +1828,12 @@ body {
   white-space: nowrap;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
-  width: 216px;
-  min-width: 216px;
-  max-width: 216px;
-  box-sizing: border-box;
   flex-shrink: 0;
 }
 
 #timeline-time-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  min-width: 0;
-  flex: 1;
+  white-space: nowrap;
 }
 
 .timeline-live-dot,
@@ -1889,10 +1868,6 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 88px;
-  min-width: 88px;
-  max-width: 88px;
-  box-sizing: border-box;
   flex-shrink: 0;
   transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -1951,20 +1926,15 @@ body {
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.35);
-  padding: 3px 6px;
+  padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
   white-space: nowrap;
   user-select: none;
   font-variant-numeric: tabular-nums;
-  width: 112px;
-  min-width: 112px;
-  max-width: 112px;
-  box-sizing: border-box;
   flex-shrink: 0;
   transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -2043,8 +2013,11 @@ body {
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  flex: 1;
-  min-width: 140px;
+  flex: 0 0 clamp(240px, 38%, 520px);
+  width: clamp(240px, 38%, 520px);
+  margin-left: auto;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 
 .timeline-step-slider,
@@ -4998,14 +4971,6 @@ body.has-timeline-player .quick-maps-panel {
     gap: 6px !important;
   }
 
-  .timeline-bottom-player.is-model .timeline-player-left-group,
-  .timeline-bottom-player.is-radar .timeline-player-left-group {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    flex: 1 1 auto !important;
-  }
-
   .timeline-player-header,
   .radar-player-header {
     display: flex !important;
@@ -5047,6 +5012,8 @@ body.has-timeline-player .quick-maps-panel {
   .radar-slider-wrapper {
     width: 100% !important;
     min-width: 0 !important;
+    margin-left: 0 !important;
+    flex: 1 1 auto !important;
   }
 
   .map-legend {
@@ -5444,20 +5411,7 @@ body.has-timeline-player .quick-maps-panel {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
-  }
-
-  .timeline-bottom-player.is-model .timeline-player-left-group {
-    width: 524px;
-    min-width: 524px;
-    max-width: 524px;
-    flex: 0 0 524px;
-  }
-
-  .timeline-bottom-player.is-radar .timeline-player-left-group {
-    width: 420px;
-    min-width: 420px;
-    max-width: 420px;
-    flex: 0 0 420px;
+    min-width: 0;
   }
 
   .timeline-player-header,
@@ -5472,10 +5426,6 @@ body.has-timeline-player .quick-maps-panel {
   .radar-time-badge {
     font-size: 0.70rem;
     padding: 2px 6px;
-    width: 196px;
-    min-width: 196px;
-    max-width: 196px;
-    box-sizing: border-box;
     flex-shrink: 0;
   }
 
@@ -5484,10 +5434,6 @@ body.has-timeline-player .quick-maps-panel {
     font-size: 0.68rem;
     padding: 2px 6px;
     height: 24px;
-    width: 80px;
-    min-width: 80px;
-    max-width: 80px;
-    box-sizing: border-box;
     flex-shrink: 0;
   }
 
@@ -5498,11 +5444,7 @@ body.has-timeline-player .quick-maps-panel {
 
   .timeline-max-pill {
     font-size: 0.68rem;
-    padding: 2px 5px;
-    width: 104px;
-    min-width: 104px;
-    max-width: 104px;
-    box-sizing: border-box;
+    padding: 2px 6px;
     flex-shrink: 0;
   }
 
@@ -5533,8 +5475,11 @@ body.has-timeline-player .quick-maps-panel {
     flex-direction: column;
     justify-content: center;
     gap: 2px;
-    flex: 1;
-    min-width: 140px;
+    flex: 0 0 clamp(200px, 36%, 380px);
+    width: clamp(200px, 36%, 380px);
+    margin-left: auto;
+    padding: 0 4px;
+    box-sizing: border-box;
   }
 
   .timeline-step-slider,
