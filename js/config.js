@@ -366,7 +366,7 @@ export const CONFIG = {
       {
         id: 'ukmo_global',
         name: 'Modelo UKMO Global (10 km)',
-        subtitle: 'Previsión global determinista (UK Met Office)',
+        subtitle: 'Previsión global determinista (6 días)',
         description: 'Modelo atmosférico de referencia del UK Met Office (Unified Model 10km, hasta +144h).',
         type: 'model',
         defaultActive: false,
