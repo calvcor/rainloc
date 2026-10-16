@@ -1042,7 +1042,11 @@ export function formatUkmoTimestamp(metadata) {
 
   const rawMax = metadata.downloaded_max_step !== undefined
     ? metadata.downloaded_max_step
-    : (metadata.raw_max_step !== undefined ? metadata.raw_max_step : null);
+    : (metadata.raw_max_step !== undefined
+        ? metadata.raw_max_step
+        : (metadata.max_step !== undefined
+            ? metadata.max_step
+            : (availSteps.length > 0 ? Math.max(...availSteps) : null)));
 
   const isUpdating = Boolean(
     metadata.is_updating ||

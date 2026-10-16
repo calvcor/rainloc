@@ -150,6 +150,8 @@ class UKMOWorker:
             "step_added": step_added,
             "available_steps": available_steps,
             "max_step": max_step,
+            "downloaded_max_step": max_step,
+            "raw_max_step": max_step,
             "is_complete": (max_step >= max_target),
             "is_updating": is_syncing or (max_step < max_target and status != "complete"),
             "status": status,
@@ -183,6 +185,8 @@ class UKMOWorker:
                 "run": current_meta.get("run"),
                 "available_steps": current_meta.get("available_steps", []),
                 "max_step": current_meta.get("max_step", 0),
+                "downloaded_max_step": current_meta.get("downloaded_max_step", current_meta.get("max_step", 0)),
+                "raw_max_step": current_meta.get("raw_max_step", current_meta.get("max_step", 0)),
                 "is_complete": current_meta.get("is_complete", False),
                 "is_updating": current_meta.get("is_updating", False),
                 "status": current_meta.get("status", "empty"),
@@ -248,9 +252,19 @@ class UKMOWorker:
 
         if self.current_manifest:
             meta = dict(self.current_manifest)
+            avail = list(meta.get("available_steps", []))
+            raw_max_step = max(avail) if avail else 0
+            target_max = getattr(settings, "UKMO_MAX_STEPS", 144)
+            raw_complete = (raw_max_step >= target_max)
+            meta["available_steps"] = avail
+            meta["max_step"] = raw_max_step
+            meta["downloaded_max_step"] = raw_max_step
+            meta["raw_max_step"] = raw_max_step
+            meta["raw_available_steps"] = avail
             meta["is_syncing"] = self._is_syncing
+            meta["is_complete"] = raw_complete
             meta["is_updating"] = self._is_syncing or (
-                meta.get("max_step", 0) < getattr(settings, "UKMO_MAX_STEPS", 144)
+                raw_max_step < target_max
                 and meta.get("status") != "complete"
             )
             return meta
@@ -263,6 +277,8 @@ class UKMOWorker:
             "status": "synchronizing" if self._is_syncing else "empty",
             "available_steps": [],
             "max_step": 0,
+            "downloaded_max_step": 0,
+            "raw_max_step": 0,
             "is_complete": False,
             "is_updating": self._is_syncing,
             "bbox": SPAIN_BBOX,
@@ -668,7 +684,8 @@ class UKMOWorker:
                     step_entries.sort(key=lambda x: x["step"])
 
                     # Guardar manifest.json actualizado
-                    is_complete = len(available_steps) >= len(all_available_s3_steps)
+                    cur_max = max(available_steps) if available_steps else 0
+                    is_complete = (len(available_steps) >= len(all_available_s3_steps) and cur_max >= target_max_step)
                     manifest_data = {
                         "model": "UK Met Office (10 km)",
                         "cycle": cycle_iso,
@@ -676,7 +693,9 @@ class UKMOWorker:
                         "run": f"{hh}z",
                         "status": "complete" if is_complete else "ready",
                         "available_steps": available_steps,
-                        "max_step": max(available_steps) if available_steps else 0,
+                        "max_step": cur_max,
+                        "downloaded_max_step": cur_max,
+                        "raw_max_step": cur_max,
                         "is_complete": is_complete,
                         "bbox": SPAIN_BBOX,
                         "steps": step_entries,
@@ -699,7 +718,8 @@ class UKMOWorker:
                 self._cleanup_old_cycles()
 
                 if available_steps:
-                    is_complete = len(available_steps) >= len(all_available_s3_steps)
+                    final_max = max(available_steps)
+                    is_complete = (len(available_steps) >= len(all_available_s3_steps) and final_max >= target_max_step)
                     final_status = "complete" if is_complete else "ready"
                     manifest_data = {
                         "model": "UK Met Office (10 km)",
@@ -708,7 +728,9 @@ class UKMOWorker:
                         "run": f"{hh}z",
                         "status": final_status,
                         "available_steps": available_steps,
-                        "max_step": max(available_steps),
+                        "max_step": final_max,
+                        "downloaded_max_step": final_max,
+                        "raw_max_step": final_max,
                         "is_complete": is_complete,
                         "bbox": SPAIN_BBOX,
                         "steps": step_entries,
