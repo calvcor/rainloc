@@ -41,6 +41,10 @@ Y_MERC_GRID = np.linspace(Y_MERC_MAX, Y_MERC_MIN, GRID_H)
 SPAIN_GRID_LATS = np.degrees(2 * np.arctan(np.exp(Y_MERC_GRID / R_EARTH)) - np.pi / 2)
 SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID_W)
 
+# Pasos de pronóstico del UKMO Global (10 km):
+# 1h a 54h de hora en hora, luego 57h a 144h cada 3 horas (hasta +144h / 6 días).
+UKMO_STEPS: List[int] = list(range(1, 55)) + list(range(57, 145, 3))
+
 
 def colorize_precip_array(precip_mm: np.ndarray) -> np.ndarray:
     """
@@ -141,6 +145,11 @@ class UKMOWorker:
         if not run_str and len(cycle_str) >= 2:
             run_str = cycle_str[-2:].lower()
 
+        meta = self.get_metadata()
+        stitched_avail = meta.get("available_steps", available_steps)
+        stitched_max = meta.get("max_step", max_step)
+        raw_max = max(available_steps) if available_steps else 0
+
         max_target = getattr(settings, "UKMO_MAX_STEPS", 144)
         payload = {
             "event": "ukmo_update",
@@ -148,12 +157,13 @@ class UKMOWorker:
             "cycle_str": cycle_str,
             "run": run_str or "00z",
             "step_added": step_added,
-            "available_steps": available_steps,
-            "max_step": max_step,
-            "downloaded_max_step": max_step,
-            "raw_max_step": max_step,
-            "is_complete": (max_step >= max_target),
-            "is_updating": is_syncing or (max_step < max_target and status != "complete"),
+            "available_steps": stitched_avail,
+            "max_step": stitched_max,
+            "downloaded_max_step": raw_max,
+            "raw_max_step": raw_max,
+            "raw_available_steps": available_steps,
+            "is_complete": meta.get("is_complete", (raw_max >= max_target)),
+            "is_updating": is_syncing or (raw_max < max_target and status != "complete"),
             "status": status,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -223,49 +233,141 @@ class UKMOWorker:
         except Exception as e:
             logger.error(f"Error escaneando manifiestos de UKMO: {e}")
 
-    def _get_previous_manifest(self) -> Optional[Dict[str, Any]]:
-        """Recupera el manifiesto del ciclo inmediatamente anterior para fallback."""
+    def _get_fallback_manifests(self) -> List[Dict[str, Any]]:
+        """Devuelve la lista de manifiestos anteriores en orden descendente (más reciente primero)."""
+        manifests = []
         try:
-            manifest_files = list(self.cache_dir.glob("*/manifest.json"))
-            if len(manifest_files) < 2:
-                return None
-            manifest_files.sort(key=lambda p: p.parent.name, reverse=True)
+            dirs = [d for d in self.cache_dir.iterdir() if d.is_dir() and (d / "manifest.json").exists()]
+            if len(dirs) < 2:
+                return []
+            dirs.sort(key=lambda d: d.name, reverse=True)
             cur_cycle = self.current_manifest.get("cycle_str") if self.current_manifest else None
-            for mf in manifest_files:
-                if cur_cycle and mf.parent.name == cur_cycle:
+            for prev_dir in dirs:
+                if cur_cycle and prev_dir.name == cur_cycle:
                     continue
                 try:
-                    with open(mf, "r", encoding="utf-8") as f:
+                    with open(prev_dir / "manifest.json", "r", encoding="utf-8") as f:
                         data = json.load(f)
                         if data.get("available_steps") and len(data["available_steps"]) > 0:
-                            return data
+                            manifests.append(data)
                 except Exception:
-                    pass
+                    continue
         except Exception:
             pass
-        return None
+        return manifests
+
+    def _get_previous_manifest(self) -> Optional[Dict[str, Any]]:
+        """Recupera el manifiesto del ciclo inmediatamente anterior para fallback (compatibilidad)."""
+        fallback_list = self._get_fallback_manifests()
+        return fallback_list[0] if fallback_list else None
 
     def get_metadata(self) -> Dict[str, Any]:
-        """Devuelve los metadatos públicos de la corrida activa de UKMO."""
+        """
+        Devuelve los metadatos del ciclo actual con hibridación temporal inteligente (Stitching):
+        Si la corrida actual sólo tiene los primeros pasos (en curso de descarga),
+        rellena los pasos futuros restantes a partir de las corridas anteriores
+        para que el usuario nunca pierda horizonte temporal (+1h a +144h).
+        """
+        target_max = getattr(settings, "UKMO_MAX_STEPS", 144)
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
 
         if self.current_manifest:
             meta = dict(self.current_manifest)
+            meta["is_syncing"] = self._is_syncing
+
+            cycle_iso = meta.get("cycle")
+            cycle_str = meta.get("cycle_str", "")
+            run_str = ""
+            if cycle_iso:
+                try:
+                    dt = datetime.fromisoformat(cycle_iso.replace("Z", "+00:00"))
+                    run_str = f"{dt.hour:02d}z"
+                except Exception:
+                    pass
+            if not run_str and "_" in cycle_str:
+                parts = cycle_str.split("_")
+                if len(parts) > 1:
+                    run_str = parts[1].lower()
+
+            meta["run"] = run_str or "00z"
             avail = list(meta.get("available_steps", []))
-            raw_max_step = max(avail) if avail else 0
-            target_max = getattr(settings, "UKMO_MAX_STEPS", 144)
-            raw_complete = (raw_max_step >= target_max)
+            steps_dict = {s["step"]: dict(s) for s in meta.get("steps", [])}
+
+            # Asegurar que los pasos nativos tengan el tag de run y no fallback
+            for s_key, s_data in steps_dict.items():
+                if "run" not in s_data:
+                    s_data["run"] = run_str
+                if "is_fallback" not in s_data:
+                    s_data["is_fallback"] = False
+
+            # Si la corrida no alcanza el horizonte completo de 144h, rellenar desde ciclos previos
+            target_ukmo_steps = [s for s in UKMO_STEPS if s <= target_max]
+            if len(avail) < len(target_ukmo_steps) and cycle_iso:
+                fallback_manifests = self._get_fallback_manifests()
+                for prev_manifest in fallback_manifests:
+                    if prev_manifest and prev_manifest.get("cycle") and prev_manifest.get("steps"):
+                        try:
+                            latest_dt = datetime.fromisoformat(cycle_iso.replace("Z", "+00:00"))
+                            prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                            diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                            prev_steps_dict = {s["step"]: s for s in prev_manifest.get("steps", [])}
+                            prev_run = prev_manifest.get("run") or ""
+                            if not prev_run and prev_manifest.get("cycle_str"):
+                                p_parts = prev_manifest["cycle_str"].split("_")
+                                if len(p_parts) > 1:
+                                    prev_run = p_parts[1].lower()
+
+                            for s in target_ukmo_steps:
+                                if s not in steps_dict:
+                                    target_prev_s = s + diff_hours
+                                    matched_prev_s = None
+                                    if target_prev_s in prev_steps_dict:
+                                        matched_prev_s = target_prev_s
+                                    else:
+                                        # Buscar paso más cercano dentro de ±2 horas (por transición 1h -> 3h)
+                                        candidates = [p for p in prev_steps_dict if abs(p - target_prev_s) <= 2]
+                                        if candidates:
+                                            matched_prev_s = min(candidates, key=lambda p: abs(p - target_prev_s))
+
+                                    if matched_prev_s is not None:
+                                        prev_item = prev_steps_dict[matched_prev_s]
+                                        valid_dt = latest_dt + timedelta(hours=s)
+                                        madrid_offset = timedelta(hours=2)
+                                        steps_dict[s] = {
+                                            "step": s,
+                                            "valid_time_iso": valid_dt.isoformat(),
+                                            "valid_time_local": (valid_dt + madrid_offset).strftime("%d/%m %H:%M"),
+                                            "max_total_mm": prev_item.get("max_total_mm"),
+                                            "max_interval_mm": prev_item.get("max_interval_mm"),
+                                            "run": prev_run or "ant.",
+                                            "is_fallback": True,
+                                            "fallback_cycle": prev_manifest.get("cycle_str"),
+                                            "fallback_run": prev_run,
+                                            "fallback_step": matched_prev_s
+                                        }
+                                        if s not in avail:
+                                            avail.append(s)
+                        except Exception as e:
+                            logger.debug(f"UKMO stitching calculation error: {e}")
+
+            avail.sort()
+            sorted_steps = [steps_dict[s] for s in avail if s in steps_dict]
             meta["available_steps"] = avail
-            meta["max_step"] = raw_max_step
+            meta["steps"] = sorted_steps
+            max_step = max(avail) if avail else 0
+            meta["max_step"] = max_step
+
+            raw_avail = list(self.current_manifest.get("available_steps", []))
+            raw_max_step = max(raw_avail) if raw_avail else 0
+            raw_complete = (len(raw_avail) >= len(target_ukmo_steps))
+            meta["raw_available_steps"] = raw_avail
             meta["downloaded_max_step"] = raw_max_step
             meta["raw_max_step"] = raw_max_step
-            meta["raw_available_steps"] = avail
-            meta["is_syncing"] = self._is_syncing
             meta["is_complete"] = raw_complete
             meta["is_updating"] = self._is_syncing or (
                 raw_max_step < target_max
-                and meta.get("status") != "complete"
+                and self.current_manifest.get("status") != "complete"
             )
             return meta
 
@@ -303,20 +405,29 @@ class UKMOWorker:
         if img_path.exists():
             return img_path
 
-        # Fallback a ciclo anterior si aún no está disponible
-        prev_manifest = self._get_previous_manifest()
-        if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
-            try:
-                latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
-                prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                prev_step = step + diff_hours
-                prev_dir = self.cache_dir / prev_manifest["cycle_str"]
-                prev_img = prev_dir / f"{prefix}_step_{prev_step:03d}.png"
-                if prev_img.exists():
-                    return prev_img
-            except Exception:
-                pass
+        # Fallback a ciclos anteriores si aún no está resuelto
+        for prev_manifest in self._get_fallback_manifests():
+            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                try:
+                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                    target_prev_s = step + diff_hours
+                    prev_dir = self.cache_dir / prev_manifest["cycle_str"]
+
+                    # Paso exacto
+                    prev_img = prev_dir / f"{prefix}_step_{target_prev_s:03d}.png"
+                    if prev_img.exists():
+                        return prev_img
+
+                    # Búsqueda con tolerancia ±2 horas
+                    for tol in [-1, 1, -2, 2]:
+                        cand_s = target_prev_s + tol
+                        cand_img = prev_dir / f"{prefix}_step_{cand_s:03d}.png"
+                        if cand_img.exists():
+                            return cand_img
+                except Exception:
+                    pass
 
         return None
 
@@ -338,7 +449,7 @@ class UKMOWorker:
         return None
 
     def get_matrix(self, step: int, layer_type: str = "total") -> Optional[np.ndarray]:
-        """Devuelve la matriz NumPy (950 x 1500) para el paso y capa solicitados."""
+        """Devuelve la matriz NumPy (950 x 1500) para el paso y capa solicitados (con soporte de fallback)."""
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
         if not self.current_manifest:
@@ -363,21 +474,40 @@ class UKMOWorker:
             self._in_memory_arrays[cache_key] = arr
             return arr
 
-        # Fallback a ciclo anterior
-        prev_manifest = self._get_previous_manifest()
-        if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
-            try:
-                latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
-                prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
-                diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
-                prev_step = step + diff_hours
-                prev_dir = self.cache_dir / prev_manifest["cycle_str"]
-                prev_base = prev_dir / f"{prefix}_step_{prev_step:03d}"
-                prev_arr = self._load_grid_file(prev_base)
-                if prev_arr is not None:
-                    return prev_arr
-            except Exception:
-                pass
+        # Fallback a ciclos anteriores si aún no está resuelto en el actual
+        for prev_manifest in self._get_fallback_manifests():
+            if prev_manifest and self.current_manifest.get("cycle") and prev_manifest.get("cycle"):
+                try:
+                    latest_dt = datetime.fromisoformat(self.current_manifest["cycle"].replace("Z", "+00:00"))
+                    prev_dt = datetime.fromisoformat(prev_manifest["cycle"].replace("Z", "+00:00"))
+                    diff_hours = int(round((latest_dt - prev_dt).total_seconds() / 3600))
+                    target_prev_s = step + diff_hours
+                    prev_cycle_str = prev_manifest["cycle_str"]
+                    prev_dir = self.cache_dir / prev_cycle_str
+
+                    # Paso exacto
+                    prev_mem_key = f"{prev_cycle_str}_{prefix}_{target_prev_s:03d}"
+                    prev_arr = self._in_memory_arrays.get(prev_mem_key)
+                    if prev_arr is None:
+                        prev_arr = self._load_grid_file(prev_dir / f"{prefix}_step_{target_prev_s:03d}")
+                        if prev_arr is not None:
+                            self._in_memory_arrays[prev_mem_key] = prev_arr
+                    if prev_arr is not None:
+                        return prev_arr
+
+                    # Búsqueda con tolerancia ±2 horas
+                    for tol in [-1, 1, -2, 2]:
+                        cand_s = target_prev_s + tol
+                        cand_mem_key = f"{prev_cycle_str}_{prefix}_{cand_s:03d}"
+                        cand_arr = self._in_memory_arrays.get(cand_mem_key)
+                        if cand_arr is None:
+                            cand_arr = self._load_grid_file(prev_dir / f"{prefix}_step_{cand_s:03d}")
+                            if cand_arr is not None:
+                                self._in_memory_arrays[cand_mem_key] = cand_arr
+                        if cand_arr is not None:
+                            return cand_arr
+                except Exception:
+                    pass
 
         return None
 
@@ -537,7 +667,7 @@ class UKMOWorker:
             logger.error(f"Error procesando NetCDF UKMO {nc_path}: {e}")
             return None
 
-    async def sync_ukmo_forecast(self, max_steps: Optional[int] = None):
+    async def sync_ukmo_forecast(self, max_steps: Optional[int] = None, cycle_prefix: Optional[str] = None):
         """
         Sincroniza la previsión operativa de UKMO Global de forma progresiva.
         Descarga los ficheros NetCDF de acumulación desde AWS S3,
@@ -551,7 +681,19 @@ class UKMOWorker:
         async with self._sync_lock:
             self._is_syncing = True
             try:
-                cycle_dt, date_str, hh, s3_folder = await asyncio.to_thread(self._determine_latest_ukmo_run)
+                if cycle_prefix:
+                    s3_folder = cycle_prefix
+                    m = re.search(r'(\d{8})T(\d{2})00Z', s3_folder)
+                    if not m:
+                        raise ValueError(f"Formato de prefijo UKMO desconocido: {s3_folder}")
+                    date_str = m.group(1)
+                    hh = m.group(2)
+                    year = int(date_str[:4])
+                    month = int(date_str[4:6])
+                    day = int(date_str[6:8])
+                    cycle_dt = datetime(year, month, day, int(hh), 0, tzinfo=timezone.utc)
+                else:
+                    cycle_dt, date_str, hh, s3_folder = await asyncio.to_thread(self._determine_latest_ukmo_run)
                 cycle_str = f"{date_str}_{hh}z"
                 cycle_iso = cycle_dt.isoformat()
                 cycle_dir = self.cache_dir / cycle_str
@@ -705,10 +847,10 @@ class UKMOWorker:
                     with open(manifest_file, "w", encoding="utf-8") as f:
                         json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
-                    self.current_manifest = manifest_data
-
-                    # Notificar clientes vía SSE
-                    self.notify_ukmo_update(cycle_str, available_steps, step_added=step, status="ready", is_syncing=True)
+                    if not self.current_manifest or cycle_str >= self.current_manifest.get("cycle_str", ""):
+                        self.current_manifest = manifest_data
+                        # Notificar clientes vía SSE
+                        self.notify_ukmo_update(cycle_str, available_steps, step_added=step, status="ready", is_syncing=True)
                     logger.info(f"UKMO: Paso +{step}h procesado con éxito para {cycle_str}.")
 
                     del rgba_total, rgba_interval, img_total, img_interval
@@ -740,8 +882,9 @@ class UKMOWorker:
                     with open(manifest_file, "w", encoding="utf-8") as f:
                         json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
-                    self.current_manifest = manifest_data
-                    self.notify_ukmo_update(cycle_str, available_steps, status=final_status, is_syncing=False)
+                    if not self.current_manifest or cycle_str >= self.current_manifest.get("cycle_str", ""):
+                        self.current_manifest = manifest_data
+                        self.notify_ukmo_update(cycle_str, available_steps, status=final_status, is_syncing=False)
                     logger.info(f"UKMO: Sincronización completada para {cycle_str}. Pasos: {len(available_steps)}.")
 
             except Exception as e:
