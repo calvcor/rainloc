@@ -1782,7 +1782,7 @@ body {
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: fadeInBanner 0.25s ease-out;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .timeline-bottom-player.is-loading .timeline-time-badge {
@@ -1804,11 +1804,26 @@ body {
   flex-shrink: 0;
 }
 
+.timeline-bottom-player.is-model .timeline-player-left-group {
+  width: 584px;
+  min-width: 584px;
+  max-width: 584px;
+  flex: 0 0 584px;
+}
+
+.timeline-bottom-player.is-radar .timeline-player-left-group {
+  width: 456px;
+  min-width: 456px;
+  max-width: 456px;
+  flex: 0 0 456px;
+}
+
 .timeline-player-header,
 .radar-player-header {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .timeline-time-badge,
@@ -1825,6 +1840,21 @@ body {
   gap: 5px;
   white-space: nowrap;
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  width: 216px;
+  min-width: 216px;
+  max-width: 216px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+#timeline-time-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  flex: 1;
 }
 
 .timeline-live-dot,
@@ -1836,6 +1866,7 @@ body {
   box-shadow: 0 0 6px #22c55e;
   display: inline-block;
   animation: radarLivePulse 1.8s infinite;
+  flex-shrink: 0;
 }
 
 @keyframes radarLivePulse {
@@ -1858,7 +1889,12 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  width: 88px;
+  min-width: 88px;
+  max-width: 88px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .timeline-live-btn:hover,
@@ -1883,6 +1919,7 @@ body {
   padding: 2px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
 .timeline-mode-chip {
@@ -1914,15 +1951,22 @@ body {
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.35);
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   white-space: nowrap;
-  transition: all var(--transition-fast);
   user-select: none;
+  font-variant-numeric: tabular-nums;
+  width: 112px;
+  min-width: 112px;
+  max-width: 112px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .timeline-max-pill:hover {
@@ -1938,6 +1982,7 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
 }
 
 .timeline-step-btn,
@@ -4947,7 +4992,18 @@ body.has-timeline-player .quick-maps-panel {
     align-items: center !important;
     justify-content: space-between !important;
     width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 1 1 auto !important;
     gap: 6px !important;
+  }
+
+  .timeline-bottom-player.is-model .timeline-player-left-group,
+  .timeline-bottom-player.is-radar .timeline-player-left-group {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 1 1 auto !important;
   }
 
   .timeline-player-header,
@@ -4964,6 +5020,22 @@ body.has-timeline-player .quick-maps-panel {
   .radar-time-badge {
     font-size: 0.68rem !important;
     padding: 2px 6px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .timeline-live-btn,
+  .radar-live-btn {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .timeline-max-pill {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
   }
 
   .timeline-player-controls-row,
@@ -5374,6 +5446,20 @@ body.has-timeline-player .quick-maps-panel {
     flex-shrink: 0;
   }
 
+  .timeline-bottom-player.is-model .timeline-player-left-group {
+    width: 524px;
+    min-width: 524px;
+    max-width: 524px;
+    flex: 0 0 524px;
+  }
+
+  .timeline-bottom-player.is-radar .timeline-player-left-group {
+    width: 420px;
+    min-width: 420px;
+    max-width: 420px;
+    flex: 0 0 420px;
+  }
+
   .timeline-player-header,
   .radar-player-header {
     display: flex;
@@ -5386,6 +5472,11 @@ body.has-timeline-player .quick-maps-panel {
   .radar-time-badge {
     font-size: 0.70rem;
     padding: 2px 6px;
+    width: 196px;
+    min-width: 196px;
+    max-width: 196px;
+    box-sizing: border-box;
+    flex-shrink: 0;
   }
 
   .timeline-live-btn,
@@ -5393,6 +5484,11 @@ body.has-timeline-player .quick-maps-panel {
     font-size: 0.68rem;
     padding: 2px 6px;
     height: 24px;
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    box-sizing: border-box;
+    flex-shrink: 0;
   }
 
   .timeline-mode-chip {
@@ -5402,7 +5498,12 @@ body.has-timeline-player .quick-maps-panel {
 
   .timeline-max-pill {
     font-size: 0.68rem;
-    padding: 2px 6px;
+    padding: 2px 5px;
+    width: 104px;
+    min-width: 104px;
+    max-width: 104px;
+    box-sizing: border-box;
+    flex-shrink: 0;
   }
 
   .timeline-player-controls-row,

@@ -1741,11 +1741,20 @@ export class UIManager {
           const timeline = this.layerManager.radarTimeline || [];
           const item = timeline[rawVal];
           if (item) {
+            const isLive = item.is_latest || item.timestep === timeline[timeline.length - 1]?.timestep;
             const timeText = document.getElementById('timeline-time-text');
             if (timeText) {
               const timeOnly = item.valid_time_local ? String(item.valid_time_local).trim().split(/\s+/).pop() : '';
-              const isLive = item.is_latest || item.timestep === timeline[timeline.length - 1]?.timestep;
-              timeText.textContent = isLive ? (timeOnly ? `Radar · ${timeOnly}` : 'Radar · Directo') : `Radar · ${timeOnly}`;
+              const ageStr = item.age_text ? ` (-${item.age_text})` : '';
+              timeText.textContent = isLive ? (timeOnly ? `Radar · ${timeOnly}` : 'Radar · Directo') : `Radar · ${timeOnly}${ageStr}`;
+            }
+            const liveBtn = document.getElementById('timeline-live-btn');
+            if (liveBtn) {
+              liveBtn.classList.toggle('active', isLive);
+            }
+            const liveDot = document.getElementById('timeline-live-dot');
+            if (liveDot) {
+              liveDot.style.display = isLive ? 'inline-block' : 'none';
             }
           }
         } else if (activeType) {
@@ -2196,6 +2205,7 @@ export class UIManager {
     const activeType = this._getActiveTimelineType();
     if (!activeType) {
       bottomPlayer.style.display = 'none';
+      bottomPlayer.classList.remove('is-radar', 'is-model');
       if (typeof document !== 'undefined' && document.body) {
         document.body.classList.remove('has-timeline-player');
       }
@@ -2218,6 +2228,8 @@ export class UIManager {
     const labelsContainer = document.getElementById('timeline-slider-labels');
 
     if (activeType === 'radar') {
+      bottomPlayer.classList.add('is-radar');
+      bottomPlayer.classList.remove('is-model');
       const timeline = this.layerManager.radarTimeline || [];
       const currentStep = this.layerManager.currentRadarTimestep;
       const currentEntry = timeline.find(t => t.timestep === currentStep);
@@ -2289,6 +2301,8 @@ export class UIManager {
       this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
 
     } else if (activeType === 'harmonie_aemet' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps' || activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'ukmo_global') {
+      bottomPlayer.classList.add('is-model');
+      bottomPlayer.classList.remove('is-radar');
       let meta = null;
       let curStep = null;
       let curType = null;
