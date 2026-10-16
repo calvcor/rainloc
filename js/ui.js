@@ -2326,7 +2326,7 @@ export class UIManager {
         isPlaying = this.layerManager.isAromePlaying;
         modelLabel = 'AROME HD';
         modelFlag = '🇫🇷';
-        labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h (2d)</span>';
+        labelsHtml = '<span>+1h</span><span>+12h</span><span>+24h (1d)</span><span>+36h</span><span>+48h</span><span>+51h</span>';
       } else if (activeType === 'icon_eu') {
         meta = this.layerManager.iconMetadata || {};
         curStep = this.layerManager.currentIconStep || 1;
@@ -2406,9 +2406,13 @@ export class UIManager {
         let maxStep = availSteps[availSteps.length - 1];
         let stepInc = 3;
 
-        if (activeType === 'harmonie_aemet' || activeType === 'arome_precip') {
+        if (activeType === 'harmonie_aemet') {
           minStep = 1;
           maxStep = 48;
+          stepInc = 1;
+        } else if (activeType === 'arome_precip') {
+          minStep = 1;
+          maxStep = 51;
           stepInc = 1;
         } else if (activeType === 'icon_eu') {
           minStep = 1;

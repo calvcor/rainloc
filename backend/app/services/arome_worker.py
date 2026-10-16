@@ -1,11 +1,11 @@
 """
 RainLoc - Météo-France / AEMET AROME (1.3 km / 0.01°-0.025°) Open Data Worker & Pipeline
 Ingesta secuencial y progresiva de previsiones de precipitación del modelo convectivo de alta resolución AROME.
-Soporte para 8 corridas operativas diarias (00z, 03z, 06z, 09z, 12z, 15z, 18z, 21z) cada 3 horas, y pasos hasta +48h.
+Soporte para 8 corridas operativas diarias (00z, 03z, 06z, 09z, 12z, 15z, 18z, 21z) cada 3 horas, y pasos hasta +51h.
 Descarga optimizada mediante Météo-France Open Data (S3 data.gouv.fr / OVHcloud PNT) con soporte para paquetes 
 por bloques (00H06H, 07H12H, 13H18H, etc.) y archivos individuales.
 Recorte geoespacial a Península Ibérica y Baleares, conversión de unidades (kg/m² -> mm),
-cálculo de acumulados totales e intervalos horarios (hasta +48h / 2 días), generación de
+cálculo de acumulados totales e intervalos horarios (hasta +51h / 2 días y 3 horas), generación de
 imágenes PNG transparentes Web Mercator y matrices .npy para consultas instantáneas (0ms).
 """
 import os
@@ -61,8 +61,8 @@ Y_MERC_GRID = np.linspace(Y_MERC_MAX, Y_MERC_MIN, GRID_H)
 SPAIN_GRID_LATS = np.degrees(2 * np.arctan(np.exp(Y_MERC_GRID / R_EARTH)) - np.pi / 2)
 SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID_W)
 
-# Pasos estándar de predicción AROME (cada 1 hora desde +1h hasta +48h / 2 días)
-AROME_STEPS = list(range(1, 49))
+# Pasos estándar de predicción AROME (cada 1 hora desde +1h hasta +51h / 2 días y 3 horas)
+AROME_STEPS = list(range(1, 52))
 
 # Endpoints oficiales de datos abiertos Météo-France / AROME
 METEOFRANCE_OVH_S3 = "https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt"
@@ -146,7 +146,7 @@ class AROMEWorker:
         if not run_str and len(cycle_str) >= 2:
             run_str = cycle_str[-2:].lower()
 
-        max_target = getattr(settings, "AROME_MAX_STEPS", 48)
+        max_target = getattr(settings, "AROME_MAX_STEPS", 51)
         payload = {
             "event": "arome_update",
             "cycle_str": cycle_str,
@@ -235,9 +235,9 @@ class AROMEWorker:
         """
         Devuelve los metadatos del ciclo actual con hibridación temporal inteligente (Stitching):
         Si la corrida actual sólo tiene los primeros pasos (ej: +1h..+6h), rellena los pasos futuros
-        restantes (+7h..+48h) a partir de la corrida anterior para que el usuario nunca pierda horizonte.
+        restantes (+7h..+51h) a partir de la corrida anterior para que el usuario nunca pierda horizonte.
         """
-        max_target = getattr(settings, "AROME_MAX_STEPS", 48)
+        max_target = getattr(settings, "AROME_MAX_STEPS", 51)
         if not self.current_manifest:
             self._load_latest_manifest_from_disk()
 
@@ -512,8 +512,10 @@ class AROMEWorker:
             return "31H36H"
         elif step <= 42:
             return "37H42H"
-        else:
+        elif step <= 48:
             return "43H48H"
+        else:
+            return "49H51H"
 
     def _download_arome_chunk_or_step(self, date_str: str, hh: str, chunk: str, step: int, dest_path: Path) -> bool:
         """
@@ -739,7 +741,7 @@ class AROMEWorker:
                 selected_cycle = None
                 cycle_dir = None
                 temp_grib_dir = None
-                target_max_step = max_steps or getattr(settings, "AROME_MAX_STEPS", 48)
+                target_max_step = max_steps or getattr(settings, "AROME_MAX_STEPS", 51)
                 steps_to_process = [s for s in AROME_STEPS if s <= target_max_step]
 
                 # 1. Encontrar el ciclo operativo más reciente con datos disponibles

@@ -348,8 +348,8 @@ export const CONFIG = {
       {
         id: 'arome_precip',
         name: 'Modelo AROME (1.3 km)',
-        subtitle: 'Previsión convectiva alta resolución (48h)',
-        description: 'Modelo no hidrostático de Météo-France / AEMET para predicción explícita de tormentas y chubascos intensos (hasta +48h).',
+        subtitle: 'Previsión convectiva alta resolución (51h)',
+        description: 'Modelo no hidrostático de Météo-France / AEMET para predicción explícita de tormentas y chubascos intensos (hasta +51h).',
         type: 'model',
         defaultActive: false,
         defaultOpacity: 0.70,
@@ -793,10 +793,10 @@ export function formatAromeTimestamp(metadata) {
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax < 48 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < 51 && metadata.status !== 'complete')
   );
 
-  if (isUpdating && (rawMax === null || rawMax < 48)) {
+  if (isUpdating && (rawMax === null || rawMax < 51)) {
     const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }

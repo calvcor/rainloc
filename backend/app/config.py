@@ -129,7 +129,7 @@ try:
         AROME_CACHE_DIR: Path = AROME_CACHE_DIR
         AROME_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
         AROME_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
-        AROME_MAX_STEPS: int = 48  # Pasos hasta +48h (2 días)
+        AROME_MAX_STEPS: int = 51  # Pasos hasta +51h (2 días y 3 horas)
 
         # AEMET HARMONIE-AROME (High-Resolution Convective Model, ~2.5km / 0.025°)
         HARMONIE_CACHE_DIR: Path = HARMONIE_CACHE_DIR
@@ -206,7 +206,7 @@ except ImportError:
         GFS_MAX_STEPS: int = 384
         AROME_POLL_INTERVAL_SECONDS: int = 1800
         AROME_UPDATING_INTERVAL_SECONDS: int = 300
-        AROME_MAX_STEPS: int = 48
+        AROME_MAX_STEPS: int = 51
         HARMONIE_POLL_INTERVAL_SECONDS: int = 1800
         HARMONIE_UPDATING_INTERVAL_SECONDS: int = 300
         HARMONIE_MAX_STEPS: int = 48
