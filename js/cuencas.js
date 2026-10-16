@@ -20,6 +20,15 @@ export class CuencasLayer {
     this.hoverHighlightLayer = null;
     this.selectedHighlightLayer = null;
     this._hoveredFeatureId = null;
+
+    // Jerarquía dinámica por niveles de zoom (LOD: Level of Detail)
+    // Nivel 1: Zoom <= 7 (Grandes Demarcaciones Hidrográficas)
+    // Nivel 2: Zoom 8-9 (Sistemas de Explotación / Zonas de Gestión)
+    // Nivel 3: Zoom >= 10 (Subcuencas específicas de afluentes)
+    this._levelData = { 1: null, 2: null, 3: null };
+    this._currentLevel = 2;
+    this._isSwitchingLevel = false;
+    this._zoomListenerAttached = false;
     
     // Cargar opacidad y visibilidad de preferencias guardadas o por defecto
     const savedPrefs = StorageManager.load();
@@ -97,140 +106,191 @@ export class CuencasLayer {
   }
 
   /**
-   * Carga asíncrona del GeoJSON buscando en rutas candidatas
+   * Determina el nivel de detalle (LOD) según el zoom del mapa:
+   * Level 1: Zoom <= 7 (Grandes Demarcaciones Hidrográficas)
+   * Level 2: Zoom 8-9 (Sistemas de Explotación)
+   * Level 3: Zoom >= 10 (Subcuencas específicas de afluentes)
    */
-  async load() {
-    let geojsonData = null;
-    let loadedFrom = '';
+  _determineLevel(zoom) {
+    if (zoom <= 7) return 1;
+    if (zoom >= 10) return 3;
+    return 2;
+  }
 
-    for (const url of CONFIG.dataSources.subsistemasGeoJson) {
+  /**
+   * Intenta descargar un GeoJSON desde una lista de URLs candidatas (backend primero, luego estáticos)
+   */
+  async _fetchCandidate(candidates) {
+    if (!candidates || !Array.isArray(candidates)) return null;
+    for (const url of candidates) {
       try {
         const response = await fetch(url);
         if (response.ok) {
-          geojsonData = await response.json();
-          loadedFrom = url;
-          break;
+          const data = await response.json();
+          if (data && Array.isArray(data.features) && data.features.length > 0) {
+            return { data, url };
+          }
         }
       } catch (err) {
-        // Intentar siguiente ruta
+        // Continuar con siguiente candidato
       }
     }
+    return null;
+  }
 
-    if (!geojsonData || !geojsonData.features) {
-      throw new Error(`No se pudo cargar el archivo de subsistemas GeoJSON desde ninguna de las rutas: ${CONFIG.dataSources.subsistemasGeoJson.join(', ')}`);
+  /**
+   * Descarga y almacena en caché en memoria los datos del nivel solicitado
+   */
+  async _fetchLevelData(level) {
+    if (this._levelData[level]) {
+      return this._levelData[level];
     }
 
-    const featureMap = new Map();
-    if (geojsonData && Array.isArray(geojsonData.features)) {
-      for (const f of geojsonData.features) {
-        const id = f.id || (f.properties && f.properties.id);
-        if (id) featureMap.set(id, f);
+    if (level === 1) {
+      const res = await this._fetchCandidate(CONFIG.dataSources.cuencasDemarcacionesGeoJson);
+      if (res) {
+        this._levelData[1] = res.data;
+        return res.data;
       }
-    }
-
-    const isDemarcation = (f, keyword) => {
-      const p = f.properties || {};
-      const d = (p.Demarcacion || p.demarcacion || p.Sistema || p.NomSistExp || '').toLowerCase();
-      return d.includes(keyword.toLowerCase());
-    };
-
-    const replaceDemarcation = (newFeatures, keyword) => {
-      for (const [id, feat] of featureMap.entries()) {
-        if (isDemarcation(feat, keyword)) {
-          featureMap.delete(id);
-        }
+    } else if (level === 3) {
+      const res = await this._fetchCandidate(CONFIG.dataSources.cuencasAfluentesGeoJson);
+      if (res) {
+        this._levelData[3] = res.data;
+        return res.data;
       }
-      for (const f of newFeatures) {
-        const id = f.id || (f.properties && f.properties.id);
-        if (id) featureMap.set(id, f);
+    } else {
+      // Nivel 2: Sistemas de Explotación
+      const res = await this._fetchCandidate(CONFIG.dataSources.cuencasSistemasGeoJson);
+      if (res) {
+        this._levelData[2] = res.data;
+        return res.data;
       }
-    };
 
-    const hasEbro = Array.from(featureMap.values()).some(f => isDemarcation(f, 'ebro') || isDemarcation(f, 'che'));
-    const hasSegura = Array.from(featureMap.values()).some(f => isDemarcation(f, 'segura') || isDemarcation(f, 'chs'));
-    const hasGuadalquivir = Array.from(featureMap.values()).some(f => isDemarcation(f, 'guadalquivir') || isDemarcation(f, 'chg'));
-    const hasDuero = Array.from(featureMap.values()).some(f => isDemarcation(f, 'duero') || isDemarcation(f, 'chd'));
-
-    // Cargar cuencas del Ebro (CHE) si no estaban en el fichero base
-    if (!hasEbro && CONFIG.dataSources.ebroCuencasGeoJson) {
-      for (const url of CONFIG.dataSources.ebroCuencasGeoJson) {
+      // Fallback a subsistemas clásicos con combinación de cuencas
+      for (const url of CONFIG.dataSources.subsistemasGeoJson) {
         try {
-          const ebroRes = await fetch(url);
-          if (ebroRes.ok) {
-            const ebroData = await ebroRes.json();
-            if (ebroData && Array.isArray(ebroData.features)) {
-              replaceDemarcation(ebroData.features, 'ebro');
+          const response = await fetch(url);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.features) {
+              this._levelData[2] = data;
+              return data;
             }
-            break;
           }
-        } catch (err) {
-          console.warn('No se pudo cargar la capa de cuencas del Ebro:', err);
-        }
+        } catch (e) {}
       }
     }
 
-    // Cargar cuencas del Segura (CHS) si no estaban en el fichero base
-    if (!hasSegura && CONFIG.dataSources.seguraCuencasGeoJson) {
-      for (const url of CONFIG.dataSources.seguraCuencasGeoJson) {
-        try {
-          const chsRes = await fetch(url);
-          if (chsRes.ok) {
-            const chsData = await chsRes.json();
-            if (chsData && Array.isArray(chsData.features)) {
-              replaceDemarcation(chsData.features, 'segura');
-            }
-            break;
-          }
-        } catch (err) {
-          console.warn('No se pudo cargar la capa de cuencas del Segura:', err);
-        }
-      }
+    return null;
+  }
+
+  /**
+   * Carga asíncrona inicial de la capa de cuencas acorde al zoom actual del mapa
+   */
+  async load() {
+    const currentZoom = this.map ? this.map.getZoom() : (CONFIG.map.initialZoom || 8);
+    this._currentLevel = this._determineLevel(currentZoom);
+
+    let data = await this._fetchLevelData(this._currentLevel);
+    if (!data && this._currentLevel !== 2) {
+      data = await this._fetchLevelData(2);
+      this._currentLevel = 2;
     }
 
-    // Cargar cuencas del Guadalquivir (CHG) si no estaban en el fichero base
-    if (!hasGuadalquivir && CONFIG.dataSources.guadalquivirCuencasGeoJson) {
-      for (const url of CONFIG.dataSources.guadalquivirCuencasGeoJson) {
-        try {
-          const chgRes = await fetch(url);
-          if (chgRes.ok) {
-            const chgData = await chgRes.json();
-            if (chgData && Array.isArray(chgData.features)) {
-              replaceDemarcation(chgData.features, 'guadalquivir');
-            }
-            break;
-          }
-        } catch (err) {
-          console.warn('No se pudo cargar la capa de cuencas del Guadalquivir:', err);
-        }
-      }
+    if (!data || !data.features) {
+      throw new Error(`No se pudo cargar la capa de cuencas para nivel ${this._currentLevel}`);
     }
 
-    // Cargar cuencas del Duero (CHD / SAIH Duero) si no estaban en el fichero base
-    if (!hasDuero && CONFIG.dataSources.dueroCuencasGeoJson) {
-      for (const url of CONFIG.dataSources.dueroCuencasGeoJson) {
-        try {
-          const dueroRes = await fetch(url);
-          if (dueroRes.ok) {
-            const dueroData = await dueroRes.json();
-            if (dueroData && Array.isArray(dueroData.features)) {
-              replaceDemarcation(dueroData.features, 'duero');
-            }
-            break;
-          }
-        } catch (err) {
-          console.warn('No se pudo cargar la capa de cuencas del Duero:', err);
-        }
-      }
-    }
+    this.featuresData = data.features;
+    this._createLayer(data);
 
-    const allFeatures = Array.from(featureMap.values());
-    this.featuresData = allFeatures;
-    this._createLayer({ type: 'FeatureCollection', features: allFeatures });
+    // Escuchar eventos de zoom de Leaflet para alternar dinámicamente el LOD
+    if (this.map && !this._zoomListenerAttached) {
+      this._zoomListenerAttached = true;
+      this.map.on('zoomend', () => this._handleZoomChange());
+    }
 
     return {
-      featuresCount: allFeatures.length,
-      sourceUrl: loadedFrom
+      featuresCount: data.features.length,
+      level: this._currentLevel
     };
+  }
+
+  /**
+   * Manejador de evento zoomend para evaluar si corresponde alternar de LOD
+   */
+  _handleZoomChange() {
+    if (!this.map || this._isSwitchingLevel) return;
+    const zoom = this.map.getZoom();
+    const targetLevel = this._determineLevel(zoom);
+    if (targetLevel !== this._currentLevel) {
+      this.switchLevel(targetLevel);
+    }
+  }
+
+  /**
+   * Conmuta dinámicamente entre niveles de detalle (Demarcaciones, Sistemas, Afluentes)
+   * @param {number} targetLevel 1, 2 o 3
+   */
+  async switchLevel(targetLevel) {
+    if (this._isSwitchingLevel || targetLevel === this._currentLevel) return;
+    this._isSwitchingLevel = true;
+
+    try {
+      const data = await this._fetchLevelData(targetLevel);
+      if (!data || !data.features || data.features.length === 0) {
+        console.warn(`[RainLoc Cuencas] Datos no disponibles para nivel LOD ${targetLevel}`);
+        this._isSwitchingLevel = false;
+        return;
+      }
+
+      this._currentLevel = targetLevel;
+      this.featuresData = data.features;
+
+      // Limpiar capas previas y referencias
+      this.clearHoverHighlight();
+      this.clearSelectedHighlight();
+      if (this.geoJsonLayer) {
+        if (this.map.hasLayer(this.geoJsonLayer)) {
+          this.map.removeLayer(this.geoJsonLayer);
+        }
+        if (this.mapManager && this.mapManager.removeOverlayLayer) {
+          this.mapManager.removeOverlayLayer(this.geoJsonLayer);
+        }
+      }
+
+      this.layersById = {};
+      this.activeLayer = null;
+      this.selectedFeatureId = null;
+
+      // Crear la nueva capa
+      this._createLayer(data);
+
+      if (this.uiManager && this.uiManager.setLoadedState) {
+        this.uiManager.setLoadedState(data.features.length);
+      }
+
+      console.log(`🗺️ [RainLoc Cuencas] Transición a LOD ${targetLevel} (zoom ${this.map ? this.map.getZoom() : '?'}, ${data.features.length} geometrías)`);
+    } catch (err) {
+      console.error(`[RainLoc Cuencas] Error en switchLevel(${targetLevel}):`, err);
+    } finally {
+      this._isSwitchingLevel = false;
+    }
+  }
+
+  /**
+   * Genera un color HSL determinista y balanceado a partir de cualquier cadena de texto
+   * @param {string} str 
+   * @returns {string} Código de color HSL
+   */
+  _getColorForString(str) {
+    if (!str) return '#38bdf8';
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 65%, 45%)`;
   }
 
   /**
@@ -239,8 +299,14 @@ export class CuencasLayer {
    */
   getFeatureStyle(feature) {
     const props = feature.properties || {};
-    const sistema = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
-    const systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Sistema] || CONFIG.systemColors['Default'];
+    const sistema = props.NomSistExp || props.Subsistema || props.Sistema || props.Demarcacion || props.demarcacion || 'Default';
+    let systemColor = CONFIG.systemColors[sistema] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Sistema] || CONFIG.systemColors[props.Demarcacion] || CONFIG.systemColors[props.demarcacion];
+
+    if (!systemColor || systemColor === CONFIG.systemColors['Default']) {
+      const nameKey = props.rio || props.subcuenca || props.nombre || props.Nombre || props.NOM_RIO || sistema;
+      systemColor = this._getColorForString(nameKey);
+    }
+
     const isFav = StorageManager.isFavorite(feature.id);
 
     if (isFav) {
@@ -456,12 +522,33 @@ export class CuencasLayer {
     const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
     const isGuadalquivir = (props.Demarcacion && props.Demarcacion.includes('Guadalquivir')) || (props.demarcacion === 'Guadalquivir');
     const isDuero = (props.Demarcacion && props.Demarcacion.includes('Duero')) || (props.demarcacion === 'Duero') || (props.cod_demar === 'ES020');
-    const badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (isGuadalquivir ? 'Demarcación Hidrográfica del Guadalquivir (CHG)' : (isDuero ? 'Demarcación Hidrográfica del Duero (CHD)' : (props.NomSistExp || 'Demarcación CHJ')))));
-    const titleText = props.Subsistema || props.Sistema || props.NomSistExp || `Cuenca ${basinId || 'N/D'}`;
-    const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || 'Default';
-    const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || null;
+    let badgeText = 'Cuenca Hidrográfica';
+    let titleText = 'Cuenca';
+
+    if (this._currentLevel === 1) {
+      badgeText = 'Gran Demarcación Hidrográfica (LOD 1)';
+      titleText = props.Demarcacion || props.demarcacion || props.nombre || props.Nombre || `Demarcación ${basinId}`;
+    } else if (this._currentLevel === 3) {
+      const parentDemar = props.Demarcacion || props.demarcacion || '';
+      badgeText = parentDemar ? `${parentDemar} · Afluente` : 'Subcuenca Fluvial (Afluente LOD 3)';
+      titleText = props.rio ? `Río ${props.rio}` : (props.nombre || props.Nombre || props.subcuenca || `Afluente ${basinId}`);
+    } else {
+      const isEbro = (props.Demarcacion && props.Demarcacion.includes('Ebro')) || (props.demarcacion === 'Ebro');
+      const isSegura = (props.Demarcacion && props.Demarcacion.includes('Segura')) || (props.demarcacion === 'Segura');
+      const isGuadalquivir = (props.Demarcacion && props.Demarcacion.includes('Guadalquivir')) || (props.demarcacion === 'Guadalquivir');
+      const isDuero = (props.Demarcacion && props.Demarcacion.includes('Duero')) || (props.demarcacion === 'Duero') || (props.cod_demar === 'ES020');
+      badgeText = props.Demarcacion || (isEbro ? 'Demarcación Hidrográfica del Ebro (CHE)' : (isSegura ? 'Demarcación Hidrográfica del Segura (CHS)' : (isGuadalquivir ? 'Demarcación Hidrográfica del Guadalquivir (CHG)' : (isDuero ? 'Demarcación Hidrográfica del Duero (CHD)' : (props.NomSistExp || 'Demarcación CHJ')))));
+      titleText = props.Subsistema || props.Sistema || props.NomSistExp || props.nombre || `Cuenca ${basinId || 'N/D'}`;
+    }
+
+    const sistemaKey = props.NomSistExp || props.Subsistema || props.Sistema || props.Demarcacion || props.demarcacion || 'Default';
+    const rawSuperf = props['Superf km2'] || props['Area km2'] || props.Superficie || props.area_km2 || props.superficie || null;
     const superfFormatted = rawSuperf ? formatNumber(rawSuperf) + ' km²' : 'No disponible';
-    const systemColor = CONFIG.systemColors[sistemaKey] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors['Default'];
+    let systemColor = CONFIG.systemColors[sistemaKey] || CONFIG.systemColors[props.Subsistema] || CONFIG.systemColors[props.Demarcacion] || CONFIG.systemColors['Default'];
+    if (!systemColor || systemColor === CONFIG.systemColors['Default']) {
+      const nameKey = props.rio || props.subcuenca || props.nombre || titleText;
+      systemColor = this._getColorForString(nameKey);
+    }
     const isFav = StorageManager.isFavorite(feature.id);
 
     const activeModel = this.layerManager ? this.layerManager.getActivePredictionModel() : 'ecmwf';

@@ -1277,7 +1277,11 @@ class EbroService:
             rec_offset = offset + 1
             row = {}
             for name, typ, length in fields:
-                row[name] = dbf_bytes[rec_offset : rec_offset + length].decode("utf-8", errors="replace").strip()
+                chunk = dbf_bytes[rec_offset : rec_offset + length]
+                try:
+                    row[name] = chunk.decode("utf-8").strip()
+                except UnicodeDecodeError:
+                    row[name] = chunk.decode("cp1252", errors="replace").strip()
                 rec_offset += length
             offset += record_len
             records.append(row)

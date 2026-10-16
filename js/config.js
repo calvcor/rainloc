@@ -49,6 +49,22 @@ export const CONFIG = {
       './data/duero_subcuencas.geojson',
       './duero_subcuencas.geojson'
     ],
+    // Jerarquía dinámica por niveles de zoom (LOD)
+    cuencasDemarcacionesGeoJson: [
+      `${apiBase}/cuencas/demarcaciones?v=3.71`,
+      './data/cuencas_demarcaciones.geojson',
+      './cuencas_demarcaciones.geojson'
+    ],
+    cuencasSistemasGeoJson: [
+      `${apiBase}/cuencas/sistemas_nacionales?v=3.71`,
+      './data/cuencas_sistemas.geojson',
+      './cuencas_sistemas.geojson'
+    ],
+    cuencasAfluentesGeoJson: [
+      `${apiBase}/cuencas/afluentes?v=3.71`,
+      './data/cuencas_afluentes.geojson',
+      './cuencas_afluentes.geojson'
+    ],
     ccaaGeoJson: [
       `${apiBase}/ccaa`,
       `${apiBase}/cuencas/ccaa`,
@@ -103,6 +119,24 @@ export const CONFIG = {
 
   // Paleta de colores de alto contraste cromático por Sistema de Explotación (CHJ, CHEbro y CHSegura)
   systemColors: {
+    // Demarcaciones Hidrográficas Principales (Nivel 1 LOD)
+    'Júcar': '#0284c7',
+    'Segura': '#06b6d4',
+    'Ebro': '#10b981',
+    'Duero': '#6366f1',
+    'Tajo': '#8b5cf6',
+    'Guadalquivir': '#f59e0b',
+    'Guadiana': '#ea580c',
+    'Miño-Sil': '#0d9488',
+    'Cantábrico Occidental': '#3b82f6',
+    'Cantábrico Oriental': '#2563eb',
+    'Galicia-Costa': '#14b8a6',
+    'Cuencas Internas De Cataluña': '#ec4899',
+    'Cuencas Mediterráneas Andaluzas': '#d946ef',
+    'Guadalete Y Barbate': '#e11d48',
+    'Tinto, Odiel Y Piedras': '#eab308',
+    'Islas Baleares': '#38bdf8',
+
     // Confederación Hidrográfica del Júcar (CHJ)
     'Cenia - Mijares': '#059669',       // Verde Esmeralda vibrante (Norte)
     'Palancia - Los Valles': '#d97706',   // Ámbar / Naranja dorado

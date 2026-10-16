@@ -231,6 +231,64 @@ async def get_duero_cuencas():
         raise HTTPException(status_code=500, detail=f"Error al obtener cuencas del Duero: {str(e)}")
 
 
+def _load_candidate_geojson(filename: str) -> Dict[str, Any]:
+    candidates = [
+        settings.DATA_DIR / filename,
+        getattr(settings, "BASE_DIR", Path(".")) / "data" / filename,
+        getattr(settings, "BASE_DIR", Path(".")) / filename,
+        Path("/app/data") / filename,
+        Path.cwd() / "data" / filename,
+        Path(__file__).resolve().parent.parent.parent.parent / "data" / filename,
+    ]
+    for c in candidates:
+        if c and c.exists():
+            try:
+                with open(c, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    raise HTTPException(status_code=404, detail=f"Archivo {filename} no encontrado en el servidor.")
+
+
+@router.get("/demarcaciones", summary="Grandes demarcaciones hidrográficas de España (Nivel 1 zoom ≤ 7)")
+async def get_demarcaciones_nacionales():
+    data = _load_candidate_geojson("cuencas_demarcaciones.geojson")
+    return Response(
+        content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+        media_type="application/geo+json",
+        headers={
+            **CUENCAS_CACHE_HEADERS,
+            "X-Feature-Count": str(len(data.get("features", []))),
+        },
+    )
+
+
+@router.get("/sistemas_nacionales", summary="Sistemas de explotación y zonas de gestión de España (Nivel 2 zoom 8-9)")
+async def get_sistemas_nacionales():
+    data = _load_candidate_geojson("cuencas_sistemas.geojson")
+    return Response(
+        content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+        media_type="application/geo+json",
+        headers={
+            **CUENCAS_CACHE_HEADERS,
+            "X-Feature-Count": str(len(data.get("features", []))),
+        },
+    )
+
+
+@router.get("/afluentes", summary="Subcuencas por afluente individual de España (Nivel 3 zoom ≥ 10)")
+async def get_afluentes_nacionales():
+    data = _load_candidate_geojson("cuencas_afluentes.geojson")
+    return Response(
+        content=json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+        media_type="application/geo+json",
+        headers={
+            **CUENCAS_CACHE_HEADERS,
+            "X-Feature-Count": str(len(data.get("features", []))),
+        },
+    )
+
+
 @router.get("/sistemas", summary="Resumen estadístico por Sistema de Explotación")
 async def get_sistemas_summary():
     """Devuelve el listado de sistemas de explotación con su número de subsistemas y superficie total."""
