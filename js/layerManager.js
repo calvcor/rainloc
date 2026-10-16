@@ -7782,8 +7782,6 @@ export class LayerManager {
       badgePct.style.color = col;
       badgePct.style.borderColor = border;
     }
-      badgePct.style.borderColor = border;
-    }
 
     if (badgeSub) {
       badgeSub.textContent = props.subcuenca || (isDuero ? 'Duero' : (isAca ? 'Cuencas Internas' : (isSegura ? 'Segura' : (isEbro ? 'Ebro' : (isGuadal ? 'Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'CHJ'))))));
