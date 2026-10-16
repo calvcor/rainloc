@@ -261,6 +261,8 @@ class SeguraService:
     def _index_aforos(self):
         idx = {}
         for a in self._aforos:
+            if a.get("id"):
+                idx[str(a["id"])] = a
             if a.get("id_estacion"):
                 idx[str(a["id_estacion"])] = a
             if a.get("id_variable"):
@@ -268,6 +270,9 @@ class SeguraService:
             if a.get("codigo"):
                 idx[str(a["codigo"]).upper()] = a
                 idx[str(a["codigo"])] = a
+            if a.get("codigo_base"):
+                idx.setdefault(str(a["codigo_base"]).upper(), a)
+                idx.setdefault(str(a["codigo_base"]), a)
             if a.get("tag_caudal"):
                 idx[str(a["tag_caudal"]).upper()] = a
                 idx[str(a["tag_caudal"])] = a
@@ -479,13 +484,16 @@ class SeguraService:
                     y = geom.get("y") or attrs.get("Y_ETRS89")
                     if x and y:
                         lon, lat = transformer.transform(float(x), float(y))
-                        geo_meta_by_code[cod_clean] = {
+                        meta_item = {
                             "lon": round(lon, 6),
                             "lat": round(lat, 6),
                             "nombre": attrs.get("DenominacionPtoMedicion", ""),
                             "cod_caudal": attrs.get("CodVariableHidrologica", ""),
                             "z_ed50": attrs.get("Z_ED50"),
                         }
+                        geo_meta_by_code[cod_pto] = meta_item
+                        if cod_clean not in geo_meta_by_code:
+                            geo_meta_by_code[cod_clean] = meta_item
         except Exception as e:
             logger.warning(f"Error obteniendo metadatos de aforos caudal ArcGIS: {e}")
 
@@ -500,20 +508,24 @@ class SeguraService:
                     cod_pto = (attrs.get("CodPuntoMedicion") or "").strip()
                     cod_clean = cod_pto[:5] if len(cod_pto) >= 5 else cod_pto
                     cod_nivel = attrs.get("CodVariableHidrologica", "")
+                    if cod_pto in geo_meta_by_code:
+                        geo_meta_by_code[cod_pto]["cod_nivel"] = cod_nivel
                     if cod_clean in geo_meta_by_code:
                         geo_meta_by_code[cod_clean]["cod_nivel"] = cod_nivel
-                    else:
+                    if cod_pto not in geo_meta_by_code and cod_clean not in geo_meta_by_code:
                         x = geom.get("x") or attrs.get("X_ETRS89")
                         y = geom.get("y") or attrs.get("Y_ETRS89")
                         if x and y:
                             lon, lat = transformer.transform(float(x), float(y))
-                            geo_meta_by_code[cod_clean] = {
+                            meta_item_n = {
                                 "lon": round(lon, 6),
                                 "lat": round(lat, 6),
                                 "nombre": attrs.get("DenominacionPtoMedicion", ""),
                                 "cod_nivel": cod_nivel,
                                 "z_ed50": attrs.get("Z_ED50"),
                             }
+                            geo_meta_by_code[cod_pto] = meta_item_n
+                            geo_meta_by_code[cod_clean] = meta_item_n
         except Exception as e:
             logger.warning(f"Error obteniendo metadatos de aforos nivel ArcGIS: {e}")
 
@@ -567,7 +579,10 @@ class SeguraService:
         for r in rows:
             title_codes, punto_code, raw_name, tag_nivel, val_nivel_str, tag_caudal, val_caudal_str = r
             cod_clean = punto_code.strip()
+            title_tokens = title_codes.strip().split()
+            sub_code = title_tokens[0] if title_tokens else cod_clean
             processed_codes.add(cod_clean)
+            processed_codes.add(sub_code)
 
             val_nivel = _parse_num(val_nivel_str)
             val_caudal = _parse_num(val_caudal_str)
@@ -581,7 +596,12 @@ class SeguraService:
 
             # Fallback a caché previo si no se pudo obtener nuevo valor
             if val_caudal is None or val_nivel is None:
-                prev = self._aforos_by_id.get(cod_clean) or self._aforos_by_id.get(f"segura_aforo_{cod_clean.lower()}")
+                prev = (
+                    self._aforos_by_id.get(sub_code)
+                    or self._aforos_by_id.get(cod_clean)
+                    or self._aforos_by_id.get(f"segura_aforo_{sub_code.lower()}")
+                    or self._aforos_by_id.get(f"segura_aforo_{cod_clean.lower()}")
+                )
                 if prev:
                     if val_caudal is None and prev.get("caudal") is not None:
                         val_caudal = prev.get("caudal")
@@ -601,31 +621,40 @@ class SeguraService:
             elif name_clean.startswith("AgAb."):
                 name_clean = f"Aguas Abajo de {name_clean[5:].strip()}"
 
-            meta = geo_meta_by_code.get(cod_clean, {})
+            meta = geo_meta_by_code.get(sub_code) or geo_meta_by_code.get(cod_clean, {})
             lon = meta.get("lon")
             lat = meta.get("lat")
             if lon is None or lat is None:
                 continue
 
             full_name = meta.get("nombre") or name_clean
-            id_variable = tag_caudal or meta.get("cod_caudal") or tag_nivel or f"segura_aforo_{cod_clean.lower()}"
+            id_variable = tag_caudal or meta.get("cod_caudal") or tag_nivel or f"segura_aforo_{sub_code.lower()}"
 
-            # Umbrales
+            # Umbrales: sólo aplicables como umbral de nivel si la estación tiene sensor de nivel y mide nivel
+            has_sensor_nivel = (val_nivel is not None) or (bool(tag_nivel) and tag_nivel != "-")
+            has_sensor_caudal = (val_caudal is not None) or (bool(tag_caudal) and tag_caudal != "-")
+
             umbrales = {}
-            if cota_max and cota_max > 0:
+            if cota_max and cota_max > 0 and val_nivel is not None:
                 umbrales = {
                     "amarillo": round(cota_max * 0.65, 2),
                     "naranja": round(cota_max * 0.80, 2),
                     "rojo": round(cota_max, 2),
                 }
 
+            is_level_station = val_nivel is not None or (has_sensor_nivel and not has_sensor_caudal)
+            unidad_grafica = "m" if is_level_station else "m³/s"
+            tipo_umbral = "nivel" if (umbrales and is_level_station) else ("caudal" if not is_level_station else "nivel")
+            unidad_umbrales = "m" if tipo_umbral == "nivel" else "m³/s"
+
             aforo_obj = {
-                "id": f"segura_aforo_{cod_clean.lower()}",
+                "id": f"segura_aforo_{sub_code.lower()}",
                 "id_variable": id_variable,
-                "id_estacion": f"segura_aforo_{cod_clean.lower()}",
-                "codigo": cod_clean,
+                "id_estacion": f"segura_aforo_{sub_code.lower()}",
+                "codigo": sub_code,
+                "codigo_base": cod_clean,
                 "nombre": full_name,
-                "variable": "Caudal y Nivel",
+                "variable": "Caudal y Nivel" if (has_sensor_nivel and has_sensor_caudal) else ("Nivel" if has_sensor_nivel else "Caudal"),
                 "tipo": "Aforo",
                 "red": "CHS",
                 "cuenca": "Segura",
@@ -639,15 +668,15 @@ class SeguraService:
                 "ultimo_nivel": val_nivel,
                 "nivel": val_nivel,
                 "cota_max": cota_max,
-                "tipo_umbral": "nivel",
-                "unidad_umbrales": "m",
-                "unidad_grafica": "m",
+                "tipo_umbral": tipo_umbral,
+                "unidad_umbrales": unidad_umbrales,
+                "unidad_grafica": unidad_grafica,
                 "tag_caudal": tag_caudal or meta.get("cod_caudal") or "",
                 "tag_nivel": tag_nivel or meta.get("cod_nivel") or "",
                 "ultima_hora": dt_reading or now_iso,
                 "fecha_comunicacion": dt_reading or now_iso,
                 "umbrales": umbrales,
-                "unidad": "m",
+                "unidad": unidad_grafica,
                 "unidad_nivel": "m",
                 "unidad_caudal": "m³/s",
             }
@@ -1309,8 +1338,12 @@ class SeguraService:
             f"&dfrom={urllib.parse.quote(dfrom_str)}&dto={urllib.parse.quote(dto_str)}&source=I"
         )
 
-        def _fetch_sync():
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        def _fetch_sync(fetch_code):
+            fetch_url = (
+                f"{SAIH_CHART_URL}?puntos={urllib.parse.quote(fetch_code)}"
+                f"&dfrom={urllib.parse.quote(dfrom_str)}&dto={urllib.parse.quote(dto_str)}&source=I"
+            )
+            req = urllib.request.Request(fetch_url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=12) as resp:
                 content = resp.read().decode("utf-8", errors="ignore")
 
@@ -1326,10 +1359,23 @@ class SeguraService:
 
         loop = asyncio.get_running_loop()
         try:
-            points_raw = await loop.run_in_executor(None, _fetch_sync)
+            points_raw = await loop.run_in_executor(None, lambda: _fetch_sync(target_code))
         except Exception as e:
             logger.error(f"Error consultando histórico CHS para {target_code}: {e}")
             points_raw = []
+
+        # Si no hubo lecturas de nivel pero existe tag_caudal en la estación, fallback automático a caudal
+        if not points_raw and st_info and st_info.get("tag_caudal"):
+            fallback_code = (st_info.get("tag_caudal") or "").strip().upper()
+            if fallback_code and fallback_code != target_code:
+                try:
+                    fb_points = await loop.run_in_executor(None, lambda: _fetch_sync(fallback_code))
+                    if fb_points:
+                        points_raw = fb_points
+                        target_code = fallback_code
+                        ret_unit = "m³/s"
+                except Exception as fb_err:
+                    logger.debug(f"Fallback a caudal falló para {fallback_code}: {fb_err}")
 
         serie = []
         for pt in points_raw:

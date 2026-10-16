@@ -1259,7 +1259,24 @@ export class MultiLayerInspector {
             const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
 
             const isNivelThreshold = closestStation.unidad_umbrales === 'm' || closestStation.tipo_umbral === 'nivel' || closestStation.red === 'HIDROSUR' || closestStation.red === 'GUADALQUIVIR' || closestStation.red === 'EBRO' || closestStation.unidad_grafica === 'm';
-            const compareVal = (isNivelThreshold && nivel !== null) ? nivel : (caudal !== null ? caudal : nivel);
+            
+            let compareVal = null;
+            let isLevelComparison = false;
+            if (isNivelThreshold && nivel !== null) {
+              compareVal = nivel;
+              isLevelComparison = true;
+            } else if (!isNivelThreshold && caudal !== null) {
+              compareVal = caudal;
+              isLevelComparison = false;
+            } else if (caudal !== null) {
+              compareVal = caudal;
+              isLevelComparison = false;
+            } else if (nivel !== null) {
+              compareVal = nivel;
+              isLevelComparison = true;
+            }
+
+            const canEvaluateThresholds = (isNivelThreshold && isLevelComparison) || (!isNivelThreshold && !isLevelComparison);
 
             const umbrales = closestStation.umbrales || {};
             const uAmarillo = (umbrales.amarillo && Number(umbrales.amarillo) > 0) ? Number(umbrales.amarillo) : ((umbrales.aviso && Number(umbrales.aviso) > 0) ? Number(umbrales.aviso) : null);
@@ -1269,13 +1286,13 @@ export class MultiLayerInspector {
             let badgeBg = "#10b981";
             let alertLevel = "Normal";
             if (compareVal !== null) {
-              if (uRojo !== null && compareVal >= uRojo) {
+              if (canEvaluateThresholds && uRojo !== null && compareVal >= uRojo) {
                 badgeBg = "#ef4444";
                 alertLevel = "🔴 Umbral Rojo";
-              } else if (uNaranja !== null && compareVal >= uNaranja) {
+              } else if (canEvaluateThresholds && uNaranja !== null && compareVal >= uNaranja) {
                 badgeBg = "#f97316";
                 alertLevel = "🟠 Umbral Naranja";
-              } else if (uAmarillo !== null && compareVal >= uAmarillo) {
+              } else if (canEvaluateThresholds && uAmarillo !== null && compareVal >= uAmarillo) {
                 badgeBg = "#f59e0b";
                 alertLevel = "🟡 Umbral Amarillo";
               }
@@ -1392,7 +1409,13 @@ export class MultiLayerInspector {
                   ? Number(closestEmbalse.porcentaje)
                   : (vol !== null && cap ? (vol / cap * 100) : null));
 
-            const cota = closestEmbalse.cota_actual !== undefined && closestEmbalse.cota_actual !== null ? Number(closestEmbalse.cota_actual) : null;
+            const cota = closestEmbalse.cota_actual !== undefined && closestEmbalse.cota_actual !== null
+              ? Number(closestEmbalse.cota_actual)
+              : (closestEmbalse.cota !== undefined && closestEmbalse.cota !== null
+                  ? Number(closestEmbalse.cota)
+                  : (closestEmbalse.nivel !== undefined && closestEmbalse.nivel !== null
+                      ? Number(closestEmbalse.nivel)
+                      : null));
             const qIn = closestEmbalse.caudal_recibido !== undefined && closestEmbalse.caudal_recibido !== null ? Number(closestEmbalse.caudal_recibido) : null;
             const qOut = closestEmbalse.caudal_salida !== undefined && closestEmbalse.caudal_salida !== null ? Number(closestEmbalse.caudal_salida) : null;
 
@@ -1401,18 +1424,25 @@ export class MultiLayerInspector {
             const isSurging = (var24 !== null && var24 > 0.5) || (varSemVal !== null && varSemVal > 1.5);
 
             let pctColor = "#10b981";
+            let badgeText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
             if (pct !== null) {
               if (pct >= 70 && isSurging) pctColor = "#ef4444";
               else if (pct >= 70) pctColor = "#0ea5e9";
               else if (pct >= 35) pctColor = "#f59e0b";
               else pctColor = "#10b981";
+            } else if (cota !== null) {
+              pctColor = "#0ea5e9";
+              badgeText = `${cota.toFixed(2)} msnm`;
+            } else if (vol !== null) {
+              pctColor = "#0ea5e9";
+              badgeText = `${vol.toFixed(2)} hm³`;
             }
 
             const volText = vol !== null ? `${vol.toFixed(2)} hm³` : "-- hm³";
             const capText = cap !== null ? `${cap.toFixed(2)} hm³` : "-- hm³";
             const pctText = pct !== null ? `${pct.toFixed(1)}%` : "--%";
             const horaText = closestEmbalse.ultima_hora ? `· ${String(closestEmbalse.ultima_hora).replace('T', ' ').substring(0, 16)}` : '';
-            const cotaText = cota !== null ? `Cota: ${cota.toFixed(2)} m` : '';
+            const cotaText = cota !== null ? `Cota: ${cota.toFixed(2)} msnm` : '';
             const metaLoc = `${closestEmbalse.poblacion || '--'} (${closestEmbalse.provincia || ''}) · ${closestEmbalse.subcuenca || ''}`;
             const varSem = closestEmbalse.variacion_semana !== undefined && closestEmbalse.variacion_semana !== null
               ? Number(closestEmbalse.variacion_semana)
@@ -1435,16 +1465,33 @@ export class MultiLayerInspector {
               headerColor: "#6366f1",
               icon: "🏞️",
               name: `${closestEmbalse.nombre}`,
-              badge: `${pctText}`,
+              badge: `${badgeText}`,
               badgeBg: pctColor,
               badgeColor: "#ffffff",
               station: closestEmbalse,
               details: `
                 <div class="unified-embalse-block">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
-                    <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
-                    <div style="font-weight:700; color:${pctColor}; font-size:0.95rem;">${pctText}</div>
-                  </div>
+                  ${pct !== null ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                      <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> <span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span></div>
+                      <div style="font-weight:700; color:${pctColor}; font-size:0.95rem;">${pctText}</div>
+                    </div>
+                  ` : (vol !== null ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                      <div>Volumen actual: <strong style="color:#e2e8f0; font-size:1.05em;">${volText}</strong> ${cap !== null ? `<span style="color:#94a3b8; font-size:0.72rem;">/ ${capText}</span>` : ''}</div>
+                      ${cota !== null ? `<div style="font-weight:700; color:${pctColor}; font-size:0.90rem;">${cota.toFixed(2)} msnm</div>` : ''}
+                    </div>
+                  ` : (cota !== null ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                      <div>Cota / Nivel: <strong style="color:#e2e8f0; font-size:1.05em;">${cota.toFixed(2)} msnm</strong></div>
+                      <div style="font-weight:700; color:${pctColor}; font-size:0.85rem;">Cota Regulada</div>
+                    </div>
+                  ` : `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                      <div>Volumen: <strong style="color:#e2e8f0; font-size:1.05em;">-- hm³</strong></div>
+                      <div style="font-weight:700; color:#94a3b8; font-size:0.95rem;">--%</div>
+                    </div>
+                  `))}
                   ${cotaText || qIn !== null || qOut !== null || varSemText ? `
                     <div style="font-size:0.72rem; color:#94a3b8; margin-top:2px; display:flex; justify-content:space-between;">
                       <span>${cotaText || varSemText}</span>

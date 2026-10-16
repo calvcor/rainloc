@@ -5612,8 +5612,19 @@ export class LayerManager {
     this._caudalesFeatures = geojson.features;
     layerGroup.clearLayers();
 
+    // Ordenar los puntos para que los que tienen lectura activa se dibujen sobre los que no tienen dato
+    const sortedFeatures = [...geojson.features].sort((a, b) => {
+      const pA = a.properties || {};
+      const pB = b.properties || {};
+      const hasA = (pA.caudal !== null && pA.caudal !== undefined) || (pA.nivel !== null && pA.nivel !== undefined) || (pA.ultimo_caudal !== null && pA.ultimo_caudal !== undefined) || (pA.ultimo_nivel !== null && pA.ultimo_nivel !== undefined);
+      const hasB = (pB.caudal !== null && pB.caudal !== undefined) || (pB.nivel !== null && pB.nivel !== undefined) || (pB.ultimo_caudal !== null && pB.ultimo_caudal !== undefined) || (pB.ultimo_nivel !== null && pB.ultimo_nivel !== undefined);
+      if (!hasA && hasB) return -1;
+      if (hasA && !hasB) return 1;
+      return 0;
+    });
+
     const renderer = this.caudalesCanvasRenderer || undefined;
-    const caudalesGeoJSON = L.geoJSON(geojson, {
+    const caudalesGeoJSON = L.geoJSON({ ...geojson, features: sortedFeatures }, {
       pane: 'caudalesPane',
       renderer: renderer,
       pointToLayer: (feature, latlng) => {
@@ -5631,14 +5642,24 @@ export class LayerManager {
         const uRojo = (umbrales.rojo && Number(umbrales.rojo) > 0) ? Number(umbrales.rojo) : ((umbrales.alerta && Number(umbrales.alerta) > 0) ? Number(umbrales.alerta) : null);
 
         const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.unidad_grafica === 'm' || props.red === 'HIDROSUR';
-        const hasLevelThreshold = isNivelThreshold && (uAmarillo !== null || uNaranja !== null || uRojo !== null);
-        const shouldCompareLevel = hasLevelThreshold || (caudal === null && nivel !== null);
+        
         let compareVal = null;
-        if (shouldCompareLevel) {
-          compareVal = (nivel !== null) ? nivel : caudal;
-        } else {
-          compareVal = (caudal !== null) ? caudal : nivel;
+        let isLevelComparison = false;
+        if (isNivelThreshold && nivel !== null) {
+          compareVal = nivel;
+          isLevelComparison = true;
+        } else if (!isNivelThreshold && caudal !== null) {
+          compareVal = caudal;
+          isLevelComparison = false;
+        } else if (caudal !== null) {
+          compareVal = caudal;
+          isLevelComparison = false;
+        } else if (nivel !== null) {
+          compareVal = nivel;
+          isLevelComparison = true;
         }
+
+        const canEvaluateThresholds = (isNivelThreshold && isLevelComparison) || (!isNivelThreshold && !isLevelComparison);
 
         // Determinar nivel de alerta y color
         let color = '#10b981'; // Normal (Verde)
@@ -5646,18 +5667,18 @@ export class LayerManager {
         let alertLevelText = 'Normal';
 
         if (compareVal !== null) {
-          if (uRojo !== null && compareVal >= uRojo) {
+          if (canEvaluateThresholds && uRojo !== null && compareVal >= uRojo) {
             color = '#ef4444';
             alertClass = 'caudal-status-red caudal-pulse';
-            alertLevelText = 'Umbral Rojo (Desbordamiento)';
-          } else if (uNaranja !== null && compareVal >= uNaranja) {
+            alertLevelText = isLevelComparison ? 'Umbral Rojo (Desbordamiento Nivel)' : 'Umbral Rojo (Desbordamiento Caudal)';
+          } else if (canEvaluateThresholds && uNaranja !== null && compareVal >= uNaranja) {
             color = '#f97316';
             alertClass = 'caudal-status-orange caudal-pulse';
-            alertLevelText = 'Umbral Naranja (Muy Alto)';
-          } else if (uAmarillo !== null && compareVal >= uAmarillo) {
+            alertLevelText = isLevelComparison ? 'Umbral Naranja (Nivel Muy Alto)' : 'Umbral Naranja (Caudal Muy Alto)';
+          } else if (canEvaluateThresholds && uAmarillo !== null && compareVal >= uAmarillo) {
             color = '#f59e0b';
             alertClass = 'caudal-status-yellow';
-            alertLevelText = 'Umbral Amarillo (Precaución)';
+            alertLevelText = isLevelComparison ? 'Umbral Amarillo (Aviso Nivel)' : 'Umbral Amarillo (Aviso Caudal)';
           } else if (props.estado_alerta === 'warning3' || props.status === 'warning3' || props.q_status === 'variable_warning3' || props.n_status === 'variable_warning3') {
             color = '#ef4444';
             alertClass = 'caudal-status-red caudal-pulse';
@@ -5767,27 +5788,35 @@ export class LayerManager {
 
     const isNivelThreshold = props.unidad_umbrales === 'm' || props.tipo_umbral === 'nivel' || props.unidad_grafica === 'm' || props.red === 'HIDROSUR';
     const hasLevelThreshold = isNivelThreshold && (uAmarillo !== null || uNaranja !== null || uRojo !== null);
-    const shouldShowLevelAsPrimary = hasLevelThreshold || (caudal === null && nivel !== null);
+    const shouldShowLevelAsPrimary = (nivel !== null) && (hasLevelThreshold || props.unidad_grafica === 'm' || caudal === null);
 
     let compareVal = null;
-    if (shouldShowLevelAsPrimary) {
-      compareVal = nivel !== null ? nivel : caudal;
-    } else {
-      compareVal = caudal !== null ? caudal : nivel;
+    let isLevelComparison = false;
+    if (shouldShowLevelAsPrimary && nivel !== null) {
+      compareVal = nivel;
+      isLevelComparison = true;
+    } else if (caudal !== null) {
+      compareVal = caudal;
+      isLevelComparison = false;
+    } else if (nivel !== null) {
+      compareVal = nivel;
+      isLevelComparison = true;
     }
+
+    const canEvaluateThresholds = (isNivelThreshold && isLevelComparison) || (!isNivelThreshold && !isLevelComparison);
 
     let alertColor = '#10b981';
     let alertText = shouldShowLevelAsPrimary ? 'Nivel Normal' : 'Caudal Normal';
     if (compareVal !== null) {
-      if (uRojo !== null && compareVal >= uRojo) {
+      if (canEvaluateThresholds && uRojo !== null && compareVal >= uRojo) {
         alertColor = '#ef4444';
-        alertText = '🔴 Umbral Rojo (Desbordamiento)';
-      } else if (uNaranja !== null && compareVal >= uNaranja) {
+        alertText = isLevelComparison ? '🔴 Umbral Rojo (Desbordamiento Nivel)' : '🔴 Umbral Rojo (Desbordamiento Caudal)';
+      } else if (canEvaluateThresholds && uNaranja !== null && compareVal >= uNaranja) {
         alertColor = '#f97316';
-        alertText = '🟠 Umbral Naranja (Peligro)';
-      } else if (uAmarillo !== null && compareVal >= uAmarillo) {
+        alertText = isLevelComparison ? '🟠 Umbral Naranja (Nivel Peligro)' : '🟠 Umbral Naranja (Caudal Peligro)';
+      } else if (canEvaluateThresholds && uAmarillo !== null && compareVal >= uAmarillo) {
         alertColor = '#f59e0b';
-        alertText = '🟡 Umbral Amarillo (Aviso)';
+        alertText = isLevelComparison ? '🟡 Umbral Amarillo (Aviso Nivel)' : '🟡 Umbral Amarillo (Aviso Caudal)';
       } else if (props.estado_alerta === 'warning3' || props.status === 'warning3' || props.q_status === 'variable_warning3' || props.n_status === 'variable_warning3') {
         alertColor = '#ef4444';
         alertText = '🔴 Alarma Hidrológica (SAIH Duero)';
@@ -5987,10 +6016,15 @@ export class LayerManager {
     `;
 
     const stationProps = this._currentModalStationProps || {};
+    const rawCaudal = stationProps.ultimo_caudal !== undefined ? stationProps.ultimo_caudal : (stationProps.caudal !== undefined ? stationProps.caudal : (stationProps.caudal_actual !== undefined ? stationProps.caudal_actual : stationProps.lastValue));
+    const caudal = (rawCaudal !== null && rawCaudal !== undefined && rawCaudal !== '' && !isNaN(Number(rawCaudal))) ? Number(rawCaudal) : null;
+    const rawNivel = stationProps.ultimo_nivel !== undefined ? stationProps.ultimo_nivel : (stationProps.nivel !== undefined ? stationProps.nivel : (stationProps.nivel_actual !== undefined ? stationProps.nivel_actual : (stationProps.cota_actual !== undefined ? stationProps.cota_actual : stationProps.cota)));
+    const nivel = (rawNivel !== null && rawNivel !== undefined && rawNivel !== '' && !isNaN(Number(rawNivel))) ? Number(rawNivel) : null;
+
     const isNivelThreshold = stationProps.unidad_umbrales === 'm' || stationProps.tipo_umbral === 'nivel' || stationProps.unidad_grafica === 'm' || stationProps.red === 'HIDROSUR';
     const hasLevelThreshold = isNivelThreshold && (umbrales && (umbrales.amarillo || umbrales.naranja || umbrales.rojo || umbrales.aviso || umbrales.prealerta || umbrales.alerta));
-    const shouldQueryLevel = hasLevelThreshold || stationProps.unidad_grafica === 'm' || (stationProps.caudal === undefined || stationProps.caudal === null);
-    const varParam = shouldQueryLevel ? '&variable_type=nivel' : '';
+    const shouldQueryLevel = (nivel !== null) && (hasLevelThreshold || stationProps.unidad_grafica === 'm' || caudal === null);
+    const varParam = shouldQueryLevel ? '&variable_type=nivel' : (caudal !== null ? '&variable_type=caudal' : '');
 
     try {
       const resp = await fetch(`${CONFIG.apiBaseUrl}/saih/caudales/${idVariable}/history?hours=${hours}${varParam}`);
@@ -6530,6 +6564,7 @@ export class LayerManager {
         const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : (props.volumen !== null && props.volumen !== undefined ? Number(props.volumen) : null);
         const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : (props.capacidad !== null && props.capacidad !== undefined ? Number(props.capacidad) : null);
         const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (props.porcentaje !== null && props.porcentaje !== undefined ? Number(props.porcentaje) : (vol !== null && cap ? (vol / cap * 100) : null));
+        const cota = props.cota_actual !== null && props.cota_actual !== undefined ? Number(props.cota_actual) : (props.cota !== null && props.cota !== undefined ? Number(props.cota) : (props.nivel !== null && props.nivel !== undefined ? Number(props.nivel) : null));
         const var24 = props.variacion_24h !== undefined && props.variacion_24h !== null ? Number(props.variacion_24h) : null;
         const varSem = props.variacion_semana !== undefined && props.variacion_semana !== null ? Number(props.variacion_semana) : null;
         const isSurging = (var24 !== null && var24 > 0.5) || (varSem !== null && varSem > 1.5);
@@ -6556,6 +6591,9 @@ export class LayerManager {
             color = '#10b981'; // Verde (<35%)
             alertClass = 'embalse-status-low';
           }
+        } else if (cota !== null || vol !== null) {
+          color = '#0ea5e9'; // Azul / Cian (operativo con dato de cota o volumen)
+          alertClass = 'embalse-status-cota';
         } else {
           color = '#94a3b8';
           alertClass = 'embalse-status-nodata';
@@ -7674,7 +7712,7 @@ export class LayerManager {
     const vol = props.volumen_actual !== null && props.volumen_actual !== undefined ? Number(props.volumen_actual) : (props.volumen !== null && props.volumen !== undefined ? Number(props.volumen) : null);
     const cap = props.capacidad_nmn !== null && props.capacidad_nmn !== undefined ? Number(props.capacidad_nmn) : (props.capacidad !== null && props.capacidad !== undefined ? Number(props.capacidad) : null);
     const pct = props.porcentaje_llenado !== null && props.porcentaje_llenado !== undefined ? Number(props.porcentaje_llenado) : (props.porcentaje !== null && props.porcentaje !== undefined ? Number(props.porcentaje) : (vol !== null && cap ? (vol / cap * 100) : null));
-    const cota = props.cota_actual !== null && props.cota_actual !== undefined ? Number(props.cota_actual) : null;
+    const cota = props.cota_actual !== null && props.cota_actual !== undefined ? Number(props.cota_actual) : (props.cota !== null && props.cota !== undefined ? Number(props.cota) : (props.nivel !== null && props.nivel !== undefined ? Number(props.nivel) : null));
     const cotaV = props.cota_vertido !== null && props.cota_vertido !== undefined ? Number(props.cota_vertido) : null;
     const caudalIn = props.caudal_recibido !== null && props.caudal_recibido !== undefined ? Number(props.caudal_recibido) : null;
     const caudalOut = props.caudal_salida_rio !== null && props.caudal_salida_rio !== undefined ? Number(props.caudal_salida_rio) : (props.caudal_salida !== null && props.caudal_salida !== undefined ? Number(props.caudal_salida) : null);
@@ -7726,10 +7764,24 @@ export class LayerManager {
           border = 'rgba(16, 185, 129, 0.4)';
           riskLabel = '🟢 Reserva Baja';
         }
+        badgePct.textContent = `${pctStr} Lleno · ${riskLabel}`;
+      } else if (cota !== null) {
+        bg = 'rgba(14, 165, 233, 0.2)';
+        col = '#38bdf8';
+        border = 'rgba(56, 189, 248, 0.4)';
+        badgePct.textContent = `${cota.toFixed(2)} msnm · Cota Regulada`;
+      } else if (vol !== null) {
+        bg = 'rgba(14, 165, 233, 0.2)';
+        col = '#38bdf8';
+        border = 'rgba(56, 189, 248, 0.4)';
+        badgePct.textContent = `${vol.toFixed(2)} hm³ · Volumen`;
+      } else {
+        badgePct.textContent = `${pctStr} Lleno · ${riskLabel}`;
       }
-      badgePct.textContent = `${pctStr} Lleno · ${riskLabel}`;
       badgePct.style.background = bg;
       badgePct.style.color = col;
+      badgePct.style.borderColor = border;
+    }
       badgePct.style.borderColor = border;
     }
 
@@ -7879,6 +7931,9 @@ export class LayerManager {
         return;
       }
 
+      const unit = data.unidad || (validPoints[0] && validPoints[0].unidad) || 'hm³';
+      const isLevelData = unit === 'msnm' || unit === 'm';
+
       // Sincronizar lectura del instante actual y tendencia en la cabecera del modal
       const firstPoint = validPoints[0];
       const latestPoint = validPoints[validPoints.length - 1];
@@ -7892,40 +7947,47 @@ export class LayerManager {
         const firstVal = Number(firstPoint.valor);
         const deltaVol = latestVal - firstVal;
         const cap = capNMN ? Number(capNMN) : null;
-        const latestPct = cap && cap > 0 ? (latestVal / cap * 100) : null;
-        const deltaPct = cap && cap > 0 ? (deltaVol / cap * 100) : null;
+        const latestPct = (!isLevelData && cap && cap > 0) ? (latestVal / cap * 100) : null;
+        const deltaPct = (!isLevelData && cap && cap > 0) ? (deltaVol / cap * 100) : null;
 
-        statVol.textContent = `${latestVal.toFixed(2)} hm³`;
+        statVol.textContent = isLevelData ? `${latestVal.toFixed(2)} ${unit}` : `${latestVal.toFixed(2)} hm³`;
         if (statPctSub) {
-          statPctSub.textContent = latestPct !== null ? `Reserva: ${latestPct.toFixed(1)}%` : 'Reserva: --%';
+          statPctSub.textContent = isLevelData ? `Cota actual: ${latestVal.toFixed(2)} ${unit}` : (latestPct !== null ? `Reserva: ${latestPct.toFixed(1)}%` : 'Reserva: --%');
         }
 
-        if (badgePct && latestPct !== null) {
-          const pctStr = `${latestPct.toFixed(1)}%`;
-          // Solo alertar de riesgo de desbordamiento si pct >= 70% y el nivel ha subido sustancialmente en este periodo
-          const isRapidRise = deltaVol >= 0.4 || (deltaPct !== null && deltaPct >= 1.5);
+        if (badgePct) {
+          if (latestPct !== null) {
+            const pctStr = `${latestPct.toFixed(1)}%`;
+            // Solo alertar de riesgo de desbordamiento si pct >= 70% y el nivel ha subido sustancialmente en este periodo
+            const isRapidRise = deltaVol >= 0.4 || (deltaPct !== null && deltaPct >= 1.5);
 
-          if (latestPct >= 70 && isRapidRise) {
-            badgePct.textContent = `${pctStr} Lleno · 🔴 Riesgo Desbordamiento (+${deltaVol.toFixed(2)} hm³)`;
-            badgePct.style.background = 'rgba(239, 68, 68, 0.25)';
-            badgePct.style.color = '#ef4444';
-            badgePct.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-          } else if (latestPct >= 70) {
-            const trendTxt = deltaVol < -0.1 ? 'En descenso' : (deltaVol > 0.05 ? 'Ligero ascenso' : 'Estable');
-            badgePct.textContent = `${pctStr} Lleno · 🔵 Reserva Alta (${trendTxt})`;
+            if (latestPct >= 70 && isRapidRise) {
+              badgePct.textContent = `${pctStr} Lleno · 🔴 Riesgo Desbordamiento (+${deltaVol.toFixed(2)} hm³)`;
+              badgePct.style.background = 'rgba(239, 68, 68, 0.25)';
+              badgePct.style.color = '#ef4444';
+              badgePct.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+            } else if (latestPct >= 70) {
+              const trendTxt = deltaVol < -0.1 ? 'En descenso' : (deltaVol > 0.05 ? 'Ligero ascenso' : 'Estable');
+              badgePct.textContent = `${pctStr} Lleno · 🔵 Reserva Alta (${trendTxt})`;
+              badgePct.style.background = 'rgba(14, 165, 233, 0.2)';
+              badgePct.style.color = '#38bdf8';
+              badgePct.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+            } else if (latestPct >= 35) {
+              badgePct.textContent = `${pctStr} Lleno · 🟡 Reserva Media`;
+              badgePct.style.background = 'rgba(245, 158, 11, 0.25)';
+              badgePct.style.color = '#f59e0b';
+              badgePct.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+            } else {
+              badgePct.textContent = `${pctStr} Lleno · 🟢 Reserva Baja`;
+              badgePct.style.background = 'rgba(16, 185, 129, 0.2)';
+              badgePct.style.color = '#10b981';
+              badgePct.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+            }
+          } else if (isLevelData) {
+            badgePct.textContent = `${latestVal.toFixed(2)} ${unit} · Cota Regulada`;
             badgePct.style.background = 'rgba(14, 165, 233, 0.2)';
             badgePct.style.color = '#38bdf8';
             badgePct.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-          } else if (latestPct >= 35) {
-            badgePct.textContent = `${pctStr} Lleno · 🟡 Reserva Media`;
-            badgePct.style.background = 'rgba(245, 158, 11, 0.25)';
-            badgePct.style.color = '#f59e0b';
-            badgePct.style.borderColor = 'rgba(245, 158, 11, 0.5)';
-          } else {
-            badgePct.textContent = `${pctStr} Lleno · 🟢 Reserva Baja`;
-            badgePct.style.background = 'rgba(16, 185, 129, 0.2)';
-            badgePct.style.color = '#10b981';
-            badgePct.style.borderColor = 'rgba(16, 185, 129, 0.4)';
           }
         }
       }
@@ -7933,7 +7995,7 @@ export class LayerManager {
         statTime.textContent = `Última lectura: ${formatMadridDateTime(new Date(latestPoint.fecha))}`;
       }
 
-      this._renderEmbalseSvgChart(validPoints, capNMN, container);
+      this._renderEmbalseSvgChart(validPoints, capNMN, container, unit);
     } catch (err) {
       console.warn('Error al obtener histórico de embalse:', err);
       container.innerHTML = `
@@ -7948,7 +8010,7 @@ export class LayerManager {
   /**
    * Genera el SVG interactivo con la curva de volumen y línea horizontal de capacidad NMN
    */
-  _renderEmbalseSvgChart(points, capNMN, containerEl) {
+  _renderEmbalseSvgChart(points, capNMN, containerEl, unit = 'hm³') {
     if (!points || points.length === 0) return;
 
     // Asegurar orden cronológico de los puntos
@@ -8071,7 +8133,7 @@ export class LayerManager {
 
           <!-- Eje Y etiquetas -->
           ${yLabels.join('')}
-          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">hm³</text>
+          <text x="${pad.left}" y="${pad.top - 8}" fill="#38bdf8" font-size="10.5" font-weight="700">${unit}</text>
 
           <!-- Eje X etiquetas -->
           ${xLabels.join('')}
@@ -8190,7 +8252,7 @@ export class LayerManager {
 
       // Actualizar contenido del tooltip con color en el número
       ttTime.textContent = formatMadridDateTime(fecha);
-      ttVal.textContent = `${val.toFixed(2)} hm³`;
+      ttVal.textContent = `${val.toFixed(2)} ${unit}`;
       ttVal.style.color = pointColor;
 
       // Si está en estado destacable mostrar el badge correspondiente, si es normal no mostrar badge

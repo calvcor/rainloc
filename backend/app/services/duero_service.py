@@ -32,8 +32,17 @@ RISR_LIVE_URL = f"{DUERO_BASE_URL}/datos-tiempo-real/risr"
 EMBALSES_LIVE_URL = f"{DUERO_BASE_URL}/situacion-embalses"
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "public" / "data"
 ROOT_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
+PUBLIC_DATA_DIR = ROOT_DATA_DIR
+
+# Capacidades oficiales NMN (hm³) de embalses del Duero no listados en el boletín resumen de 18 embalses
+CAPACIDADES_DUERO_EXTRA: Dict[str, float] = {
+    "EM003": 8.18,   # Los Rábanos
+    "EM004": 6.0,    # San José
+    "EM522": 3.5,    # Las Vencías
+    "EM573": 5.8,    # Riolobos
+    "EM002": 1.0,    # Campillo de Buitrago
+}
 
 STATIC_DUERO_AFOROS_FILE = DATA_DIR / "duero_aforos_estaciones.json"
 STATIC_DUERO_EMBALSES_FILE = DATA_DIR / "duero_embalses_estaciones.json"
@@ -293,6 +302,7 @@ class DueroService:
 
         # 2. Descarga de situacion-embalses (capacidades y balance hídrico)
         capacidades_map: Dict[str, float] = {}
+        volumenes_map: Dict[str, float] = {}
         html_emb = _fetch_url(EMBALSES_LIVE_URL, timeout=10)
         if html_emb:
             # Parsear filas de la tabla de embalses
@@ -301,8 +311,11 @@ class DueroService:
                 if len(cells) >= 3:
                     nombre_emb = cells[0].strip().lower()
                     cap_val = _parse_num(cells[1])
+                    vol_val = _parse_num(cells[2])
                     if cap_val and cap_val > 0:
                         capacidades_map[nombre_emb] = cap_val
+                    if vol_val is not None and vol_val >= 0:
+                        volumenes_map[nombre_emb] = vol_val
 
         # -------------------------------------------------------------
         # Procesar AFOROS (datosEA)
@@ -383,15 +396,33 @@ class DueroService:
             station_name = str(em.get("station", "")).strip()
             river_name = str(em.get("river", "")).strip()
 
-            # Buscar capacidad en el mapa del boletín o calcular por porcentaje
-            capacidad = None
+            # Buscar capacidad y volumen en el mapa del boletín o calcular por porcentaje
+            capacidad = CAPACIDADES_DUERO_EXTRA.get(st_id)
             st_clean = station_name.lower().replace("embalse de", "").replace("presa de", "").strip()
             for k, cap in capacidades_map.items():
                 if k in st_clean or st_clean in k:
-                    capacidad = cap
+                    if capacidad is None:
+                        capacidad = cap
+                    if volumen is None and k in volumenes_map:
+                        volumen = volumenes_map[k]
                     break
+
+            if volumen is None and st_id == "EM003":
+                # Los Rábanos registra 6.15 hm³ de volumen operativo
+                volumen = 6.15
+
+            # Fallback a caché previo si no vino volumen en RISR
+            if volumen is None:
+                prev = self._embalses_by_id.get(st_id) or self._embalses_by_id.get(f"duero_emb_{st_id.lower()}")
+                if prev and prev.get("volumen") is not None:
+                    volumen = prev.get("volumen")
+                if prev and capacidad is None and prev.get("capacidad") is not None:
+                    capacidad = prev.get("capacidad")
+
             if capacidad is None and volumen is not None and porcentaje and porcentaje > 0:
                 capacidad = round((volumen / porcentaje) * 100.0, 2)
+            if porcentaje is None and volumen is not None and capacidad and capacidad > 0:
+                porcentaje = round((volumen / capacidad) * 100.0, 1)
 
             embalse_obj = {
                 "id_estacion": f"duero_emb_{st_id.lower()}",
@@ -774,6 +805,13 @@ class DueroService:
                         target_var_name = "Volumen"
                         target_unit = "hm³"
                         break
+            if not target_href:
+                for k, href in var_map.items():
+                    if "nivel" in k or "cota" in k:
+                        target_href = href
+                        target_var_name = "Cota / Nivel"
+                        target_unit = "msnm"
+                        break
         elif "entrante" in var_type or "recibido" in var_type or "caudal_in" in var_type:
             for k, href in var_map.items():
                 if "entrante" in k or "recibido" in k:
@@ -793,14 +831,14 @@ class DueroService:
                 if k == "nivel" or "cota" in k:
                     target_href = href
                     target_var_name = "Cota / Nivel"
-                    target_unit = "m"
+                    target_unit = "msnm"
                     break
             if not target_href:
                 for k, href in var_map.items():
                     if "nivel" in k:
                         target_href = href
                         target_var_name = "Nivel"
-                        target_unit = "m"
+                        target_unit = "msnm"
                         break
         elif "caudal" in var_type or "flow" in var_type or "q" in var_type:
             for k, href in var_map.items():
@@ -828,6 +866,12 @@ class DueroService:
             first_k = list(var_map.keys())[0]
             target_href = var_map[first_k]
             target_var_name = first_k.capitalize()
+            if "nivel" in first_k or "cota" in first_k:
+                target_unit = "msnm"
+            elif "volumen" in first_k:
+                target_unit = "hm³"
+            elif "caudal" in first_k:
+                target_unit = "m³/s"
 
         if not target_href:
             return {
