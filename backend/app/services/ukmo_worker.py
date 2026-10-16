@@ -42,8 +42,10 @@ SPAIN_GRID_LATS = np.degrees(2 * np.arctan(np.exp(Y_MERC_GRID / R_EARTH)) - np.p
 SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID_W)
 
 # Pasos de pronóstico del UKMO Global (10 km):
-# 1h a 54h de hora en hora, luego 57h a 144h cada 3 horas (hasta +144h / 6 días).
+# Corridas principales (00z, 12z): 1h a 54h de hora en hora, luego 57h a 144h cada 3 horas (hasta +144h / 6 días).
+# Corridas intermedias (06z, 18z): 1h a 54h de hora en hora, luego 57h a 69h cada 3 horas (horizonte máximo oficial: +69h).
 UKMO_STEPS: List[int] = list(range(1, 55)) + list(range(57, 145, 3))
+UKMO_INTERMEDIATE_STEPS: List[int] = list(range(1, 55)) + list(range(57, 70, 3))
 
 
 def colorize_precip_array(precip_mm: np.ndarray) -> np.ndarray:
@@ -360,13 +362,16 @@ class UKMOWorker:
 
             raw_avail = list(self.current_manifest.get("available_steps", []))
             raw_max_step = max(raw_avail) if raw_avail else 0
-            raw_complete = (len(raw_avail) >= len(target_ukmo_steps))
+            is_intermediate = (run_str in ("06z", "18z", "6z", "18z"))
+            native_target_max = 69 if is_intermediate else target_max
+            native_target_steps = UKMO_INTERMEDIATE_STEPS if is_intermediate else target_ukmo_steps
+            raw_complete = (len(raw_avail) >= len(native_target_steps) and raw_max_step >= native_target_max)
             meta["raw_available_steps"] = raw_avail
             meta["downloaded_max_step"] = raw_max_step
             meta["raw_max_step"] = raw_max_step
             meta["is_complete"] = raw_complete
             meta["is_updating"] = self._is_syncing or (
-                raw_max_step < target_max
+                not raw_complete
                 and self.current_manifest.get("status") != "complete"
             )
             return meta
@@ -828,7 +833,12 @@ class UKMOWorker:
 
                     # Guardar manifest.json actualizado
                     cur_max = max(available_steps) if available_steps else 0
-                    is_complete = (len(available_steps) >= len(all_available_s3_steps) and cur_max >= target_max_step)
+                    is_intermediate = (hh in ("06", "18", "6", "18"))
+                    native_target_max = 69 if is_intermediate else target_max_step
+                    is_complete = (
+                        cur_max >= native_target_max
+                        and len(available_steps) >= len(all_available_s3_steps)
+                    )
                     manifest_data = {
                         "model": "UK Met Office (10 km)",
                         "cycle": cycle_iso,
@@ -862,7 +872,12 @@ class UKMOWorker:
 
                 if available_steps:
                     final_max = max(available_steps)
-                    is_complete = (len(available_steps) >= len(all_available_s3_steps) and final_max >= target_max_step)
+                    is_intermediate = (hh in ("06", "18", "6", "18"))
+                    native_target_max = 69 if is_intermediate else target_max_step
+                    is_complete = (
+                        final_max >= native_target_max
+                        and len(available_steps) >= len(all_available_s3_steps)
+                    )
                     final_status = "complete" if is_complete else "ready"
                     manifest_data = {
                         "model": "UK Met Office (10 km)",

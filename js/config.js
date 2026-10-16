@@ -1040,6 +1040,9 @@ export function formatUkmoTimestamp(metadata) {
     }
   }
 
+  const isIntermediate = ['06z', '18z', '6z', '18z'].includes(run);
+  const targetMax = isIntermediate ? 69 : 144;
+
   const rawMax = metadata.downloaded_max_step !== undefined
     ? metadata.downloaded_max_step
     : (metadata.raw_max_step !== undefined
@@ -1051,10 +1054,10 @@ export function formatUkmoTimestamp(metadata) {
   const isUpdating = Boolean(
     metadata.is_updating ||
     metadata.is_syncing ||
-    (rawMax !== null && rawMax < 144 && metadata.status !== 'complete')
+    (rawMax !== null && rawMax < targetMax && metadata.status !== 'complete')
   );
 
-  if (isUpdating && (rawMax === null || rawMax < 144)) {
+  if (isUpdating && (rawMax === null || rawMax < targetMax)) {
     const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
     return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
