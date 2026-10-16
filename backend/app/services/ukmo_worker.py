@@ -420,6 +420,7 @@ class UKMOWorker:
             return {
                 "lat": round(lat, 4),
                 "lon": round(lon, 4),
+                "value_mm": round(max_val, 1),
                 "val_mm": round(max_val, 1),
                 "step": step,
                 "type": layer_type

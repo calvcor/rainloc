@@ -3653,7 +3653,7 @@ export class LayerManager {
       return;
     }
 
-    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_global', '').replace('_gdps', '');
     const cacheKey = `${cleanModel}_${type}_${step}`;
     const maxUrl = this._getModelMaxUrl(cleanModel, step, type);
     if (!this._modelMaxStore) this._modelMaxStore = new Map();
@@ -3684,11 +3684,12 @@ export class LayerManager {
       const resp = await fetch(maxUrl, { signal });
       if (resp.ok) {
         const data = await resp.json();
-        if (data.lat !== null && data.lon !== null && data.value_mm >= 0.1) {
+        const maxVal = data.value_mm !== undefined ? Number(data.value_mm) : (data.val_mm !== undefined ? Number(data.val_mm) : null);
+        if (data.lat !== null && data.lon !== null && maxVal !== null && maxVal >= 0.1) {
           const pointData = {
             lat: Number(data.lat),
             lon: Number(data.lon),
-            value_mm: Number(data.value_mm),
+            value_mm: maxVal,
             modelKey: cleanModel,
             modelName: data.model || cleanModel.toUpperCase(),
             step: step,

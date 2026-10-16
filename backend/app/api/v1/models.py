@@ -800,12 +800,15 @@ async def get_ukmo_max_at(
 ) -> Dict[str, Any]:
     res = ukmo_worker.get_max_point(step=step, layer_type=type)
     if not res:
-        return {"model": "UK Met Office (10 km)", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+        return {"model": "UK Met Office (10 km)", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0, "val_mm": 0.0}
+    val = res.get("value_mm", res.get("val_mm", 0.0))
     return {
         "model": "UK Met Office (10 km)",
         "step": step,
         "type": type,
         **res,
+        "value_mm": val,
+        "val_mm": val,
         "unit": "mm"
     }
 
