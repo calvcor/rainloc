@@ -25,11 +25,12 @@ from app.services.arome_worker import arome_worker
 from app.services.harmonie_worker import harmonie_worker
 from app.services.icon_worker import icon_worker
 from app.services.gem_worker import gem_worker
+from app.services.ukmo_worker import ukmo_worker
 
 logger = logging.getLogger("rainloc-backend.scheduler")
 
 class BackgroundScheduler:
-    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME, HARMONIE, ICON, GEM)."""
+    """Controlador de las tareas asíncronas en background para refrescar avisos, radar, rayos, SAIH y modelos NWP (ECMWF, GFS, AROME, HARMONIE, ICON, GEM, UKMO)."""
 
     def __init__(self):
         self._aemet_task: Optional[asyncio.Task] = None
@@ -41,6 +42,7 @@ class BackgroundScheduler:
         self._harmonie_task: Optional[asyncio.Task] = None
         self._icon_task: Optional[asyncio.Task] = None
         self._gem_task: Optional[asyncio.Task] = None
+        self._ukmo_task: Optional[asyncio.Task] = None
         self._running: bool = False
         self.aemet_interval: int = settings.AEMET_REFRESH_INTERVAL_SECONDS
         self.radar_interval: int = settings.RADAR_POLL_INTERVAL_SECONDS
@@ -57,6 +59,8 @@ class BackgroundScheduler:
         self.icon_updating_interval: int = getattr(settings, "ICON_UPDATING_INTERVAL_SECONDS", 300)
         self.gem_interval: int = getattr(settings, "GEM_POLL_INTERVAL_SECONDS", 1800)
         self.gem_updating_interval: int = getattr(settings, "GEM_UPDATING_INTERVAL_SECONDS", 300)
+        self.ukmo_interval: int = getattr(settings, "UKMO_POLL_INTERVAL_SECONDS", 1800)
+        self.ukmo_updating_interval: int = getattr(settings, "UKMO_UPDATING_INTERVAL_SECONDS", 300)
 
     async def _aemet_loop(self):
         try:
@@ -223,6 +227,28 @@ class BackgroundScheduler:
             except Exception as e:
                 logger.error(f"Error en bucle de MSC GEM-GDPS: {e}")
 
+    async def _ukmo_loop(self):
+        # Primera comprobación y sincronización de UKMO al iniciar
+        try:
+            await ukmo_worker.sync_ukmo_forecast()
+        except Exception as e:
+            logger.error(f"Error inicial sincronizando UK Met Office: {e}")
+
+        while self._running:
+            try:
+                meta = ukmo_worker.get_metadata()
+                is_complete = bool(meta and meta.get("is_complete"))
+                sleep_interval = self.ukmo_interval if is_complete else self.ukmo_updating_interval
+
+                logger.debug(f"Scheduler UKMO: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
+                await asyncio.sleep(sleep_interval)
+                if self._running:
+                    await ukmo_worker.sync_ukmo_forecast()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error en bucle de UK Met Office: {e}")
+
     async def _sync_all_basins(self):
         """Sincroniza todas las cuencas y redes pluviométricas en paralelo en segundo plano."""
         loop = asyncio.get_running_loop()
@@ -282,6 +308,7 @@ class BackgroundScheduler:
             self._harmonie_task = asyncio.create_task(self._harmonie_loop())
             self._icon_task = asyncio.create_task(self._icon_loop())
             self._gem_task = asyncio.create_task(self._gem_loop())
+            self._ukmo_task = asyncio.create_task(self._ukmo_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
@@ -309,6 +336,8 @@ class BackgroundScheduler:
                 self._icon_task.cancel()
             if self._gem_task and not self._gem_task.done():
                 self._gem_task.cancel()
+            if self._ukmo_task and not self._ukmo_task.done():
+                self._ukmo_task.cancel()
             lightning_service.stop()
             logger.info("BackgroundScheduler detenido.")
 

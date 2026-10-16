@@ -41,6 +41,7 @@ export class StorageManager {
         'arome_precip': false,
         'harmonie_aemet': false,
         'icon_eu': false,
+        'ukmo_global': false,
         'gem_gdps': false,
         'ecmwf_ifs': false,
         'gfs_0p25': false
@@ -59,6 +60,7 @@ export class StorageManager {
         'arome_precip': 0.75,
         'harmonie_aemet': 0.70,
         'icon_eu': 0.70,
+        'ukmo_global': 0.70,
         'gem_gdps': 0.70,
         'ecmwf_ifs': 0.65,
         'gfs_0p25': 0.65

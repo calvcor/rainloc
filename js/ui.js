@@ -1070,6 +1070,12 @@ export class UIManager {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         </button>
       `;
+    } else if (layer.id === 'ukmo_global') {
+      modelSyncBtnHtml = `
+        <button type="button" class="btn-model-sync-pill" id="ukmo-sync-btn" title="Comprobar si hay nueva corrida o pasos ahora">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      `;
     }
 
     // Sub-controles específicos para Avisos AEMET (Selector de periodo: Activos ahora arriba, Hoy / Mañana / Pasado abajo)
@@ -1164,6 +1170,8 @@ export class UIManager {
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 02:00 (+12h)</strong>`;
       case 'gem_gdps':
         return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 00:00 (+3h)</strong>`;
+      case 'ukmo_global':
+        return `Pasada: <strong>${nowFormatted.split(' · ')[0]} · 00:00 (+1h)</strong>`;
       default:
         return `Fecha: <strong>${nowFormatted}</strong>`;
     }
@@ -1491,6 +1499,7 @@ export class UIManager {
     this._setupModelSyncButton('harmonie-sync-btn', 'harmonie');
     this._setupModelSyncButton('icon-sync-btn', 'icon');
     this._setupModelSyncButton('gem-sync-btn', 'gem');
+    this._setupModelSyncButton('ukmo-sync-btn', 'ukmo');
     this._setupPredictionBannerSync();
   }
 
@@ -1559,6 +1568,9 @@ export class UIManager {
           if (this.layerManager.isLayerActive('gem_gdps')) {
             syncTasks.push(this.layerManager.triggerModelSync('gem'));
           }
+          if (this.layerManager.isLayerActive('ukmo_global')) {
+            syncTasks.push(this.layerManager.triggerModelSync('ukmo'));
+          }
 
           if (syncTasks.length === 0) {
             // Si ninguno está activo visible, sincroniza todos
@@ -1568,7 +1580,8 @@ export class UIManager {
               this.layerManager.triggerModelSync('gfs'),
               this.layerManager.triggerModelSync('arome'),
               this.layerManager.triggerModelSync('icon'),
-              this.layerManager.triggerModelSync('gem')
+              this.layerManager.triggerModelSync('gem'),
+              this.layerManager.triggerModelSync('ukmo')
             ]);
           } else {
             await Promise.all(syncTasks);
@@ -1594,6 +1607,7 @@ export class UIManager {
     if (this.layerManager.isLayerOnMap('harmonie_aemet') || this.layerManager.isLayerOnMap('harmonie')) return 'harmonie_aemet';
     if (this.layerManager.isLayerOnMap('arome_precip')) return 'arome_precip';
     if (this.layerManager.isLayerOnMap('icon_eu') || this.layerManager.isLayerOnMap('icon')) return 'icon_eu';
+    if (this.layerManager.isLayerOnMap('ukmo_global') || this.layerManager.isLayerOnMap('ukmo')) return 'ukmo_global';
     if (this.layerManager.isLayerOnMap('gem_gdps') || this.layerManager.isLayerOnMap('gem')) return 'gem_gdps';
     if (this.layerManager.isLayerOnMap('ecmwf_ifs')) return 'ecmwf_ifs';
     if (this.layerManager.isLayerOnMap('gfs_0p25')) return 'gfs_0p25';
@@ -1617,6 +1631,8 @@ export class UIManager {
           this.layerManager.toggleAromePlayback();
         } else if (activeType === 'icon_eu') {
           this.layerManager.toggleIconPlayback();
+        } else if (activeType === 'ukmo_global') {
+          this.layerManager.toggleUkmoPlayback();
         } else if (activeType === 'gem_gdps') {
           this.layerManager.toggleGemPlayback();
         } else if (activeType === 'ecmwf_ifs') {
@@ -1681,6 +1697,7 @@ export class UIManager {
         if (activeType === 'harmonie_aemet') this.layerManager.setHarmonieType('total');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('total');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('total');
+        else if (activeType === 'ukmo_global') this.layerManager.setUkmoType('total');
         else if (activeType === 'gem_gdps') this.layerManager.setGemType('total');
         else if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('total');
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('total');
@@ -1691,6 +1708,7 @@ export class UIManager {
         if (activeType === 'harmonie_aemet') this.layerManager.setHarmonieType('interval');
         else if (activeType === 'arome_precip') this.layerManager.setAromeType('interval');
         else if (activeType === 'icon_eu') this.layerManager.setIconType('interval');
+        else if (activeType === 'ukmo_global') this.layerManager.setUkmoType('interval');
         else if (activeType === 'gem_gdps') this.layerManager.setGemType('interval');
         else if (activeType === 'ecmwf_ifs') this.layerManager.setEcmwfType('interval');
         else if (activeType === 'gfs_0p25') this.layerManager.setGfsType('interval');
@@ -1705,6 +1723,7 @@ export class UIManager {
         if (activeType === 'harmonie_aemet') this.layerManager.flyToModelMax('harmonie');
         else if (activeType === 'arome_precip') this.layerManager.flyToModelMax('arome');
         else if (activeType === 'icon_eu') this.layerManager.flyToModelMax('icon');
+        else if (activeType === 'ukmo_global') this.layerManager.flyToModelMax('ukmo');
         else if (activeType === 'gem_gdps') this.layerManager.flyToModelMax('gem');
         else if (activeType === 'ecmwf_ifs') this.layerManager.flyToModelMax('ecmwf');
         else if (activeType === 'gfs_0p25') this.layerManager.flyToModelMax('gfs');
@@ -1749,6 +1768,11 @@ export class UIManager {
             curType = this.layerManager.currentIconType || 'total';
             modelLabel = 'ICON-EU (6.5km)';
             modelFlag = '🇩🇪';
+          } else if (activeType === 'ukmo_global') {
+            meta = this.layerManager.ukmoMetadata;
+            curType = this.layerManager.currentUkmoType || 'total';
+            modelLabel = 'UKMO (10km)';
+            modelFlag = '🇬🇧';
           } else if (activeType === 'gem_gdps') {
             meta = this.layerManager.gemMetadata;
             curType = this.layerManager.currentGemType || 'total';
@@ -1815,6 +1839,9 @@ export class UIManager {
         } else if (activeType === 'icon_eu') {
           meta = this.layerManager.iconMetadata;
           curType = this.layerManager.currentIconType || 'total';
+        } else if (activeType === 'ukmo_global') {
+          meta = this.layerManager.ukmoMetadata;
+          curType = this.layerManager.currentUkmoType || 'total';
         } else if (activeType === 'gem_gdps') {
           meta = this.layerManager.gemMetadata;
           curType = this.layerManager.currentGemType || 'total';
@@ -1969,6 +1996,10 @@ export class UIManager {
       meta = this.layerManager.iconMetadata;
       curStep = this.layerManager.currentIconStep;
       setStepFn = (s) => this.layerManager.setIconStep(s);
+    } else if (modelId === 'ukmo_global' || modelId === 'ukmo') {
+      meta = this.layerManager.ukmoMetadata;
+      curStep = this.layerManager.currentUkmoStep;
+      setStepFn = (s) => this.layerManager.setUkmoStep(s);
     } else if (modelId === 'gem_gdps' || modelId === 'gem') {
       meta = this.layerManager.gemMetadata;
       curStep = this.layerManager.currentGemStep;
@@ -2006,6 +2037,9 @@ export class UIManager {
     } else if (modelId === 'icon_eu' || modelId === 'icon') {
       meta = this.layerManager.iconMetadata;
       setStepFn = (s) => this.layerManager.setIconStep(s);
+    } else if (modelId === 'ukmo_global' || modelId === 'ukmo') {
+      meta = this.layerManager.ukmoMetadata;
+      setStepFn = (s) => this.layerManager.setUkmoStep(s);
     } else if (modelId === 'gem_gdps' || modelId === 'gem') {
       meta = this.layerManager.gemMetadata;
       setStepFn = (s) => this.layerManager.setGemStep(s);
@@ -2080,6 +2114,12 @@ export class UIManager {
       currentType = this.layerManager.currentIconType || 'total';
       modelName = `🇩🇪 ICON-EU (+${currentStep}h)`;
       modeIntervalText = currentStep > 78 ? 'Intervalo 3h' : 'Intervalo 1h';
+    } else if (activeType === 'ukmo_global') {
+      metadata = this.layerManager.ukmoMetadata;
+      currentStep = this.layerManager.currentUkmoStep;
+      currentType = this.layerManager.currentUkmoType || 'total';
+      modelName = `🇬🇧 UKMO Global (+${currentStep}h)`;
+      modeIntervalText = currentStep > 54 ? 'Intervalo 3h' : 'Intervalo 1h';
     } else if (activeType === 'gem_gdps') {
       metadata = this.layerManager.gemMetadata;
       currentStep = this.layerManager.currentGemStep;
@@ -2248,7 +2288,7 @@ export class UIManager {
 
       this._updateTimelinePlayButton(this.layerManager.isRadarPlaying);
 
-    } else if (activeType === 'harmonie_aemet' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps' || activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25') {
+    } else if (activeType === 'harmonie_aemet' || activeType === 'arome_precip' || activeType === 'icon_eu' || activeType === 'gem_gdps' || activeType === 'ecmwf_ifs' || activeType === 'gfs_0p25' || activeType === 'ukmo_global') {
       let meta = null;
       let curStep = null;
       let curType = null;
@@ -2281,6 +2321,14 @@ export class UIManager {
         modelLabel = 'ICON-EU (6.5km)';
         modelFlag = '🇩🇪';
         labelsHtml = '<span>+1h</span><span>+24h (1d)</span><span>+48h (2d)</span><span>+72h (3d)</span><span>+120h (5d)</span>';
+      } else if (activeType === 'ukmo_global') {
+        meta = this.layerManager.ukmoMetadata || {};
+        curStep = this.layerManager.currentUkmoStep || 1;
+        curType = this.layerManager.currentUkmoType || 'total';
+        isPlaying = this.layerManager.isUkmoPlaying;
+        modelLabel = 'UKMO (10km)';
+        modelFlag = '🇬🇧';
+        labelsHtml = '<span>+1h</span><span>+24h (1d)</span><span>+48h (2d)</span><span>+72h (3d)</span><span>+144h (6d)</span>';
       } else if (activeType === 'gem_gdps') {
         meta = this.layerManager.gemMetadata || {};
         curStep = this.layerManager.currentGemStep || 3;
@@ -2352,6 +2400,10 @@ export class UIManager {
           minStep = 1;
           maxStep = 120;
           stepInc = 1;
+        } else if (activeType === 'ukmo_global') {
+          minStep = 1;
+          maxStep = 144;
+          stepInc = 1;
         } else if (activeType === 'gem_gdps') {
           minStep = 3;
           maxStep = 240;
@@ -2375,7 +2427,7 @@ export class UIManager {
         // Estilizar track del slider cuando la salida es parcial o se está actualizando (hay corte con la salida anterior)
         if (hasFallback && nativeMax && nativeMax < maxStep) {
           const splitPct = Math.max(0, Math.min(100, ((nativeMax - minStep) / Math.max(1, maxStep - minStep)) * 100));
-          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'harmonie_aemet') ? '#f59e0b' : ((activeType === 'icon_eu') ? '#0284c7' : ((activeType === 'gem_gdps') ? '#e11d48' : '#8b5cf6'))));
+          const modelColor = (activeType === 'ecmwf_ifs') ? '#059669' : ((activeType === 'gfs_0p25') ? '#2563eb' : ((activeType === 'harmonie_aemet') ? '#f59e0b' : ((activeType === 'icon_eu') ? '#0284c7' : ((activeType === 'ukmo_global') ? '#0ea5e9' : ((activeType === 'gem_gdps') ? '#e11d48' : '#8b5cf6')))));
           slider.style.background = `linear-gradient(to right, ${modelColor} 0%, ${modelColor} ${splitPct}%, rgba(245, 158, 11, 0.45) ${splitPct}%, rgba(245, 158, 11, 0.45) 100%)`;
           slider.title = `Salida ${mainRun} disponible hasta +${nativeMax}h (${splitPct.toFixed(0)}%). Pasos posteriores (+${nativeMax + 1}h a +${maxStep}h): Salida anterior`;
         } else {
@@ -2673,6 +2725,65 @@ export class UIManager {
 
     this.updateGemPlayState(isPlaying);
     this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el reproductor interactivo de UK Met Office (UKMO) en la UI
+   */
+  updateUkmoPlayerUI(metadata, currentStep, currentType, isPlaying) {
+    const slider = document.getElementById('ukmo-step-slider');
+    const maxPill = document.getElementById('ukmo-max-pill');
+    const btnTotal = document.getElementById('ukmo-btn-total');
+    const btnInterval = document.getElementById('ukmo-btn-interval');
+
+    if (btnTotal && btnInterval) {
+      if (currentType === 'interval') {
+        btnInterval.classList.add('active');
+        btnTotal.classList.remove('active');
+      } else {
+        btnTotal.classList.add('active');
+        btnInterval.classList.remove('active');
+      }
+    }
+
+    const availSteps = metadata.available_steps || [];
+    if (slider && availSteps.length > 0) {
+      slider.min = availSteps[0];
+      slider.max = availSteps[availSteps.length - 1];
+      slider.value = currentStep;
+    }
+
+    const stepInfo = (metadata.steps || []).find(s => s.step === currentStep);
+
+    if (maxPill && stepInfo) {
+      const maxVal = currentType === 'interval' ? stepInfo.max_interval_mm : stepInfo.max_total_mm;
+      maxPill.innerHTML = `🎯 Máx: <strong>${maxVal !== undefined ? maxVal : '--'} mm</strong>`;
+      maxPill.title = 'Ir al punto de precipitación máxima en el mapa';
+    }
+
+    this.updateUkmoPlayState(isPlaying);
+    this.updateUnifiedTimelinePlayer();
+  }
+
+  /**
+   * Actualiza el estado visual del botón Play/Pausa de UKMO
+   */
+  updateUkmoPlayState(isPlaying) {
+    const playBtn = document.getElementById('ukmo-play-btn');
+    const playText = document.getElementById('ukmo-play-text');
+    const playIcon = document.getElementById('ukmo-play-icon');
+
+    if (playBtn && playText && playIcon) {
+      if (isPlaying) {
+        playBtn.classList.add('playing');
+        playText.textContent = 'Pausa';
+        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        playBtn.classList.remove('playing');
+        playText.textContent = 'Animar';
+        playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
   }
 
   /**

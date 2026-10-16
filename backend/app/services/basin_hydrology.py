@@ -20,6 +20,7 @@ from app.services.arome_worker import arome_worker
 from app.services.harmonie_worker import harmonie_worker
 from app.services.icon_worker import icon_worker
 from app.services.gem_worker import gem_worker
+from app.services.ukmo_worker import ukmo_worker
 
 logger = logging.getLogger("rainloc-backend.basin-hydrology")
 
@@ -354,6 +355,9 @@ class BasinHydrologyService:
         elif "gem" in model_clean or "cmc" in model_clean:
             worker = gem_worker
             model_name = "MSC GEM-GDPS (15 km)"
+        elif "ukmo" in model_clean or "metoffice" in model_clean or "um" in model_clean:
+            worker = ukmo_worker
+            model_name = "UK Met Office (10 km)"
         elif "gfs" in model_clean:
             worker = gfs_worker
             model_name = "NOAA GFS (25 km)"

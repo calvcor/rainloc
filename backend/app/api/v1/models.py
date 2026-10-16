@@ -16,6 +16,7 @@ from app.services.arome_worker import arome_worker
 from app.services.harmonie_worker import harmonie_worker
 from app.services.icon_worker import icon_worker
 from app.services.gem_worker import gem_worker
+from app.services.ukmo_worker import ukmo_worker
 from app.services.basin_hydrology import basin_hydrology_service
 
 logger = logging.getLogger("rainloc-backend.models-api")
@@ -28,10 +29,10 @@ async def stream_all_models():
     """
     Canal Server-Sent Events (SSE) unificado para transmitir en tiempo real
     el estado y las actualizaciones de todos los modelos de predicción numérica
-    (ECMWF IFS, NOAA GFS, AROME, HARMONIE-AROME, ICON-EU, GEM-GDPS)
+    (ECMWF IFS, NOAA GFS, AROME, HARMONIE-AROME, ICON-EU, GEM-GDPS, UKMO)
     a través de una única conexión HTTP persistente.
     """
-    queue: asyncio.Queue = asyncio.Queue(maxsize=120)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=140)
 
     workers = [
         ("ecmwf", ecmwf_worker),
@@ -40,6 +41,7 @@ async def stream_all_models():
         ("harmonie", harmonie_worker),
         ("icon", icon_worker),
         ("gem", gem_worker),
+        ("ukmo", ukmo_worker),
     ]
 
     async def forward_worker(name, worker):
@@ -697,6 +699,131 @@ async def sync_gem_forecast(
         "status": "synchronization_started",
         "max_steps": max_steps,
         "message": "La descarga y procesado de MSC GEM-GDPS ha comenzado en segundo plano."
+    }
+
+
+# =========================================================================
+# UK MET OFFICE UNIFIED MODEL (10 km / 0.09°) Endpoints
+# =========================================================================
+
+@router.get("/ukmo/stream", summary="Stream de actualizaciones del modelo UK Met Office en tiempo real (SSE)")
+async def stream_ukmo():
+    """
+    Canal Server-Sent Events (SSE) para notificar inmediatamente a los clientes
+    en cuanto el servidor descarga y procesa nuevos pasos o un ciclo completo de UK Met Office.
+    """
+    async def event_generator():
+        async for event in ukmo_worker.subscribe_stream():
+            if event.get("event") == "ping":
+                yield ": ping\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/ukmo/metadata", summary="Metadatos y pasos disponibles del ciclo UK Met Office")
+async def get_ukmo_metadata() -> Dict[str, Any]:
+    """
+    Devuelve los metadatos del ciclo operativo actual de UK Met Office,
+    los pasos disponibles (ej: +1h, +2h, ..., +144h), fechas ISO y URLs de los rásteres.
+    """
+    meta = ukmo_worker.get_metadata()
+    return meta
+
+
+@router.get("/ukmo/image", summary="Ráster PNG transparente del modelo UK Met Office")
+async def get_ukmo_image(
+    step: int = Query(..., description="Paso de pronóstico en horas (1, 2, ..., 144)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval' (intervalo)")
+):
+    """
+    Sirve la imagen PNG georreferenciada en proyección Web Mercator
+    lista para ser consumida directamente por Leaflet (L.imageOverlay).
+    """
+    img_path = ukmo_worker.get_image_path(step=step, layer_type=type)
+    if not img_path or not img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Imagen para el paso +{step}h ({type}) no encontrada o aún no generada."
+        )
+
+    cur_cycle = ukmo_worker.current_manifest.get("cycle_str") if ukmo_worker.current_manifest else ""
+    is_current = bool(cur_cycle and cur_cycle in str(img_path))
+    cache_control = "public, max-age=86400, s-maxage=86400" if is_current else "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+
+    return FileResponse(
+        img_path,
+        media_type="image/png",
+        headers={
+            "Cache-Control": cache_control,
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
+
+@router.get("/ukmo/value-at", summary="Consulta instantánea de precipitación UK Met Office en coordenadas lat/lon")
+async def get_ukmo_value_at(
+    lat: float = Query(..., description="Latitud WGS84"),
+    lon: float = Query(..., description="Longitud WGS84"),
+    step: int = Query(..., description="Paso de pronóstico en horas (1, 2, ..., 144)"),
+    type: str = Query("total", description="Tipo de mapa: 'total' (acumulado) o 'interval'")
+) -> Dict[str, Any]:
+    """
+    Consulta en O(1) (<1ms) el valor en milímetros (mm) de la predicción UK Met Office
+    para las coordenadas indicadas.
+    """
+    val = ukmo_worker.get_value_at(lat=lat, lon=lon, step=step, layer_type=type)
+    return {
+        "model": "UK Met Office (10 km)",
+        "lat": lat,
+        "lon": lon,
+        "step": step,
+        "type": type,
+        "value_mm": val,
+        "unit": "mm"
+    }
+
+
+@router.get("/ukmo/max-at", summary="Obtener punto y valor de máxima precipitación de UK Met Office")
+async def get_ukmo_max_at(
+    step: int = Query(..., description="Paso de pronóstico en horas"),
+    type: str = Query("total", description="Tipo de mapa: 'total' o 'interval'")
+) -> Dict[str, Any]:
+    res = ukmo_worker.get_max_point(step=step, layer_type=type)
+    if not res:
+        return {"model": "UK Met Office (10 km)", "step": step, "type": type, "lat": None, "lon": None, "value_mm": 0.0}
+    return {
+        "model": "UK Met Office (10 km)",
+        "step": step,
+        "type": type,
+        **res,
+        "unit": "mm"
+    }
+
+
+@router.post("/ukmo/sync", summary="Forzar sincronización de UK Met Office en background")
+async def sync_ukmo_forecast(
+    background_tasks: BackgroundTasks,
+    max_steps: int = Query(144, description="Número máximo de horas a sincronizar (hasta +144h / 6 días)")
+) -> Dict[str, Any]:
+    """
+    Dispara la sincronización asíncrona de los pasos del modelo UK Met Office.
+    """
+    logger.info(f"API: Petición manual para comprobar/sincronizar UK Met Office (hasta +{max_steps}h)")
+    background_tasks.add_task(ukmo_worker.sync_ukmo_forecast, max_steps)
+    return {
+        "status": "synchronization_started",
+        "max_steps": max_steps,
+        "message": "La descarga y procesado de UK Met Office (10 km) ha comenzado en segundo plano."
     }
 
 

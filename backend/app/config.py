@@ -21,6 +21,7 @@ AROME_CACHE_DIR = DATA_DIR / "arome_cache"
 HARMONIE_CACHE_DIR = DATA_DIR / "harmonie_cache"
 ICON_CACHE_DIR = DATA_DIR / "icon_cache"
 GEM_CACHE_DIR = DATA_DIR / "gem_cache"
+UKMO_CACHE_DIR = DATA_DIR / "ukmo_cache"
 
 # Cargar variables de entorno desde .env (en backend/ o en la raíz del proyecto)
 if (BACKEND_DIR / ".env").exists():
@@ -37,6 +38,7 @@ AROME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 HARMONIE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GEM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+UKMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
@@ -148,6 +150,15 @@ try:
         GEM_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
         GEM_MAX_STEPS: int = 240  # Pasos hasta +240h (10 días)
 
+        # UK Met Office Unified Model (Global Deterministic, ~10km / 0.09°)
+        UKMO_CACHE_DIR: Path = UKMO_CACHE_DIR
+        UKMO_POLL_INTERVAL_SECONDS: int = 1800  # 30 minutos (corrida completa)
+        UKMO_UPDATING_INTERVAL_SECONDS: int = 300  # 5 minutos (corrida en progreso)
+        UKMO_MAX_STEPS: int = 144  # Pasos hasta +144h (6 días)
+        UKMO_S3_BUCKET: str = "met-office-atmospheric-model-data"
+        UKMO_S3_REGION: str = "eu-west-2"
+        UKMO_S3_PREFIX: str = "global-deterministic-10km"
+
         class Config:
             env_file = ".env"
             env_file_encoding = "utf-8"
@@ -205,5 +216,12 @@ except ImportError:
         GEM_POLL_INTERVAL_SECONDS: int = 1800
         GEM_UPDATING_INTERVAL_SECONDS: int = 300
         GEM_MAX_STEPS: int = 240
+        UKMO_CACHE_DIR: Path = UKMO_CACHE_DIR
+        UKMO_POLL_INTERVAL_SECONDS: int = 1800
+        UKMO_UPDATING_INTERVAL_SECONDS: int = 300
+        UKMO_MAX_STEPS: int = 144
+        UKMO_S3_BUCKET: str = "met-office-atmospheric-model-data"
+        UKMO_S3_REGION: str = "eu-west-2"
+        UKMO_S3_PREFIX: str = "global-deterministic-10km"
 
 settings = Settings()

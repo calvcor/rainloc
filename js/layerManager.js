@@ -3,7 +3,7 @@
  * Control de activación simultánea, opacidades individuales e integración con Leaflet.
  */
 
-import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatHarmonieTimestamp, formatIconTimestamp, formatGemTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
+import { CONFIG, formatMadridDateTime, formatMadridTime, formatEcmwfTimestamp, formatGfsTimestamp, formatAromeTimestamp, formatHarmonieTimestamp, formatIconTimestamp, formatGemTimestamp, formatUkmoTimestamp, getLightningAgeTiers, getLightningTierForAge } from './config.js';
 import { StorageManager } from './storage.js';
 import { rainInterpolator } from './rainInterpolator.js';
 
@@ -180,6 +180,17 @@ export class LayerManager {
     this.currentGemOverlay = null;
     this._gemStepRequestId = 0;
     this._gemImageCache = new Map();
+
+    // UK Met Office Unified Model State
+    this.currentUkmoStep = 1;
+    this.currentUkmoType = 'total'; // 'total' | 'interval'
+    this.ukmoMetadata = null;
+    this.ukmoPlaybackInterval = null;
+    this.isUkmoPlaying = false;
+    this.ukmoCanvasData = null;
+    this.currentUkmoOverlay = null;
+    this._ukmoStepRequestId = 0;
+    this._ukmoImageCache = new Map();
 
     // Marcador de punto de máxima precipitación de modelos de predicción
     this.modelMaxMarkerGroup = L.layerGroup();
@@ -504,7 +515,7 @@ export class LayerManager {
       leafletLayer.addTo(this.map);
       if (def.id === 'radar') {
         this._startRadarSSE();
-      } else if (def.type === 'prediction' || def.type === 'model' || ['ecmwf_ifs', 'gfs_0p25', 'arome_precip', 'harmonie_aemet', 'icon_eu', 'gem_gdps'].includes(def.id)) {
+      } else if (def.type === 'prediction' || def.type === 'model' || ['ecmwf_ifs', 'gfs_0p25', 'arome_precip', 'harmonie_aemet', 'icon_eu', 'gem_gdps', 'ukmo_global'].includes(def.id)) {
         this._startModelsSSE();
       }
     }
@@ -561,6 +572,9 @@ export class LayerManager {
     }
     else if (def.id === 'icon_eu' || def.id.startsWith('icon')) {
       this._loadIconLayer(layerGroup, opacity);
+    }
+    else if (def.id === 'ukmo_global' || def.id.startsWith('ukmo')) {
+      this._loadUkmoLayer(layerGroup, opacity);
     }
     else if (def.id === 'gem_gdps' || def.id.startsWith('gem')) {
       this._loadGemLayer(layerGroup, opacity);
@@ -788,6 +802,7 @@ export class LayerManager {
     else if (modelKey === 'arome' || modelKey === 'arome_precip') this.pauseAromePlayback();
     else if (modelKey === 'harmonie' || modelKey === 'harmonie_aemet') this.pauseHarmoniePlayback();
     else if (modelKey === 'icon' || modelKey === 'icon_eu') this.pauseIconPlayback();
+    else if (modelKey === 'ukmo' || modelKey === 'ukmo_global') this.pauseUkmoPlayback();
     else if (modelKey === 'gem' || modelKey === 'gem_gdps') this.pauseGemPlayback();
   }
 
@@ -804,6 +819,7 @@ export class LayerManager {
                       (modelKey === 'arome' && this.isAromePlaying) || 
                       (modelKey === 'harmonie' && this.isHarmoniePlaying) || 
                       (modelKey === 'icon' && this.isIconPlaying) || 
+                      (modelKey === 'ukmo' && this.isUkmoPlaying) || 
                       (modelKey === 'gem' && this.isGemPlaying);
 
     const maxRadius = isPlaying ? (modelKey === 'radar' ? 6 : 4) : (modelKey === 'radar' ? 3 : 2);
@@ -929,8 +945,8 @@ export class LayerManager {
         }
       }
     }
-    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'harmonie_aemet' || layerId === 'icon_eu' || layerId === 'gem_gdps' || layerId === 'radar') {
-      const modelKey = (layerId === 'ecmwf_ifs') ? 'ecmwf' : ((layerId === 'gfs_0p25') ? 'gfs' : ((layerId === 'arome_precip') ? 'arome' : ((layerId === 'harmonie_aemet') ? 'harmonie' : ((layerId === 'icon_eu') ? 'icon' : ((layerId === 'gem_gdps') ? 'gem' : 'radar')))));
+    if (layerId === 'ecmwf_ifs' || layerId === 'gfs_0p25' || layerId === 'arome_precip' || layerId === 'harmonie_aemet' || layerId === 'icon_eu' || layerId === 'gem_gdps' || layerId === 'ukmo_global' || layerId === 'radar') {
+      const modelKey = (layerId === 'ecmwf_ifs') ? 'ecmwf' : ((layerId === 'gfs_0p25') ? 'gfs' : ((layerId === 'arome_precip') ? 'arome' : ((layerId === 'harmonie_aemet') ? 'harmonie' : ((layerId === 'icon_eu') ? 'icon' : ((layerId === 'ukmo_global') ? 'ukmo' : ((layerId === 'gem_gdps') ? 'gem' : 'radar'))))));
       this._abortModelFetch(modelKey);
       this._hideMapLoading();
       this._refreshMaxMarkers();
@@ -1162,6 +1178,8 @@ export class LayerManager {
         this.reloadHarmonieLayer();
       } else if (activePredId === 'icon_eu') {
         this.reloadIconLayer();
+      } else if (activePredId === 'ukmo_global') {
+        this.reloadUkmoLayer();
       } else if (activePredId === 'gem_gdps') {
         this.reloadGemLayer();
       }
@@ -1205,6 +1223,7 @@ export class LayerManager {
             if (p.id === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
             if (p.id === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
             if (p.id === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+            if (p.id === 'ukmo_global' && this.isUkmoPlaying) this.pauseUkmoPlayback();
             if (p.id === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
           }
         });
@@ -1228,6 +1247,8 @@ export class LayerManager {
           this.reloadHarmonieLayer();
         } else if (layerId === 'icon_eu') {
           this.reloadIconLayer();
+        } else if (layerId === 'ukmo_global') {
+          this.reloadUkmoLayer();
         } else if (layerId === 'gem_gdps') {
           this.reloadGemLayer();
         }
@@ -1241,6 +1262,7 @@ export class LayerManager {
         if (layerId === 'arome_precip' && this.isAromePlaying) this.pauseAromePlayback();
         if (layerId === 'harmonie_aemet' && this.isHarmoniePlaying) this.pauseHarmoniePlayback();
         if (layerId === 'icon_eu' && this.isIconPlaying) this.pauseIconPlayback();
+        if (layerId === 'ukmo_global' && this.isUkmoPlaying) this.pauseUkmoPlayback();
         if (layerId === 'gem_gdps' && this.isGemPlaying) this.pauseGemPlayback();
         if (this.modelMaxMarkerGroup) this.modelMaxMarkerGroup.clearLayers();
         if (!this.isAnyPredictionActive()) {
@@ -3362,6 +3384,199 @@ export class LayerManager {
   }
 
   /**
+   * Genera una URL estable para la imagen de un paso de UK Met Office (10 km)
+   */
+  _getUkmoImageUrl(step, type) {
+    const meta = this.ukmoMetadata;
+    const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
+    const stepInfo = (meta && meta.steps && meta.steps.find(s => s.step === step));
+    const fbParam = (stepInfo && stepInfo.is_fallback) ? `&fb=${encodeURIComponent(stepInfo.fallback_cycle || '1')}` : '';
+    const vParam = (meta && meta.downloaded_max_step !== undefined) ? `&_v=${meta.downloaded_max_step}` : '';
+    const runParam = runId ? `&run=${encodeURIComponent(runId)}` : '';
+    return `${CONFIG.apiBaseUrl}/models/ukmo/image?step=${step}&type=${type}${runParam}${fbParam}${vParam}`;
+  }
+
+  /**
+   * Precarga pasos adyacentes de UK Met Office en memoria
+   */
+  _preloadUkmoSteps(currentStep, type) {
+    if (!this.ukmoMetadata || !this.ukmoMetadata.available_steps) return;
+    const steps = this.ukmoMetadata.available_steps;
+    this._preloadAdjacentSteps('ukmo', currentStep, type, steps, (step, t) => this._getUkmoImageUrl(step, t));
+  }
+
+  /**
+   * Carga la capa del modelo UK Met Office con doble búfer y caché inteligente
+   */
+  async _loadUkmoLayer(layerGroup, opacity, forceMetaFetch = false) {
+    const requestId = ++this._ukmoStepRequestId;
+    try {
+      if (!this.ukmoMetadata || forceMetaFetch) {
+        const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ukmo/metadata?_t=${Date.now()}`);
+        if (!metaResp.ok) throw new Error(`HTTP ${metaResp.status}`);
+        const metadata = await metaResp.json();
+        this.ukmoMetadata = metadata;
+        if (this._ukmoPreloadSet) this._ukmoPreloadSet.clear();
+        if (forceMetaFetch) this._clearModelImageCache('ukmo');
+      }
+
+      const metadata = this.ukmoMetadata;
+      const availSteps = metadata.available_steps || [];
+      if (availSteps.length === 0) {
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('ukmo_global', `Estado: <strong>Sincronizando modelo...</strong>`);
+        }
+        return;
+      }
+
+      if (!availSteps.includes(this.currentUkmoStep)) {
+        this.currentUkmoStep = availSteps[0];
+      }
+
+      const step = this.currentUkmoStep;
+      const type = this.currentUkmoType || 'total';
+      const stepInfo = (metadata.steps || []).find(s => s.step === step);
+      const timeLabel = stepInfo ? (stepInfo.valid_time_local || `+${step}h`) : `+${step}h`;
+
+      // Actualizar timestamp y controles en la UI
+      if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+        this.uiManager.updateLayerTimestamp('ukmo_global', formatUkmoTimestamp(metadata));
+      }
+      if (this.uiManager && this.uiManager.updateUkmoPlayerUI) {
+        this.uiManager.updateUkmoPlayerUI(metadata, step, type, this.isUkmoPlaying);
+      }
+
+      // Actualizar el indicador de máxima precipitación en el mapa
+      this._updateModelMaxMarker('ukmo', step, type);
+
+      const bbox = metadata.bbox || { lat_min: 35.0, lat_max: 44.5, lon_min: -10.0, lon_max: 5.0 };
+      const bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+      this.currentUkmoBounds = bounds;
+
+      const imgUrl = this._getUkmoImageUrl(step, type);
+      const cacheKey = `ukmo_${type}_${step}`;
+      const signal = this._getModelAbortSignal('ukmo');
+
+      const isCached = this.isStepCached('ukmo', step, type, imgUrl);
+      if (!isCached && !this.isUkmoPlaying) {
+        this._showMapLoading('UKMO Global', `+${step}h`, timeLabel);
+      }
+
+      const { img: offscreenImg, objectUrl } = await this._fetchModelImage(imgUrl, signal, cacheKey);
+      if (requestId !== this._ukmoStepRequestId) {
+        return;
+      }
+
+      const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, step, timeLabel, { model: 'ukmo', type: type });
+      if (probeData) {
+        this.ukmoCanvasData = probeData;
+      }
+
+      if (this.currentUkmoOverlay && layerGroup.hasLayer(this.currentUkmoOverlay)) {
+        this.currentUkmoOverlay.setUrl(objectUrl);
+        this.currentUkmoOverlay.setBounds(bounds);
+        this.currentUkmoOverlay.setOpacity(opacity);
+      } else {
+        const newOverlay = L.imageOverlay(objectUrl, bounds, {
+          pane: 'modelsPane',
+          opacity: opacity,
+          interactive: false,
+          crossOrigin: 'anonymous',
+          className: 'ukmo-raster-overlay'
+        });
+        layerGroup.addLayer(newOverlay);
+        this.currentUkmoOverlay = newOverlay;
+      }
+      this._currentUkmoObjectUrl = objectUrl;
+
+      this._preloadUkmoSteps(step, type);
+
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.warn('Error al cargar UKMO Global desde backend API:', err);
+    } finally {
+      if (this._ukmoStepRequestId === requestId) {
+        this._hideMapLoading();
+      }
+    }
+  }
+
+  /**
+   * Cambia el paso temporal o tipo del modelo UK Met Office
+   */
+  setUkmoStep(step, type = null) {
+    const parsedStep = parseInt(step, 10);
+    const targetType = type || this.currentUkmoType || 'total';
+    if (this.currentUkmoStep === parsedStep && this.currentUkmoType === targetType && this.currentUkmoOverlay) {
+      return;
+    }
+    this.currentUkmoStep = parsedStep;
+    this.currentUkmoType = targetType;
+    this.reloadUkmoLayer();
+  }
+
+  /**
+   * Cambia el tipo de visualización (total vs interval) de UK Met Office
+   */
+  setUkmoType(type) {
+    if (this.currentUkmoType === type && this.currentUkmoOverlay) return;
+    this.currentUkmoType = type;
+    this.reloadUkmoLayer();
+  }
+
+  /**
+   * Recarga la capa UK Met Office con los parámetros activos
+   */
+  reloadUkmoLayer(forceMetaFetch = false) {
+    const ukmoGroup = this.layers['ukmo_global'];
+    if (!ukmoGroup) return;
+    const opacity = (this.layerStates['ukmo_global'] && this.layerStates['ukmo_global'].opacity) || 0.70;
+    this._loadUkmoLayer(ukmoGroup, opacity, forceMetaFetch);
+  }
+
+  /**
+   * Inicia o detiene la reproducción automática temporal de UK Met Office
+   */
+  toggleUkmoPlayback() {
+    if (this.isUkmoPlaying) {
+      this.pauseUkmoPlayback();
+    } else {
+      this.startUkmoPlayback();
+    }
+  }
+
+  startUkmoPlayback() {
+    if (this.isUkmoPlaying) return;
+    this.isUkmoPlaying = true;
+    if (this.uiManager && this.uiManager.updateUkmoPlayState) {
+      this.uiManager.updateUkmoPlayState(true);
+    }
+
+    this.ukmoPlaybackInterval = setInterval(() => {
+      if (!this.ukmoMetadata || !this.ukmoMetadata.available_steps || this.ukmoMetadata.available_steps.length === 0) {
+        this.pauseUkmoPlayback();
+        return;
+      }
+
+      const steps = this.ukmoMetadata.available_steps;
+      const curIdx = steps.indexOf(this.currentUkmoStep);
+      let nextIdx = (curIdx + 1) % steps.length;
+      this.setUkmoStep(steps[nextIdx]);
+    }, 1000);
+  }
+
+  pauseUkmoPlayback() {
+    this.isUkmoPlaying = false;
+    if (this.ukmoPlaybackInterval) {
+      clearInterval(this.ukmoPlaybackInterval);
+      this.ukmoPlaybackInterval = null;
+    }
+    if (this.uiManager && this.uiManager.updateUkmoPlayState) {
+      this.uiManager.updateUkmoPlayState(false);
+    }
+  }
+
+  /**
    * Dispara una sincronización manual inmediata con el backend para buscar nuevas salidas o pasos
    */
   async triggerModelSync(modelKey) {
@@ -3376,6 +3591,8 @@ export class LayerManager {
       'harmonie': 'harmonie',
       'icon_eu': 'icon',
       'icon': 'icon',
+      'ukmo_global': 'ukmo',
+      'ukmo': 'ukmo',
       'gem_gdps': 'gem',
       'gem': 'gem'
     };
@@ -3389,6 +3606,7 @@ export class LayerManager {
       else if (apiName === 'arome') this.reloadAromeLayer(true);
       else if (apiName === 'harmonie') this.reloadHarmonieLayer(true);
       else if (apiName === 'icon') this.reloadIconLayer(true);
+      else if (apiName === 'ukmo') this.reloadUkmoLayer(true);
       else if (apiName === 'gem') this.reloadGemLayer(true);
     } catch (e) {
       console.warn(`Error al forzar sincronización de ${apiName}:`, e);
@@ -3399,13 +3617,14 @@ export class LayerManager {
    * Genera la URL versionada para consultar el punto de máxima precipitación de un modelo
    */
   _getModelMaxUrl(modelKey, step, type) {
-    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_gdps', '');
+    const cleanModel = (modelKey || 'ecmwf').toLowerCase().replace('_ifs', '').replace('_0p25', '').replace('_precip', '').replace('_aemet', '').replace('_eu', '').replace('_global', '').replace('_gdps', '');
     let meta = null;
     if (cleanModel === 'ecmwf') meta = this.ecmwfMetadata;
     else if (cleanModel === 'gfs') meta = this.gfsMetadata;
     else if (cleanModel === 'arome') meta = this.aromeMetadata;
     else if (cleanModel === 'harmonie') meta = this.harmonieMetadata;
     else if (cleanModel === 'icon') meta = this.iconMetadata;
+    else if (cleanModel === 'ukmo') meta = this.ukmoMetadata;
     else if (cleanModel === 'gem') meta = this.gemMetadata;
 
     const runId = (meta && (meta.run_id || meta.run_timestamp || meta.cycle_str)) || '';
@@ -3425,7 +3644,7 @@ export class LayerManager {
       this.modelMaxMarkerGroup = L.layerGroup().addTo(this.map);
     }
 
-    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip'))));
+    const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'ukmo') ? 'ukmo_global' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip')))));
     if (!this.isLayerOnMap(layerId)) {
       if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
         delete this.currentMaxPoints[modelKey];
@@ -3499,7 +3718,7 @@ export class LayerManager {
     if (!this.currentMaxPoints) return;
 
     for (const [modelKey, pt] of Object.entries(this.currentMaxPoints)) {
-      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip'))));
+      const layerId = (modelKey === 'ecmwf') ? 'ecmwf_ifs' : ((modelKey === 'gfs') ? 'gfs_0p25' : ((modelKey === 'icon') ? 'icon_eu' : ((modelKey === 'ukmo') ? 'ukmo_global' : ((modelKey === 'gem') ? 'gem_gdps' : ((modelKey === 'harmonie') ? 'harmonie_aemet' : 'arome_precip')))));
       if (!this.isLayerOnMap(layerId)) continue;
       if (!pt.lat || !pt.lon) continue;
 
@@ -3557,6 +3776,7 @@ export class LayerManager {
       else if (this.isLayerOnMap('arome_precip')) modelKey = 'arome';
       else if (this.isLayerOnMap('harmonie_aemet')) modelKey = 'harmonie';
       else if (this.isLayerOnMap('icon_eu')) modelKey = 'icon';
+      else if (this.isLayerOnMap('ukmo_global')) modelKey = 'ukmo';
       else if (this.isLayerOnMap('gem_gdps')) modelKey = 'gem';
       else return;
     }
@@ -3575,8 +3795,8 @@ export class LayerManager {
     if (this.currentMaxPoints && this.currentMaxPoints[modelKey] && this.currentMaxPoints[modelKey].lat !== null) {
       doFly(this.currentMaxPoints[modelKey]);
     } else {
-      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : ((modelKey === 'gem') ? this.currentGemStep : ((modelKey === 'harmonie') ? this.currentHarmonieStep : this.currentAromeStep))));
-      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : ((modelKey === 'gem') ? this.currentGemType : ((modelKey === 'harmonie') ? this.currentHarmonieType : this.currentAromeType))));
+      const step = (modelKey === 'ecmwf') ? this.currentEcmwfStep : ((modelKey === 'gfs') ? this.currentGfsStep : ((modelKey === 'icon') ? this.currentIconStep : ((modelKey === 'ukmo') ? this.currentUkmoStep : ((modelKey === 'gem') ? this.currentGemStep : ((modelKey === 'harmonie') ? this.currentHarmonieStep : this.currentAromeStep)))));
+      const type = (modelKey === 'ecmwf') ? this.currentEcmwfType : ((modelKey === 'gfs') ? this.currentGfsType : ((modelKey === 'icon') ? this.currentIconType : ((modelKey === 'ukmo') ? this.currentUkmoType : ((modelKey === 'gem') ? this.currentGemType : ((modelKey === 'harmonie') ? this.currentHarmonieType : this.currentAromeType)))));
       this._updateModelMaxMarker(modelKey, step, type).then(() => {
         if (this.currentMaxPoints && this.currentMaxPoints[modelKey]) {
           doFly(this.currentMaxPoints[modelKey]);
@@ -4288,6 +4508,8 @@ export class LayerManager {
             await this._handleHarmonieSSEEvent(data);
           } else if (eventName.startsWith('icon_')) {
             await this._handleIconSSEEvent(data);
+          } else if (eventName.startsWith('ukmo_')) {
+            await this._handleUkmoSSEEvent(data);
           } else if (eventName.startsWith('gem_')) {
             await this._handleGemSSEEvent(data);
           }
@@ -4552,6 +4774,50 @@ export class LayerManager {
           this.reloadIconLayer();
         }
         this._onModelDataUpdated('icon');
+      }
+    }
+  }
+
+  /**
+   * Procesa evento SSE para UK Met Office (10 km)
+   */
+  async _handleUkmoSSEEvent(data) {
+    if (data && (data.event === 'ukmo_update' || data.event === 'ukmo_init')) {
+      const isMounted = this.isLayerOnMap('ukmo_global');
+      if (data.event === 'ukmo_init' && !isMounted && this.ukmoMetadata) {
+        return;
+      }
+
+      console.log('🌐 Notificación SSE UKMO recibida:', data.cycle_str, 'Pasos disponibles:', data.available_steps?.length);
+
+      const metaResp = await fetch(`${CONFIG.apiBaseUrl}/models/ukmo/metadata?_t=${Date.now()}`);
+      if (metaResp.ok) {
+        const metadata = await metaResp.json();
+        this.ukmoMetadata = metadata;
+        if (this._ukmoPreloadSet) this._ukmoPreloadSet.clear();
+
+        const availSteps = metadata.available_steps || [];
+        if (availSteps.length > 0 && !availSteps.includes(this.currentUkmoStep)) {
+          this.currentUkmoStep = availSteps[0];
+        }
+
+        if (this.uiManager && this.uiManager.updateLayerTimestamp) {
+          this.uiManager.updateLayerTimestamp('ukmo_global', formatUkmoTimestamp(metadata));
+        }
+
+        if (this.uiManager && this.uiManager.updateUkmoPlayerUI) {
+          this.uiManager.updateUkmoPlayerUI(
+            metadata,
+            this.currentUkmoStep,
+            this.currentUkmoType || 'total',
+            this.isUkmoPlaying
+          );
+        }
+
+        if (isMounted) {
+          this.reloadUkmoLayer();
+        }
+        this._onModelDataUpdated('ukmo');
       }
     }
   }
@@ -7990,6 +8256,7 @@ export class LayerManager {
     if (clean === 'arome') return this.aromeMetadata;
     if (clean === 'harmonie') return this.harmonieMetadata;
     if (clean === 'icon') return this.iconMetadata;
+    if (clean === 'ukmo') return this.ukmoMetadata;
     if (clean === 'gem') return this.gemMetadata;
     return null;
   }
@@ -8018,6 +8285,7 @@ export class LayerManager {
     if (this.isLayerOnMap('arome_precip')) return 'arome';
     if (this.isLayerOnMap('harmonie_aemet')) return 'harmonie';
     if (this.isLayerOnMap('icon_eu')) return 'icon';
+    if (this.isLayerOnMap('ukmo_global')) return 'ukmo';
     if (this.isLayerOnMap('gem_gdps')) return 'gem';
     if (this.isLayerOnMap('ecmwf_ifs')) return 'ecmwf';
     if (this.isLayerOnMap('gfs_0p25')) return 'gfs';
@@ -8234,6 +8502,7 @@ export class LayerManager {
       harmonie: '🇪🇸 AEMET HARMONIE (2.5 km)',
       arome: '🇫🇷 Météo-France AROME (1.3 km)',
       icon: '🇩🇪 DWD ICON-EU (6.5 km)',
+      ukmo: '🇬🇧 UKMO Global (10 km)',
       gem: '🇨🇦 GEM GDPS (15 km)',
       ecmwf: '🇪🇺 ECMWF IFS (25 km)',
       gfs: '🇺🇸 NOAA GFS (25 km)'
@@ -8257,6 +8526,10 @@ export class LayerManager {
         badgeModel.style.background = 'rgba(2, 132, 199, 0.2)';
         badgeModel.style.color = '#0284c7';
         badgeModel.style.borderColor = 'rgba(2, 132, 199, 0.4)';
+      } else if (modelKey === 'ukmo') {
+        badgeModel.style.background = 'rgba(14, 165, 233, 0.2)';
+        badgeModel.style.color = '#38bdf8';
+        badgeModel.style.borderColor = 'rgba(14, 165, 233, 0.4)';
       } else if (modelKey === 'gem') {
         badgeModel.style.background = 'rgba(225, 29, 72, 0.2)';
         badgeModel.style.color = '#fb7185';

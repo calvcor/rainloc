@@ -549,6 +549,78 @@ export class MultiLayerInspector {
     }
   }
 
+  /**
+   * Obtiene la precipitación en mm instantáneamente (0ms) a partir del pixel en el canvas de UK Met Office (UKMO)
+   */
+  _getInstantUkmoPixel(lat, lng) {
+    if (!this.layerManager || !this.layerManager.ukmoCanvasData) return null;
+    const { ctx, width, height, bounds, step, type, validText } = this.layerManager.ukmoCanvasData;
+    if (!bounds || bounds.length < 2) return null;
+
+    const latMin = Math.min(bounds[0][0], bounds[1][0]);
+    const latMax = Math.max(bounds[0][0], bounds[1][0]);
+    const lonMin = Math.min(bounds[0][1], bounds[1][1]);
+    const lonMax = Math.max(bounds[0][1], bounds[1][1]);
+
+    if (lat < latMin || lat > latMax || lng < lonMin || lng > lonMax) return null;
+
+    const yPt = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 360)));
+    const yMin = Math.log(Math.tan(Math.PI / 4 + (latMin * Math.PI / 360)));
+    const yMax = Math.log(Math.tan(Math.PI / 4 + (latMax * Math.PI / 360)));
+
+    const x = Math.floor(((lng - lonMin) / (lonMax - lonMin)) * width);
+    const y = Math.floor(((yMax - yPt) / (yMax - yMin)) * height);
+
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+
+    try {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      const r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3];
+
+      if (a < 30) return null;
+
+      const palette = [
+        { minMm: 250, mm: 250, label: '> 250 mm (Extrema)', rgb: [255, 255, 255], color: '#ffffff' },
+        { minMm: 150, mm: 180, label: '150 - 250 mm (Torrencial)', rgb: [217, 70, 239], color: '#d946ef' },
+        { minMm: 100, mm: 120, label: '100 - 150 mm (Muy Fuerte)', rgb: [239, 68, 68], color: '#ef4444' },
+        { minMm: 70, mm: 85, label: '70 - 100 mm (Muy Fuerte)', rgb: [249, 115, 22], color: '#f97316' },
+        { minMm: 40, mm: 55, label: '40 - 70 mm (Fuerte)', rgb: [250, 204, 21], color: '#facc15' },
+        { minMm: 20, mm: 30, label: '20 - 40 mm (Moderada)', rgb: [22, 163, 74], color: '#16a34a' },
+        { minMm: 10, mm: 15, label: '10 - 20 mm (Moderada)', rgb: [74, 222, 128], color: '#4ade80' },
+        { minMm: 3, mm: 6, label: '3 - 10 mm (Ligera)', rgb: [2, 132, 199], color: '#0284c7' },
+        { minMm: 1, mm: 2, label: '1 - 3 mm (Débil)', rgb: [56, 189, 248], color: '#38bdf8' },
+        { minMm: 0.1, mm: 0.5, label: '0.1 - 1 mm (Muy Débil)', rgb: [186, 230, 253], color: '#bae6fd' }
+      ];
+
+      let bestMatch = palette[palette.length - 1];
+      let minDistance = Infinity;
+
+      for (const p of palette) {
+        const dr = r - p.rgb[0];
+        const dg = g - p.rgb[1];
+        const db = b - p.rgb[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestMatch = p;
+        }
+      }
+
+      if (minDistance > 18000 || bestMatch.mm < 0.1) return null;
+
+      return {
+        mm: bestMatch.mm,
+        label: bestMatch.label,
+        color: bestMatch.color,
+        step,
+        type,
+        validText
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   async _fetchRadarDbz(lat, lng, mode = "composite", stationId = "") {
     const cacheKey = `radar_${lat.toFixed(4)}_${lng.toFixed(4)}_${mode}_${stationId || ''}`;
     if (this._modelRequestsInFlight.has(cacheKey)) return;
@@ -576,7 +648,7 @@ export class MultiLayerInspector {
   }
 
   _getModelCacheKey(modelKey, lat, lng, step, type) {
-    const snap = (modelKey === 'arome') ? 0.01 : ((modelKey === 'harmonie') ? 0.025 : ((modelKey === 'icon' || modelKey === 'gem') ? 0.02 : 0.04));
+    const snap = (modelKey === 'arome') ? 0.01 : ((modelKey === 'harmonie') ? 0.025 : ((modelKey === 'icon' || modelKey === 'gem' || modelKey === 'ukmo') ? 0.02 : 0.04));
     const sLat = (Math.round(lat / snap) * snap).toFixed(3);
     const sLng = (Math.round(lng / snap) * snap).toFixed(3);
     return `${modelKey}_${step}_${type}_${sLat}_${sLng}`;
@@ -843,6 +915,7 @@ export class MultiLayerInspector {
         this.layerManager.isLayerOnMap("arome_precip") ||
         this.layerManager.isLayerOnMap("icon_eu") ||
         this.layerManager.isLayerOnMap("gem_gdps") ||
+        this.layerManager.isLayerOnMap("ukmo_global") ||
         this.layerManager.isLayerOnMap("harmonie_aemet")
       );
       
@@ -852,6 +925,7 @@ export class MultiLayerInspector {
           harmonie: 'HARMONIE',
           arome: 'AROME',
           icon: 'ICON-EU',
+          ukmo: 'UKMO',
           gem: 'GEM GDPS',
           ecmwf: 'ECMWF IFS',
           gfs: 'NOAA GFS'
@@ -1946,6 +2020,60 @@ export class MultiLayerInspector {
             title: "AEMET HARMONIE-AROME (2.5 km)",
             headerColor: "#ea580c",
             icon: "🇪🇸",
+            name: `${typeLabel} (+${step}h)`,
+            badge: validText,
+            badgeBg: badgeBg,
+            details: `
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 6px;">
+                <span style="font-size: 0.75rem; color: #94a3b8;">Lluvia prevista:</span>
+                ${displayValHtml}
+              </div>
+              <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 3px;">
+                ${labelHtml}
+              </div>
+            `
+          });
+        }
+      }
+
+      if (this.layerManager.isLayerOnMap("ukmo_global")) {
+        const ukmoPixel = this._getInstantUkmoPixel(latlng.lat, latlng.lng);
+        const step = (this.layerManager && this.layerManager.currentUkmoStep) || 1;
+        const type = (this.layerManager && this.layerManager.currentUkmoType) || 'total';
+        const typeLabel = type === 'total' ? 'Acumulado Total' : (step > 54 ? 'Intervalo (3h)' : 'Intervalo (1h)');
+        const cacheKey = this._getModelCacheKey('ukmo', latlng.lat, latlng.lng, step, type);
+        const hasCachedVal = this._modelValuesCache.has(cacheKey);
+        const exactMm = hasCachedVal ? this._modelValuesCache.get(cacheKey) : null;
+
+        const hasRain = (hasCachedVal && exactMm !== null && exactMm >= 0.1) || (!hasCachedVal && ukmoPixel && ukmoPixel.mm >= 0.1);
+
+        if (hasRain) {
+          const validText = (ukmoPixel && ukmoPixel.validText) || `+${step}h`;
+          let displayValHtml = '';
+          let labelHtml = '';
+          let badgeBg = '#0ea5e9';
+
+          if (hasCachedVal && exactMm !== null) {
+            const meta = this._getModelIntensityMeta(exactMm);
+            badgeBg = meta.color;
+            const displayMmStr = exactMm >= 1 ? exactMm.toFixed(1) : exactMm.toFixed(2);
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${meta.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${meta.color}; margin-right: 4px;"></span>${meta.label}`;
+          } else if (ukmoPixel && ukmoPixel.mm >= 0.1) {
+            badgeBg = ukmoPixel.color;
+            const displayMmStr = ukmoPixel.mm >= 1 ? `~${ukmoPixel.mm.toFixed(0)}` : `~${ukmoPixel.mm.toFixed(1)}`;
+            displayValHtml = `<span style="font-size: 0.90rem; font-weight: 700; color: ${ukmoPixel.color};">${displayMmStr} <span style="font-size: 0.70rem; font-weight: 400; color: #94a3b8;">mm</span></span>`;
+            labelHtml = `<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${badgeBg}; margin-right: 4px;"></span>${ukmoPixel.label}`;
+            if (fetchBackend) {
+              this._fetchModelValue('ukmo', latlng.lat, latlng.lng, step, type, cacheKey, ukmoPixel.mm);
+            }
+          }
+
+          sections.push({
+            type: "model",
+            title: "UK Met Office (10 km)",
+            headerColor: "#0ea5e9",
+            icon: "🇬🇧",
             name: `${typeLabel} (+${step}h)`,
             badge: validText,
             badgeBg: badgeBg,
