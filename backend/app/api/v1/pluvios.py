@@ -110,15 +110,18 @@ async def get_avamet_pluvio_by_id(id_or_code: str):
 
 
 @router.post("/avamet/lluvias/sync", summary="Forzar sincronización de pluviómetros AVAMET")
-async def sync_avamet_lluvias():
+async def sync_avamet_lluvias(
+    force_metadata: bool = Query(False, description="Forzar también la descarga del catálogo pesado de metadatos (2.4 MB)")
+):
     """
     Fuerza la descarga y actualización de pluviómetros de AVAMET.
     """
-    pluvios = avamet_pluvios_service.sync_pluvios_metadata()
+    pluvios = avamet_pluvios_service.sync_pluvios_metadata(force_metadata=force_metadata)
     return {
         "status": "success",
         "message": f"Sincronizados {len(pluvios)} pluviómetros de AVAMET correctamente.",
         "total": len(pluvios),
+        "metadata_total": len(avamet_pluvios_service._metadata_by_id),
     }
 
 

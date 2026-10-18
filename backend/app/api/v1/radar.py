@@ -46,15 +46,17 @@ async def get_radar_timeline() -> List[Dict[str, Any]]:
 @router.get("/image", summary="Obtener imagen PNG transparente del radar")
 async def get_radar_image(
     mode: str = Query("mixed", description="Modo: 'mixed' (compuesto mixto), 'short_range' (corto alcance), 'long_range' (largo alcance), 'composite' o 'single'"),
+    product: str = Query("dbz", description="Producto: 'dbz' (reflectividad) o 'rate' (intensidad en mm/h)"),
     station_id: Optional[str] = Query(None, description="Identificador de la estación"),
     timestep: Optional[str] = Query(None, description="Identificador del fotograma (ej: 20260919T1305)")
 ):
     """
     Retorna la imagen PNG RGBA con fondo transparente lista para Leaflet L.imageOverlay.
-    Soporta los modos 'mixed' (recomendado), 'short_range', 'long_range' y consultar fotogramas históricos de las últimas 24 horas.
+    Soporta los modos 'mixed' (recomendado), 'short_range', 'long_range', los productos 'dbz' (reflectividad) y 'rate' (intensidad mm/h),
+    y consultar fotogramas históricos de las últimas 24 horas.
     """
     if mode in ("mixed", "composite", "short_range", "long_range"):
-        img_path = radar_service.get_composite_image_path(mode=mode, timestep=timestep)
+        img_path = radar_service.get_composite_image_path(mode=mode, product=product, timestep=timestep)
         if not img_path or not img_path.exists():
             raise HTTPException(status_code=404, detail="Fotograma de radar no encontrado o en proceso de descarga")
         
@@ -82,7 +84,7 @@ async def get_radar_image(
     elif mode == "single":
         if not station_id:
             raise HTTPException(status_code=400, detail="station_id es obligatorio en modo 'single'")
-        img_path = radar_service.get_station_image_path(station_id, timestep=timestep)
+        img_path = radar_service.get_station_image_path(station_id, product=product, timestep=timestep)
         if not img_path or not img_path.exists():
             raise HTTPException(status_code=404, detail=f"Imagen no disponible para el radar {station_id}")
         return FileResponse(
@@ -97,38 +99,60 @@ async def get_radar_image(
         raise HTTPException(status_code=400, detail="Modo no válido. Usa 'mixed', 'short_range', 'long_range' o 'single'")
 
 
-@router.get("/value-at", summary="Obtener valor de reflectividad dBZ puntual")
+@router.get("/value-at", summary="Obtener valor de reflectividad dBZ e intensidad puntual")
 async def get_radar_value_at(
     lat: float = Query(..., description="Latitud en WGS84"),
     lon: float = Query(..., description="Longitud en WGS84"),
     mode: str = Query("composite"),
+    product: str = Query("dbz", description="'dbz' o 'rate'"),
     station_id: Optional[str] = Query(None),
     timestep: Optional[str] = Query(None, description="Identificador del fotograma (ej: 20260919T1305)")
 ) -> Dict[str, Any]:
     """
-    Consulta el valor físico en dBZ para un punto geográfico e instante temporal seleccionado (para el Inspector Multi-Capa en hover).
+    Consulta el valor físico en dBZ y tasa estimada en mm/h para un punto geográfico e instante temporal seleccionado.
     """
     val = radar_service.get_dbz_at_point(lat, lon, mode, station_id, timestep=timestep)
+    rate_val = None
     intensity = "Sin eco"
     if val is not None:
-        if val >= 55:
-            intensity = "Muy Fuerte / Granizo"
+        from app.services.radar_worker import dbz_to_rain_rate
+        import numpy as np
+        rate_val = float(dbz_to_rain_rate(np.array([val]))[0])
+
+        if val >= 65:
+            intensity = "Granizo Destructivo"
+        elif val >= 60:
+            intensity = "Severa / Granizo"
+        elif val >= 55:
+            intensity = "Tormenta Severa"
+        elif val >= 50:
+            intensity = "Torrencial"
         elif val >= 45:
             intensity = "Muy Fuerte"
-        elif val >= 35:
+        elif val >= 40:
             intensity = "Fuerte"
-        elif val >= 25:
+        elif val >= 35:
+            intensity = "Moderada-Fuerte"
+        elif val >= 30:
             intensity = "Moderada"
+        elif val >= 25:
+            intensity = "Moderada Baja"
+        elif val >= 20:
+            intensity = "Débil a Moderada"
         elif val >= 15:
-            intensity = "Ligera"
-        elif val >= 8:
             intensity = "Débil"
+        elif val >= 10:
+            intensity = "Muy Débil"
+        elif val >= 5:
+            intensity = "Llovizna / Muy Débil"
 
     return {
         "lat": lat,
         "lon": lon,
         "timestep": timestep,
+        "product": product,
         "dbz": val,
+        "rate_mmh": rate_val,
         "rain_intensity": intensity
     }
 

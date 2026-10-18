@@ -43,23 +43,24 @@ UKMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Catálogo completo de la red de radares meteorológicos de España (AEMET / ORD)
 SPANISH_RADAR_STATIONS: Dict[str, Dict[str, Any]] = {
     # Radares actualmente sincronizando en EUMETNET ORD
-    "esahr": {"name": "Málaga / Alhaurín", "province": "Málaga", "lat": 36.6134, "lon": -4.6593, "range_km": 240, "alt_m": 1159, "aemet_code": "ml"},
-    "esclg": {"name": "Sevilla / El Castillo", "province": "Sevilla", "lat": 37.6887, "lon": -6.3331, "range_km": 250, "alt_m": 531, "aemet_code": "se"},
-    "esnjr": {"name": "Almería / Níjar", "province": "Almería", "lat": 36.8324, "lon": -2.0821, "range_km": 240, "alt_m": 499, "aemet_code": "am"},
-    "estjv": {"name": "Madrid / Torrejón de Velasco", "province": "Madrid", "lat": 40.1759, "lon": -3.7137, "range_km": 240, "alt_m": 717, "aemet_code": "ma"},
+    "esahr": {"name": "Málaga / Alhaurín", "province": "Málaga", "lat": 36.6133, "lon": -4.6593, "range_km": 240, "alt_m": 1159, "aemet_code": "ml"},
+    "esclg": {"name": "Sevilla / El Castillo", "province": "Sevilla", "lat": 37.6875, "lon": -6.3344, "range_km": 250, "alt_m": 530, "aemet_code": "se"},
+    "esnjr": {"name": "Almería / Níjar", "province": "Almería", "lat": 36.8324, "lon": -2.0810, "range_km": 240, "alt_m": 498, "aemet_code": "am"},
+    "estjv": {"name": "Madrid / Torrejón de Velasco", "province": "Madrid", "lat": 40.1759, "lon": -3.7136, "range_km": 240, "alt_m": 717, "aemet_code": "ma"},
     "essft": {"name": "Cáceres / Sierra Fuentes", "province": "Cáceres", "lat": 39.4288, "lon": -6.2853, "range_km": 240, "alt_m": 667, "aemet_code": "cc"},
     "esgrm": {"name": "Salamanca / Guadramiro", "province": "Salamanca", "lat": 41.0116, "lon": -6.4777, "range_km": 240, "alt_m": 793, "aemet_code": "sa"},
-    "eslid": {"name": "Valladolid", "province": "Valladolid", "lat": 41.9956, "lon": -4.6028, "range_km": 240, "alt_m": 887, "aemet_code": "vd"},
+    "eslid": {"name": "Palencia / Autilla del Pino", "province": "Palencia/Valladolid", "lat": 41.9956, "lon": -4.6028, "range_km": 240, "alt_m": 887, "aemet_code": "vd"},
     "essse": {"name": "País Vasco / Monte Oiz", "province": "Bizkaia/Gipuzkoa", "lat": 43.4033, "lon": -2.8419, "range_km": 240, "alt_m": 625, "aemet_code": "ss"},
-    "espdg": {"name": "Zaragoza / Perdiguera", "province": "Zaragoza", "lat": 41.7340, "lon": -0.5459, "range_km": 240, "alt_m": 835, "aemet_code": "za"},
-    "esgld": {"name": "Barcelona / Gelida", "province": "Barcelona", "lat": 41.4082, "lon": 1.8849, "range_km": 240, "alt_m": 662, "aemet_code": "ba"},
+    "espdg": {"name": "Zaragoza / Perdiguera", "province": "Zaragoza", "lat": 41.7339, "lon": -0.5458, "range_km": 240, "alt_m": 833, "aemet_code": "za"},
+    "esgld": {"name": "Barcelona / Corbera", "province": "Barcelona", "lat": 41.4081, "lon": 1.8848, "range_km": 240, "alt_m": 662, "aemet_code": "ba"},
     "esbnv": {"name": "Tenerife / Buenavista", "province": "Santa Cruz de Tenerife", "lat": 28.3109, "lon": -16.8238, "range_km": 240, "alt_m": 1367, "aemet_code": "ca"},
-    "esatn": {"name": "Gran Canaria / Artenara", "province": "Las Palmas", "lat": 28.0188, "lon": -15.6145, "range_km": 240, "alt_m": 1777, "aemet_code": "ca"},
-    # Radares en proceso de modernización o volcado a ORD (disponibles en AEMET OpenData)
-    "escul": {"name": "Valencia / Cullera", "province": "Valencia", "lat": 39.1864, "lon": -0.2520, "range_km": 240, "alt_m": 236, "aemet_code": "va"},
-    "espma": {"name": "Murcia / Cabezo de la Plata", "province": "Murcia", "lat": 37.9940, "lon": -0.9940, "range_km": 240, "alt_m": 460, "aemet_code": "mu"},
-    "espmb": {"name": "Mallorca / Puig de Randa", "province": "Illes Balears", "lat": 39.5290, "lon": 2.9230, "range_km": 240, "alt_m": 543, "aemet_code": "pm"},
-    "escor": {"name": "A Coruña / Lousame", "province": "A Coruña", "lat": 42.8360, "lon": -8.8470, "range_km": 240, "alt_m": 680, "aemet_code": "co"}
+    "esatn": {"name": "Gran Canaria / Artenara", "province": "Las Palmas", "lat": 28.0186, "lon": -15.6144, "range_km": 240, "alt_m": 1778, "aemet_code": "ca"},
+    # Radares regionales (disponibles en AEMET OpenData y modernizados)
+    "escul": {"name": "Valencia / Cullera", "province": "Valencia", "lat": 39.1761, "lon": -0.2521, "range_km": 240, "alt_m": 247, "aemet_code": "va"},
+    "esmur": {"name": "Murcia / Fortuna", "province": "Murcia", "lat": 38.2644, "lon": -1.1897, "range_km": 240, "alt_m": 1274, "aemet_code": "mu"},
+    "espma": {"name": "Mallorca / Llucmajor", "province": "Illes Balears", "lat": 39.3797, "lon": 2.7850, "range_km": 240, "alt_m": 130, "aemet_code": "pm"},
+    "espmb": {"name": "Mallorca / Llucmajor", "province": "Illes Balears", "lat": 39.3797, "lon": 2.7850, "range_km": 240, "alt_m": 130, "aemet_code": "pm"},
+    "escor": {"name": "A Coruña / Cerceda", "province": "A Coruña", "lat": 43.1689, "lon": -8.5269, "range_km": 240, "alt_m": 612, "aemet_code": "co"}
 }
 
 # Parámetros de radar y bounding box geográfico nacional

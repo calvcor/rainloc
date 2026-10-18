@@ -30,26 +30,45 @@ MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 STATIC_AVAMET_PLUVIOS_FILE = DATA_DIR / "avamet_lluvias_estaciones.json"
 AVAMET_PLUVIOS_GEOJSON_FILE = DATA_DIR / "avamet_lluvias.geojson"
+AVAMET_METADATA_FILE = DATA_DIR / "avamet_metadata.json"
 PUBLIC_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
 AVAMET_BASE_URL = "https://www.avamet.org"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-# TTL de frescura de datos: 5 minutos (300 segundos)
+# TTL de frescura de datos de lluvia: 5 minutos (300 segundos)
 SYNC_TTL_SECONDS = 300
+# TTL de frescura de metadatos geográficos (2.4 MB): 24 horas (86400 segundos)
+METADATA_SYNC_INTERVAL_SECONDS = 86400
+# Umbral mínimo de estaciones esperadas para validar la sincronización
+MIN_STATIONS_THRESHOLD = 500
 
 
 class AvametPluviosService:
     def __init__(self):
         self._pluvios: List[Dict[str, Any]] = []
         self._pluvios_by_id: Dict[str, Dict[str, Any]] = {}
+        self._metadata_by_id: Dict[str, Dict[str, Any]] = {}
         self._last_sync_time: Optional[datetime] = None
+        self._last_meta_sync_time: Optional[datetime] = None
         self._sync_lock = asyncio.Lock()
 
         self._load_from_disk()
 
     def _load_from_disk(self):
-        """Carga las estaciones de lluvia de AVAMET desde el fichero local si existe."""
+        """Carga las estaciones y metadatos de AVAMET desde los ficheros locales si existen."""
+        # 1. Cargar catálogo acumulativo de metadatos (coordenadas, altitud, municipio)
+        if AVAMET_METADATA_FILE.exists():
+            try:
+                with open(AVAMET_METADATA_FILE, "r", encoding="utf-8") as f:
+                    self._metadata_by_id = json.load(f)
+                    mtime = datetime.fromtimestamp(AVAMET_METADATA_FILE.stat().st_mtime)
+                    self._last_meta_sync_time = mtime
+                    logger.info(f"Cargados metadatos de {len(self._metadata_by_id)} estaciones de AVAMET desde {AVAMET_METADATA_FILE} (actualizado: {mtime.strftime('%Y-%m-%d %H:%M')}).")
+            except Exception as e:
+                logger.error(f"Error al leer {AVAMET_METADATA_FILE}: {e}")
+
+        # 2. Cargar estaciones de lluvia previas
         if STATIC_AVAMET_PLUVIOS_FILE.exists():
             try:
                 with open(STATIC_AVAMET_PLUVIOS_FILE, "r", encoding="utf-8") as f:
@@ -58,6 +77,20 @@ class AvametPluviosService:
                     mtime = datetime.fromtimestamp(STATIC_AVAMET_PLUVIOS_FILE.stat().st_mtime)
                     self._last_sync_time = mtime
                     logger.info(f"Cargados {len(self._pluvios)} pluviómetros de AVAMET desde caché local.")
+
+                    # Respaldar metadatos desde las estaciones locales si el catálogo estaba vacío
+                    if not self._metadata_by_id:
+                        for p in self._pluvios:
+                            sid = str(p.get("id_estacion", "")).strip()
+                            if sid and p.get("lat") and p.get("lon"):
+                                self._metadata_by_id[sid] = {
+                                    "esta": sid,
+                                    "muni": p.get("poblacion") or p.get("nombre"),
+                                    "lati": str(p["lat"]),
+                                    "logi": str(p["lon"]),
+                                    "msnm": str(p.get("altitud")) if p.get("altitud") is not None else None,
+                                    "webcam": p.get("webcam")
+                                }
             except Exception as e:
                 logger.error(f"Error al leer {STATIC_AVAMET_PLUVIOS_FILE}: {e}")
 
@@ -66,41 +99,66 @@ class AvametPluviosService:
             return False
         return (datetime.now() - self._last_sync_time).total_seconds() < SYNC_TTL_SECONDS
 
-    def sync_pluvios_metadata(self) -> List[Dict[str, Any]]:
+    def _should_refresh_metadata(self, force: bool = False) -> bool:
+        """Determina si es necesario refrescar el catálogo de 2.4 MB de metadatos (1 vez cada 24h o si no hay datos)."""
+        if force or not self._metadata_by_id or not self._last_meta_sync_time:
+            return True
+        return (datetime.now() - self._last_meta_sync_time).total_seconds() >= METADATA_SYNC_INTERVAL_SECONDS
+
+    def sync_pluvios_metadata(self, force_metadata: bool = False) -> List[Dict[str, Any]]:
         """
-        Descarga síncrona de las páginas de AVAMET (metadatos y tabla de lluvia acumulada),
-        extrae los acumulados en 1h, 4h, 12h y 24h, y guarda los ficheros GeoJSON y JSON locales.
+        Descarga síncrona de los datos de AVAMET.
+        - El catálogo de metadatos (coordenadas, altitud, municipio) se descarga como máximo una vez al día (24h).
+        - En cada ciclo periódico (5 min) solo se descarga la tabla ligera de precipitaciones acumuladas (1h, 4h, 12h, 24h).
         """
-        logger.info("Sincronizando pluviómetros en tiempo real desde avamet.org/mxo-mxo-prec.php...")
+        logger.info("Sincronizando pluviómetros de AVAMET...")
 
         try:
-            # 1. Descargar catálogo de metadatos geográficos (lat, lon, muni, altitud)
-            meta_url = f"{AVAMET_BASE_URL}/mxo-meteoxarxaonline.html"
-            req_meta = urllib.request.Request(meta_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_meta, timeout=15) as resp:
-                html_meta = resp.read().decode("utf-8", "ignore")
-
-            m_meta = re.search(r"var data\s*=\s*(\[.*?\]);", html_meta, re.DOTALL)
-            metadata_by_id = {}
-            if m_meta:
+            # 1. Actualizar el catálogo de metadatos geográficos (2.4 MB) solo 1 vez cada 24 horas (o si no existe)
+            if self._should_refresh_metadata(force=force_metadata):
+                logger.info("Catálogo de metadatos de AVAMET caducado (>24h) o ausente. Descargando mxo-meteoxarxaonline.html (2.4 MB)...")
+                meta_url = f"{AVAMET_BASE_URL}/mxo-meteoxarxaonline.html"
+                req_meta = urllib.request.Request(meta_url, headers={"User-Agent": USER_AGENT})
                 try:
-                    for st in json.loads(m_meta.group(1)):
-                        sid = st.get("esta")
-                        if sid:
-                            metadata_by_id[str(sid).strip()] = st
-                except Exception as err:
-                    logger.warning(f"Error parseando JSON de metadatos AVAMET: {err}")
+                    with urllib.request.urlopen(req_meta, timeout=20) as resp:
+                        html_meta = resp.read().decode("utf-8", "ignore")
 
-            # 2. Descargar tabla de precipitación acumulada por intervalos
-            prec_url = f"{AVAMET_BASE_URL}/mxo-mxo-prec.php"
+                    m_meta = re.search(r"var data\s*=\s*(\[.*?\]);", html_meta, re.DOTALL)
+                    if m_meta:
+                        raw_meta = json.loads(m_meta.group(1))
+                        updated_count = 0
+                        for st in raw_meta:
+                            sid = st.get("esta")
+                            if sid:
+                                clean_sid = str(sid).strip()
+                                self._metadata_by_id[clean_sid] = st
+                                updated_count += 1
+                        
+                        if updated_count > 0:
+                            DATA_DIR.mkdir(parents=True, exist_ok=True)
+                            with open(AVAMET_METADATA_FILE, "w", encoding="utf-8") as f:
+                                json.dump(self._metadata_by_id, f, ensure_ascii=False, indent=2)
+                            self._last_meta_sync_time = datetime.now()
+                            logger.info(f"Metadatos de AVAMET actualizados con éxito: {updated_count} estaciones parseadas, {len(self._metadata_by_id)} en catálogo permanente.")
+                    else:
+                        logger.warning("No se encontró el patrón 'var data = [...]' en mxo-meteoxarxaonline.html. Se usará el catálogo previo.")
+                except Exception as meta_err:
+                    logger.warning(f"No se pudieron descargar metadatos frescos de AVAMET ({meta_err}). Se usará el catálogo permanente en memoria ({len(self._metadata_by_id)} estaciones).")
+            else:
+                elapsed_hrs = round((datetime.now() - self._last_meta_sync_time).total_seconds() / 3600, 1)
+                logger.debug(f"Catálogo de metadatos de AVAMET vigente ({len(self._metadata_by_id)} estaciones, sync hace {elapsed_hrs}h). Omitiendo descarga pesada de 2.4 MB.")
+
+            # 2. Descargar tabla de precipitación acumulada por intervalos (territorio completo 'pv')
+            prec_url = f"{AVAMET_BASE_URL}/mxo-mxo-prec.php?territori=pv"
             req_prec = urllib.request.Request(prec_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_prec, timeout=15) as resp:
+            with urllib.request.urlopen(req_prec, timeout=20) as resp:
                 html_prec = resp.read().decode("utf-8", "ignore")
 
             rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html_prec, re.DOTALL | re.IGNORECASE)
             pluvios = []
             features = []
             current_comarca = ""
+            seen_ids = set()
 
             for r in rows:
                 comarca_match = re.search(r"class=[\"\x27]rComarca[\"\x27][^>]*>(.*?)</td>", r, re.IGNORECASE)
@@ -112,10 +170,14 @@ class AvametPluviosService:
                 if not id_match:
                     continue
                 st_id = id_match.group(1).strip()
+                if st_id in seen_ids:
+                    continue
 
                 tds = re.findall(r"<td[^>]*>(.*?)</td>", r, re.DOTALL | re.IGNORECASE)
                 if len(tds) < 11:
                     continue
+
+                seen_ids.add(st_id)
 
                 def _clean_val(td_html):
                     txt = re.sub(r"<[^>]+>", "", td_html).strip().replace(".", "").replace(",", ".")
@@ -137,19 +199,37 @@ class AvametPluviosService:
                 title_match = re.search(r"title=[\"\x27]([\d\- :]+)[\"\x27]", r)
                 ultima_hora = title_match.group(1).strip() if title_match else ""
 
-                meta = metadata_by_id.get(st_id, {})
+                meta = self._metadata_by_id.get(st_id, {})
+                lat, lon = None, None
                 try:
-                    lat = float(meta["lati"]) if meta.get("lati") else None
-                    lon = float(meta["logi"]) if meta.get("logi") else None
+                    if meta.get("lati") and meta.get("logi"):
+                        lat = float(meta["lati"])
+                        lon = float(meta["logi"])
                 except Exception:
                     lat, lon = None, None
+
+                # Respaldo secundario desde estaciones previas si no estaba en metadatos
+                if (lat is None or lon is None) and st_id in self._pluvios_by_id:
+                    prev_p = self._pluvios_by_id[st_id]
+                    lat = prev_p.get("lat")
+                    lon = prev_p.get("lon")
+                    if not meta:
+                        meta = {
+                            "muni": prev_p.get("poblacion"),
+                            "msnm": prev_p.get("altitud"),
+                            "temp": prev_p.get("temperatura"),
+                            "hrel": prev_p.get("humedad"),
+                            "vent": prev_p.get("viento_vel"),
+                            "vent_max": prev_p.get("racha_max"),
+                            "webcam": prev_p.get("webcam"),
+                        }
 
                 if lat is None or lon is None:
                     continue
 
                 alt_str = meta.get("msnm")
                 alt_float = None
-                if alt_str:
+                if alt_str is not None:
                     try:
                         alt_float = float(str(alt_str).replace(".", "").replace(",", "."))
                     except Exception:
@@ -202,6 +282,15 @@ class AvametPluviosService:
                     },
                     "properties": pluvio_obj,
                 })
+
+            # Salvaguarda anti-vaciado: si por cualquier anomalía la cantidad de estaciones procesadas es anormalmente baja
+            min_expected = max(300, int(len(self._pluvios) * 0.5)) if self._pluvios else MIN_STATIONS_THRESHOLD
+            if len(pluvios) < min_expected:
+                logger.warning(
+                    f"AVAMET: Sincronización incompleta o anómala ({len(pluvios)} estaciones procesadas < mínimo esperado {min_expected}). "
+                    f"Se aborta la sobrescritura en disco para proteger los {len(self._pluvios)} pluviómetros previos."
+                )
+                return self._pluvios
 
             geojson = {
                 "type": "FeatureCollection",

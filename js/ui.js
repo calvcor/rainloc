@@ -962,9 +962,21 @@ export class UIManager {
     // Sub-controles específicos para la capa de Radar
     let radarExtraControls = '';
     if (layer.id === 'radar') {
+      const radarProduct = prefs.radarProduct || 'dbz';
       radarExtraControls = `
         <div class="radar-subcontrols">
-          <div class="radar-dbz-legend">
+          <!-- Selector de Producto: Reflectividad vs Intensidad -->
+          <div class="radar-product-selector">
+            <button type="button" class="radar-product-btn ${radarProduct === 'dbz' ? 'active' : ''}" data-product="dbz">
+              Reflectividad
+            </button>
+            <button type="button" class="radar-product-btn ${radarProduct === 'rate' ? 'active' : ''}" data-product="rate">
+              Intensidad
+            </button>
+          </div>
+
+          <!-- Leyenda de Reflectividad (dBZ) -->
+          <div class="radar-dbz-legend" id="radar-legend-dbz" style="${radarProduct === 'dbz' ? '' : 'display: none;'}">
             <span class="dbz-legend-title">Reflectividad (dBZ):</span>
             <div class="dbz-bar">
               <span style="background: #7dd3fc; color: #0f172a;" title="5-10 dBZ (Llovizna / Muy débil)">5</span>
@@ -980,6 +992,26 @@ export class UIManager {
               <span style="background: #dc2626; color: #fff;" title="55-60 dBZ (Tormenta severa)">55</span>
               <span style="background: #991b1b; color: #fff;" title="60-65 dBZ (Granizo)">60</span>
               <span style="background: #c026d3; color: #fff;" title="≥65 dBZ (Granizo destructivo)">65+</span>
+            </div>
+          </div>
+
+          <!-- Leyenda de Intensidad (mm/h) -->
+          <div class="radar-dbz-legend" id="radar-legend-rate" style="${radarProduct === 'rate' ? '' : 'display: none;'}">
+            <span class="dbz-legend-title">Intensidad de precipitación (mm/h):</span>
+            <div class="dbz-bar">
+              <span style="background: #7dd3fc; color: #0f172a;" title="0.1-0.5 mm/h (Llovizna)">0.1</span>
+              <span style="background: #38bdf8; color: #0f172a;" title="0.5-1 mm/h (Muy débil)">0.5</span>
+              <span style="background: #0284c7; color: #fff;" title="1-2 mm/h (Débil)">1</span>
+              <span style="background: #1d4ed8; color: #fff;" title="2-5 mm/h">2</span>
+              <span style="background: #10b981; color: #0f172a;" title="5-10 mm/h (Moderada)">5</span>
+              <span style="background: #22c55e; color: #0f172a;" title="10-15 mm/h">10</span>
+              <span style="background: #84cc16; color: #0f172a;" title="15-20 mm/h">15</span>
+              <span style="background: #eab308; color: #0f172a;" title="20-30 mm/h (Fuerte)">20</span>
+              <span style="background: #f59e0b; color: #0f172a;" title="30-45 mm/h (Muy fuerte)">30</span>
+              <span style="background: #ea580c; color: #fff;" title="45-60 mm/h (Torrencial)">45</span>
+              <span style="background: #dc2626; color: #fff;" title="60-80 mm/h (Tormenta)">60</span>
+              <span style="background: #991b1b; color: #fff;" title="80-100 mm/h (Severa)">80</span>
+              <span style="background: #c026d3; color: #fff;" title="≥100 mm/h (Extrema / Granizo)">100+</span>
             </div>
           </div>
 
@@ -1425,7 +1457,23 @@ export class UIManager {
       });
     });
 
+    // Selector de Producto de Radar: Reflectividad (dBZ) | Intensidad (mm/h)
+    document.querySelectorAll('.radar-product-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const prod = e.currentTarget.getAttribute('data-product');
+        document.querySelectorAll('.radar-product-btn').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-product') === prod);
+        });
+        const dbzLeg = document.getElementById('radar-legend-dbz');
+        const rateLeg = document.getElementById('radar-legend-rate');
+        if (dbzLeg) dbzLeg.style.display = (prod === 'dbz') ? '' : 'none';
+        if (rateLeg) rateLeg.style.display = (prod === 'rate') ? '' : 'none';
 
+        if (this.layerManager) {
+          this.layerManager.setRadarProduct(prod);
+        }
+      });
+    });
 
     // Controles de Cobertura de Radar: Toggle de visualización
     const radarCoverageToggle = document.getElementById('radar-coverage-toggle');

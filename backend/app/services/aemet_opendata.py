@@ -217,21 +217,19 @@ class AemetOpenDataService:
                         has_rain_neighbor |= np.roll(np.roll(rain_src_mask, dy, axis=0), dx, axis=1)
                 radar_arr = np.where(is_10 & (~has_rain_neighbor), 0, radar_arr)
 
-            # El centro exacto del radar se sitúa en (240, 240)
+            # El centro exacto del radar se sitúa en (240.0, 240.0) y la escala nativa es 1.0 km / píxel
             c_y, c_x = 240.0, 240.0
-            radius_px = 230.0  # El radio de 240 km ocupa 230 píxeles
-            km_per_px = 240.0 / radius_px
 
             # Bounding box nacional de RainLoc
             out_h, out_w = short_grid.shape
             lat_min, lat_max = SPAIN_BBOX["lat_min"], SPAIN_BBOX["lat_max"]
             lon_min, lon_max = SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"]
 
-            st_lat, st_lon = st["lat"], st["lon"]
+            st_lat, st_lon = float(st["lat"]), float(st["lon"])
             deg_lat_km = 111.139
             deg_lon_km = 111.139 * math.cos(math.radians(st_lat))
 
-            # Proyección Web Mercator precisa
+            # Proyección Web Mercator precisa (idéntica a Leaflet ImageOverlay EPSG:3857)
             r_earth = 6378137.0
             y_merc_min = r_earth * math.log(math.tan(math.pi / 4 + math.radians(lat_min) / 2))
             y_merc_max = r_earth * math.log(math.tan(math.pi / 4 + math.radians(lat_max) / 2))
@@ -253,13 +251,33 @@ class AemetOpenDataService:
             lons_sub = grid_lons[sub_x]
             lons_2d, lats_2d = np.meshgrid(lons_sub, lats_sub)
 
-            dy_km = (lats_2d - st_lat) * deg_lat_km
-            dx_km = (lons_2d - st_lon) * deg_lon_km
-            dist_km = np.sqrt(dx_km * dx_km + dy_km * dy_km)
+            # Proyección Azimutal Equidistante geodésica esférica exacta (origen en antena del radar)
+            phi1 = math.radians(st_lat)
+            lam1 = math.radians(st_lon)
+            cos_phi1 = math.cos(phi1)
+            sin_phi1 = math.sin(phi1)
 
-            in_range = dist_km <= max_km
-            src_x = np.round(c_x + dx_km / km_per_px).astype(np.int32)
-            src_y = np.round(c_y - dy_km / km_per_px).astype(np.int32)
+            phi2 = np.radians(lats_2d)
+            lam2 = np.radians(lons_2d)
+            cos_phi2 = np.cos(phi2)
+            sin_phi2 = np.sin(phi2)
+
+            dphi = phi2 - phi1
+            dlam = lam2 - lam1
+
+            # Distancia ortodrómica real en km (R = 6371.0 km)
+            a_dist = np.sin(dphi * 0.5)**2 + cos_phi1 * cos_phi2 * np.sin(dlam * 0.5)**2
+            dist_km = 6371.0 * (2.0 * np.arctan2(np.sqrt(a_dist), np.sqrt(np.maximum(0.0, 1.0 - a_dist))))
+
+            # Azimut esférico hacia adelante (0 = Norte, pi/2 = Este)
+            y_az = np.sin(dlam) * cos_phi2
+            x_az = cos_phi1 * sin_phi2 - sin_phi1 * cos_phi2 * np.cos(dlam)
+            azimuth = np.arctan2(y_az, x_az)
+
+            # Coordenadas exactas en la matriz del radar regional (1 px = 1.0 km, centro en 240, 240)
+            src_x = np.round(c_x + dist_km * np.sin(azimuth)).astype(np.int32)
+            src_y = np.round(c_y - dist_km * np.cos(azimuth)).astype(np.int32)
+            in_range = (dist_km <= max_km)
             valid_src = in_range & (src_x >= 0) & (src_x < radar_w) & (src_y >= 0) & (src_y < radar_h)
 
             # Tabla de conversión estricta de índices de reflectividad meteorológica (descarta completamente bordes, costas y textos)

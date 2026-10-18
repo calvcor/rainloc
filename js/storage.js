@@ -66,6 +66,7 @@ export class StorageManager {
         'gfs_0p25': 0.65
       },
       radarMode: 'mixed', // 'mixed' | 'short_range' | 'long_range' | 'single'
+      radarProduct: 'dbz', // 'dbz' (Reflectividad) | 'rate' (Intensidad)
       radarStationId: 'esbnv', // Estación por defecto
       showRadarCoverage: false, // Mostrar áreas de cobertura de radar en mapa
       autoRefreshInterval: 180, // Segundos (180 = 3 min, 300 = 5 min, 0 = off)
@@ -216,6 +217,14 @@ export class StorageManager {
    */
   static setRadarMode(mode) {
     return this.save({ radarMode: mode });
+  }
+
+  /**
+   * Guarda el producto de radar seleccionado ('dbz' | 'rate')
+   * @param {string} product 
+   */
+  static setRadarProduct(product) {
+    return this.save({ radarProduct: product });
   }
 
   /**

@@ -79,21 +79,38 @@ export class MultiLayerInspector {
         return null;
       }
 
+      const product = (this.layerManager.radarCanvasData && this.layerManager.radarCanvasData.product) || this.layerManager.currentRadarProduct || 'dbz';
+      const isRate = (product === 'rate');
+
       // Paleta meteorológica oficial de RainLoc (13 niveles graduales calibrados con alta resolución)
-      const palette = [
-        { minDbz: 65, dbz: 65, label: 'Granizo Destructivo', rgb: [192, 38, 211], color: '#c026d3' },
-        { minDbz: 60, dbz: 60, label: 'Severa / Granizo', rgb: [153, 27, 27], color: '#991b1b' },
-        { minDbz: 55, dbz: 55, label: 'Tormenta Severa', rgb: [220, 38, 38], color: '#dc2626' },
-        { minDbz: 50, dbz: 50, label: 'Chubasco Torrencial', rgb: [234, 88, 12], color: '#ea580c' },
-        { minDbz: 45, dbz: 45, label: 'Muy Fuerte', rgb: [245, 158, 11], color: '#f59e0b' },
-        { minDbz: 40, dbz: 40, label: 'Fuerte', rgb: [234, 179, 8], color: '#eab308' },
-        { minDbz: 35, dbz: 35, label: 'Moderada-Fuerte', rgb: [132, 204, 22], color: '#84cc16' },
-        { minDbz: 30, dbz: 30, label: 'Moderada', rgb: [34, 197, 94], color: '#22c55e' },
-        { minDbz: 25, dbz: 25, label: 'Moderada Baja', rgb: [16, 185, 129], color: '#10b981' },
-        { minDbz: 20, dbz: 20, label: 'Débil a Moderada', rgb: [29, 78, 216], color: '#1d4ed8' },
-        { minDbz: 15, dbz: 15, label: 'Débil', rgb: [2, 132, 199], color: '#0284c7' },
-        { minDbz: 10, dbz: 10, label: 'Muy Débil', rgb: [56, 189, 248], color: '#38bdf8' },
-        { minDbz: 5,  dbz: 5,  label: 'Llovizna / Muy Débil', rgb: [125, 211, 252], color: '#7dd3fc' }
+      const palette = isRate ? [
+        { val: 100, label: '≥100 mm/h (Extrema / Granizo)', rgb: [192, 38, 211], color: '#c026d3' },
+        { val: 80,  label: '80-100 mm/h (Tormenta Severa)', rgb: [153, 27, 27], color: '#991b1b' },
+        { val: 60,  label: '60-80 mm/h (Tormenta)', rgb: [220, 38, 38], color: '#dc2626' },
+        { val: 45,  label: '45-60 mm/h (Torrencial)', rgb: [234, 88, 12], color: '#ea580c' },
+        { val: 30,  label: '30-45 mm/h (Muy Fuerte)', rgb: [245, 158, 11], color: '#f59e0b' },
+        { val: 20,  label: '20-30 mm/h (Fuerte)', rgb: [234, 179, 8], color: '#eab308' },
+        { val: 15,  label: '15-20 mm/h (Moderada-Fuerte)', rgb: [132, 204, 22], color: '#84cc16' },
+        { val: 10,  label: '10-15 mm/h (Moderada)', rgb: [34, 197, 94], color: '#22c55e' },
+        { val: 5,   label: '5-10 mm/h (Moderada Baja)', rgb: [16, 185, 129], color: '#10b981' },
+        { val: 2,   label: '2-5 mm/h (Débil a Moderada)', rgb: [29, 78, 216], color: '#1d4ed8' },
+        { val: 1,   label: '1-2 mm/h (Débil)', rgb: [2, 132, 199], color: '#0284c7' },
+        { val: 0.5, label: '0.5-1 mm/h (Muy Débil)', rgb: [56, 189, 248], color: '#38bdf8' },
+        { val: 0.1, label: '0.1-0.5 mm/h (Llovizna)', rgb: [125, 211, 252], color: '#7dd3fc' }
+      ] : [
+        { val: 65, label: 'Granizo Destructivo', rgb: [192, 38, 211], color: '#c026d3' },
+        { val: 60, label: 'Severa / Granizo', rgb: [153, 27, 27], color: '#991b1b' },
+        { val: 55, label: 'Tormenta Severa', rgb: [220, 38, 38], color: '#dc2626' },
+        { val: 50, label: 'Chubasco Torrencial', rgb: [234, 88, 12], color: '#ea580c' },
+        { val: 45, label: 'Muy Fuerte', rgb: [245, 158, 11], color: '#f59e0b' },
+        { val: 40, label: 'Fuerte', rgb: [234, 179, 8], color: '#eab308' },
+        { val: 35, label: 'Moderada-Fuerte', rgb: [132, 204, 22], color: '#84cc16' },
+        { val: 30, label: 'Moderada', rgb: [34, 197, 94], color: '#22c55e' },
+        { val: 25, label: 'Moderada Baja', rgb: [16, 185, 129], color: '#10b981' },
+        { val: 20, label: 'Débil a Moderada', rgb: [29, 78, 216], color: '#1d4ed8' },
+        { val: 15, label: 'Débil', rgb: [2, 132, 199], color: '#0284c7' },
+        { val: 10, label: 'Muy Débil', rgb: [56, 189, 248], color: '#38bdf8' },
+        { val: 5,  label: 'Llovizna / Muy Débil', rgb: [125, 211, 252], color: '#7dd3fc' }
       ];
 
       let bestMatch = palette[palette.length - 1];
@@ -114,7 +131,10 @@ export class MultiLayerInspector {
       if (minDistance > 18000) return null;
 
       return {
-        dbz: bestMatch.dbz,
+        product: isRate ? 'rate' : 'dbz',
+        val: bestMatch.val,
+        dbz: isRate ? null : bestMatch.val,
+        rate: isRate ? bestMatch.val : null,
         badgeColor: bestMatch.color,
         rain_intensity: bestMatch.label
       };
@@ -629,17 +649,25 @@ export class MultiLayerInspector {
   }
 
   async _fetchRadarDbz(lat, lng, mode = "composite", stationId = "") {
-    const cacheKey = `radar_${lat.toFixed(4)}_${lng.toFixed(4)}_${mode}_${stationId || ''}`;
+    const product = this.layerManager?.currentRadarProduct || 'dbz';
+    const cacheKey = `radar_${lat.toFixed(4)}_${lng.toFixed(4)}_${mode}_${stationId || ''}_${product}`;
     if (this._modelRequestsInFlight.has(cacheKey)) return;
     this._modelRequestsInFlight.add(cacheKey);
 
     try {
-      const url = `${CONFIG.apiBaseUrl}/radar/value-at?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&mode=${mode}&station_id=${stationId || ''}`;
+      const url = `${CONFIG.apiBaseUrl}/radar/value-at?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&mode=${mode}&product=${product}&station_id=${stationId || ''}`;
       const resp = await fetch(url);
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.dbz !== null && data.dbz !== undefined) {
-          this._lastRadarLookup = { lat, lng, dbz: data.dbz, rain_intensity: data.rain_intensity };
+        if (data && ((data.dbz !== null && data.dbz !== undefined) || (data.rate_mmh !== null && data.rate_mmh !== undefined))) {
+          this._lastRadarLookup = {
+            lat,
+            lng,
+            product,
+            dbz: data.dbz,
+            rate_mmh: data.rate_mmh,
+            rain_intensity: data.rain_intensity
+          };
           // Forzar refresco inmediato si el cursor/tap sigue en la misma celda (< 0.08° ~ 8km)
           const targetLatLng = this._activeMobileLatLng || this._lastLatLng;
           if (targetLatLng && Math.abs(targetLatLng.lat - lat) < 0.08 && Math.abs(targetLatLng.lng - lng) < 0.08) {
@@ -1180,53 +1208,67 @@ export class MultiLayerInspector {
         }
 
         if (inRadarArea) {
+          const activeProduct = this.layerManager.currentRadarProduct || 'dbz';
           // 1. Detección instantánea en el cliente desde el raster canvas (0ms de latencia)
-          // Solo detecta puntos donde exista eco de precipitación real (dBZ > 0)
           const instantPixel = this._getInstantRadarPixel(lat, lng);
 
           // 2. Comprobar si hay valor float de alta precisión en caché para la misma celda de cuadrícula
           const cached = this._lastRadarLookup &&
+            this._lastRadarLookup.product === activeProduct &&
             Math.abs(this._lastRadarLookup.lat - lat) < 0.005 &&
             Math.abs(this._lastRadarLookup.lng - lng) < 0.005;
 
-          const hasValidEcho = (instantPixel && instantPixel.dbz > 0) || (cached && this._lastRadarLookup && this._lastRadarLookup.dbz > 0);
+          const hasValidEcho = (activeProduct === 'rate')
+            ? ((instantPixel && instantPixel.rate !== null && instantPixel.rate > 0) || (cached && this._lastRadarLookup && this._lastRadarLookup.rate_mmh > 0))
+            : ((instantPixel && instantPixel.dbz !== null && instantPixel.dbz > 0) || (cached && this._lastRadarLookup && this._lastRadarLookup.dbz > 0));
 
           if (hasValidEcho) {
-            const dbzVal = (cached && this._lastRadarLookup && this._lastRadarLookup.dbz !== null && this._lastRadarLookup.dbz !== undefined && this._lastRadarLookup.dbz > 0)
-              ? this._lastRadarLookup.dbz
-              : (instantPixel ? instantPixel.dbz : 0);
+            let label = (cached && this._lastRadarLookup && this._lastRadarLookup.rain_intensity)
+              ? this._lastRadarLookup.rain_intensity
+              : (instantPixel ? instantPixel.rain_intensity : 'Precipitación');
 
-            if (dbzVal > 0) {
-              const label = (cached && this._lastRadarLookup && this._lastRadarLookup.rain_intensity)
-                ? this._lastRadarLookup.rain_intensity
-                : (instantPixel ? instantPixel.rain_intensity : 'Precipitación');
+            const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
+            let nameText = '';
+            let badgeText = '';
 
-              const badgeBg = instantPixel ? instantPixel.badgeColor : '#38bdf8';
+            if (activeProduct === 'rate') {
+              const rateVal = (cached && this._lastRadarLookup && this._lastRadarLookup.rate_mmh !== null && this._lastRadarLookup.rate_mmh !== undefined)
+                ? this._lastRadarLookup.rate_mmh
+                : (instantPixel ? instantPixel.rate : 0);
+              const fmtRate = rateVal >= 100 ? '≥100' : rateVal.toFixed(1);
+              nameText = `Intensidad: ${fmtRate} mm/h`;
+              badgeText = `${fmtRate} mm/h`;
+            } else {
+              const dbzVal = (cached && this._lastRadarLookup && this._lastRadarLookup.dbz !== null && this._lastRadarLookup.dbz !== undefined)
+                ? this._lastRadarLookup.dbz
+                : (instantPixel ? instantPixel.dbz : 0);
+              nameText = `Reflectividad: ${dbzVal.toFixed(1)} dBZ`;
+              badgeText = `${dbzVal.toFixed(0)} dBZ`;
+            }
 
-              let stMode = 'Compuesto Nacional (AEMET + EUMETNET)';
+            const prodName = activeProduct === 'rate' ? 'Intensidad de Precipitación (RATE)' : 'Reflectividad (dBZ)';
 
-              sections.push({
-                type: "radar",
-                title: "Radar Meteorológico (AEMET/OPERA)",
-                headerColor: "#0284c7",
-                icon: "📡",
-                name: `Intensidad: ${dbzVal.toFixed(1)} dBZ`,
-                badge: `${dbzVal.toFixed(0)} dBZ`,
-                badgeBg: badgeBg,
-                badgeColor: "#ffffff",
-                details: `
-                  <div style="font-size: 0.76rem; color: #f8fafc; font-weight: 600;">
-                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
-                    ${label}
-                  </div>
-                  <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Producto: ${stMode}</div>
-                `
-              });
+            sections.push({
+              type: "radar",
+              title: "Radar Meteorológico (AEMET/OPERA)",
+              headerColor: "#0284c7",
+              icon: "📡",
+              name: nameText,
+              badge: badgeText,
+              badgeBg: badgeBg,
+              badgeColor: "#ffffff",
+              details: `
+                <div style="font-size: 0.76rem; color: #f8fafc; font-weight: 600;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${badgeBg};margin-right:4px;"></span>
+                  ${label}
+                </div>
+                <div style="font-size: 0.70rem; color: #94a3b8; margin-top: 2px;">Producto: ${prodName}</div>
+              `
+            });
 
-              // Disparar consulta de calibración fina al backend solo cuando el ratón está parado (delay 200ms)
-              if (!cached && fetchBackend) {
-                this._fetchRadarDbz(lat, lng, "composite", "");
-              }
+            // Disparar consulta de calibración fina al backend solo cuando el ratón está parado (delay 200ms)
+            if (!cached && fetchBackend) {
+              this._fetchRadarDbz(lat, lng, "composite", "");
             }
           }
         }

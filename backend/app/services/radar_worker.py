@@ -186,6 +186,94 @@ def colorize_dbz_array(dbz_matrix: np.ndarray) -> np.ndarray:
     return rgba
 
 
+def dbz_to_rain_rate(dbz_matrix: np.ndarray) -> np.ndarray:
+    """
+    Convierte una matriz 2D de reflectividad (dBZ) en tasa de precipitación instantánea (mm/h).
+    Aplica relación Z-R estándar de Marshall-Palmer (Z = 200 * R^1.6) para lluvia general (< 40 dBZ)
+    y relación convectiva para tormentas (Z = 300 * R^1.4) para dBZ >= 40.
+    Retorna matriz de float32 en mm/h (con valores < 5.0 dBZ o nodata fijados a 0.0).
+    """
+    valid = (dbz_matrix >= 5.0) & (dbz_matrix < 95.0)
+    rate = np.zeros_like(dbz_matrix, dtype=np.float32)
+
+    # Régimen estratiforme / lluvia general (< 40 dBZ)
+    m_strat = valid & (dbz_matrix < 40.0)
+    if np.any(m_strat):
+        z_strat = 10.0 ** (dbz_matrix[m_strat] / 10.0)
+        rate[m_strat] = np.power(z_strat / 200.0, 1.0 / 1.6)
+
+    # Régimen convectivo / tormentas (>= 40 dBZ)
+    m_conv = valid & (dbz_matrix >= 40.0)
+    if np.any(m_conv):
+        z_conv = 10.0 ** (dbz_matrix[m_conv] / 10.0)
+        rate[m_conv] = np.power(z_conv / 300.0, 1.0 / 1.4)
+
+    return np.round(rate, 2)
+
+
+def colorize_rate_array(rate_matrix: np.ndarray) -> np.ndarray:
+    """
+    Aplica la rampa de color meteorológica oficial para intensidad de precipitación RATE (mm/h).
+    Retorna matriz RGBA (H, W, 4) uint8.
+    """
+    h, w = rate_matrix.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+
+    # 1. 0.1 a 0.5 mm/h (Llovizna / Muy débil) -> Cyan suave pastel #7dd3fc
+    m1 = (rate_matrix >= 0.1) & (rate_matrix < 0.5)
+    rgba[m1] = [125, 211, 252, 160]
+
+    # 2. 0.5 a 1.0 mm/h (Lluvia muy débil) -> Azul cielo #38bdf8
+    m2 = (rate_matrix >= 0.5) & (rate_matrix < 1.0)
+    rgba[m2] = [56, 189, 248, 180]
+
+    # 3. 1.0 a 2.0 mm/h (Lluvia débil) -> Azul medio #0284c7
+    m3 = (rate_matrix >= 1.0) & (rate_matrix < 2.0)
+    rgba[m3] = [2, 132, 199, 200]
+
+    # 4. 2.0 a 5.0 mm/h (Lluvia débil a moderada) -> Azul cobalto #1d4ed8
+    m4 = (rate_matrix >= 2.0) & (rate_matrix < 5.0)
+    rgba[m4] = [29, 78, 216, 215]
+
+    # 5. 5.0 a 10.0 mm/h (Lluvia moderada) -> Verde esmeralda #10b981
+    m5 = (rate_matrix >= 5.0) & (rate_matrix < 10.0)
+    rgba[m5] = [16, 185, 129, 225]
+
+    # 6. 10.0 a 15.0 mm/h (Lluvia moderada a fuerte) -> Verde puro #22c55e
+    m6 = (rate_matrix >= 10.0) & (rate_matrix < 15.0)
+    rgba[m6] = [34, 197, 94, 230]
+
+    # 7. 15.0 a 20.0 mm/h (Lluvia fuerte) -> Verde lima #84cc16
+    m7 = (rate_matrix >= 15.0) & (rate_matrix < 20.0)
+    rgba[m7] = [132, 204, 22, 235]
+
+    # 8. 20.0 a 30.0 mm/h (Lluvia muy fuerte) -> Amarillo #eab308
+    m8 = (rate_matrix >= 20.0) & (rate_matrix < 30.0)
+    rgba[m8] = [234, 179, 8, 240]
+
+    # 9. 30.0 a 45.0 mm/h (Chubascos muy intensos) -> Ámbar #f59e0b
+    m9 = (rate_matrix >= 30.0) & (rate_matrix < 45.0)
+    rgba[m9] = [245, 158, 11, 245]
+
+    # 10. 45.0 a 60.0 mm/h (Chubascos torrenciales) -> Naranja brillante #ea580c
+    m10 = (rate_matrix >= 45.0) & (rate_matrix < 60.0)
+    rgba[m10] = [234, 88, 12, 250]
+
+    # 11. 60.0 a 80.0 mm/h (Lluvia torrencial) -> Rojo bermellón #dc2626
+    m11 = (rate_matrix >= 60.0) & (rate_matrix < 80.0)
+    rgba[m11] = [220, 38, 38, 255]
+
+    # 12. 80.0 a 100.0 mm/h (Tormenta severa) -> Rojo carmesí #991b1b
+    m12 = (rate_matrix >= 80.0) & (rate_matrix < 100.0)
+    rgba[m12] = [153, 27, 27, 255]
+
+    # 13. >= 100.0 mm/h (Precipitación extrema / Granizo) -> Púrpura #c026d3
+    m13 = (rate_matrix >= 100.0)
+    rgba[m13] = [192, 38, 211, 255]
+
+    return rgba
+
+
 def parse_timestep_info(timestep: str) -> Dict[str, Any]:
     """
     Convierte un identificador de timestep (ej: '20260919T1305' o '1305')
@@ -430,6 +518,10 @@ class RadarService:
             "stations": SPANISH_RADAR_STATIONS,
             "short_range_max_km": RADAR_SHORT_RANGE_MAX_KM,
             "timeline": self.get_timeline(),
+            "products": [
+                {"id": "dbz", "name": "Reflectividad", "unit": "dBZ", "default": True},
+                {"id": "rate", "name": "Intensidad", "unit": "mm/h", "default": False}
+            ],
             "color_scale": [
                 {"min_dbz": 5, "max_dbz": 10, "color": "#7dd3fc", "label": "5-10 dBZ (Llovizna / Muy débil)"},
                 {"min_dbz": 10, "max_dbz": 15, "color": "#38bdf8", "label": "10-15 dBZ (Muy débil)"},
@@ -444,21 +536,62 @@ class RadarService:
                 {"min_dbz": 55, "max_dbz": 60, "color": "#dc2626", "label": "55-60 dBZ (Tormenta severa)"},
                 {"min_dbz": 60, "max_dbz": 65, "color": "#991b1b", "label": "60-65 dBZ (Severa / Granizo)"},
                 {"min_dbz": 65, "max_dbz": 80, "color": "#c026d3", "label": "≥65 dBZ (Granizo destructivo)"}
+            ],
+            "rate_color_scale": [
+                {"min_val": 0.1, "max_val": 0.5, "color": "#7dd3fc", "label": "0.1-0.5 mm/h (Llovizna / Muy débil)"},
+                {"min_val": 0.5, "max_val": 1.0, "color": "#38bdf8", "label": "0.5-1 mm/h (Muy débil)"},
+                {"min_val": 1.0, "max_val": 2.0, "color": "#0284c7", "label": "1-2 mm/h (Débil)"},
+                {"min_val": 2.0, "max_val": 5.0, "color": "#1d4ed8", "label": "2-5 mm/h (Débil a moderada)"},
+                {"min_val": 5.0, "max_val": 10.0, "color": "#10b981", "label": "5-10 mm/h (Moderada baja)"},
+                {"min_val": 10.0, "max_val": 15.0, "color": "#22c55e", "label": "10-15 mm/h (Moderada)"},
+                {"min_val": 15.0, "max_val": 20.0, "color": "#84cc16", "label": "15-20 mm/h (Moderada a fuerte)"},
+                {"min_val": 20.0, "max_val": 30.0, "color": "#eab308", "label": "20-30 mm/h (Fuerte)"},
+                {"min_val": 30.0, "max_val": 45.0, "color": "#f59e0b", "label": "30-45 mm/h (Muy fuerte)"},
+                {"min_val": 45.0, "max_val": 60.0, "color": "#ea580c", "label": "45-60 mm/h (Torrencial)"},
+                {"min_val": 60.0, "max_val": 80.0, "color": "#dc2626", "label": "60-80 mm/h (Tormenta)"},
+                {"min_val": 80.0, "max_val": 100.0, "color": "#991b1b", "label": "80-100 mm/h (Tormenta severa)"},
+                {"min_val": 100.0, "max_val": 999.0, "color": "#c026d3", "label": "≥100 mm/h (Extrema / Granizo)"}
             ]
         }
 
-    def get_composite_image_path(self, mode: str = "mixed", timestep: Optional[str] = None) -> Optional[Path]:
+    def get_composite_image_path(self, mode: str = "mixed", product: str = "dbz", timestep: Optional[str] = None) -> Optional[Path]:
         """
-        Ruta del archivo PNG del compuesto solicitado.
-        Garantiza que todos los modos (incluido long_range) muestren el compuesto completo con Cullera y EUMETNET.
+        Ruta del archivo PNG del compuesto solicitado (dbz o rate).
+        Garantiza generación al vuelo para fotogramas históricos si es necesario.
         """
+        norm_prod = "rate" if str(product).lower() in ("rate", "intensidad", "rain_rate") else "dbz"
+
         if timestep:
-            for pfx in ("mixed_", "composite_", "long_", "short_"):
-                p = self.composites_dir / f"{pfx}{timestep}.png"
-                if p.exists():
-                    return p
+            if norm_prod == "rate":
+                p_rate = self.composites_dir / f"rate_{timestep}.png"
+                if p_rate.exists():
+                    return p_rate
+                # Generar al vuelo si existe la matriz dBZ
+                for pfx in ("mixed_", "composite_", "long_"):
+                    grid = self._load_grid_file(self.composites_dir / f"{pfx}{timestep}")
+                    if grid is not None:
+                        rate_grid = dbz_to_rain_rate(grid)
+                        img_rate = Image.fromarray(colorize_rate_array(rate_grid), "RGBA")
+                        img_rate.save(p_rate, format="PNG", optimize=True)
+                        return p_rate
+            else:
+                for pfx in ("mixed_", "composite_", "long_", "short_"):
+                    p = self.composites_dir / f"{pfx}{timestep}.png"
+                    if p.exists():
+                        return p
 
         # Fotograma más reciente
+        if norm_prod == "rate":
+            p_rate_latest = self.cache_dir / "latest_rate_composite.png"
+            if p_rate_latest.exists():
+                return p_rate_latest
+            latest_grid = self._composite_dbz_grid if self._composite_dbz_grid is not None else self._load_grid_file(self.cache_dir / "latest_spain_composite")
+            if latest_grid is not None:
+                rate_grid = dbz_to_rain_rate(latest_grid)
+                img_rate = Image.fromarray(colorize_rate_array(rate_grid), "RGBA")
+                img_rate.save(p_rate_latest, format="PNG", optimize=True)
+                return p_rate_latest
+
         p_latest = self.cache_dir / "latest_spain_composite.png"
         if p_latest.exists():
             return p_latest
@@ -467,9 +600,9 @@ class RadarService:
             return p_long
         return None
 
-    def get_station_image_path(self, station_id: str, timestep: Optional[str] = None) -> Optional[Path]:
-        """Compatibilidad: retorna el compuesto mixto nacional."""
-        return self.get_composite_image_path(mode="mixed", timestep=timestep)
+    def get_station_image_path(self, station_id: str, product: str = "dbz", timestep: Optional[str] = None) -> Optional[Path]:
+        """Compatibilidad: retorna el compuesto mixto nacional con el producto solicitado."""
+        return self.get_composite_image_path(mode="mixed", product=product, timestep=timestep)
 
     def get_dbz_at_point(self, lat: float, lon: float, mode: str = "mixed", station_id: Optional[str] = None, timestep: Optional[str] = None) -> Optional[float]:
         """Consulta el valor en dBZ para las coordenadas (lat, lon) dadas según el modo seleccionado."""
@@ -720,7 +853,7 @@ class RadarService:
                 is_near_realtime = False
 
             if is_near_realtime and aemet_opendata_service.is_configured:
-                priority_stations = ["escul", "espma", "espmb", "escor", "esgrm"]
+                priority_stations = ["escul", "esmur", "espmb", "escor", "esgrm"]
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
                     for st_id in priority_stations
@@ -759,6 +892,12 @@ class RadarService:
             img_short = Image.fromarray(colorize_dbz_array(short_grid_2d), "RGBA")
             img_short.save(self.composites_dir / f"short_{timestep}.png", format="PNG", optimize=True)
 
+            # 5.1 Generar y guardar matriz de intensidad RATE (mm/h)
+            rate_grid = dbz_to_rain_rate(mixed_grid)
+            np.savez_compressed(self.composites_dir / f"rate_{timestep}.npz", data=rate_grid)
+            img_rate = Image.fromarray(colorize_rate_array(rate_grid), "RGBA")
+            img_rate.save(self.composites_dir / f"rate_{timestep}.png", format="PNG", optimize=True)
+
             # 6. Actualizar fotograma más reciente
             is_latest_or_newer = True
             if self.timeline:
@@ -774,14 +913,17 @@ class RadarService:
                 self._composite_dbz_grid = mixed_grid
                 self._short_range_dbz_grid = short_grid_2d
                 self._long_range_dbz_grid = mixed_grid
+                self._composite_rate_grid = rate_grid
 
                 try:
                     np.savez_compressed(self.cache_dir / "latest_spain_composite.npz", data=mixed_grid)
                     np.savez_compressed(self.cache_dir / "latest_short_composite.npz", data=short_grid_2d)
                     np.savez_compressed(self.cache_dir / "latest_long_composite.npz", data=mixed_grid)
+                    np.savez_compressed(self.cache_dir / "latest_rate_composite.npz", data=rate_grid)
                     img_mixed.save(self.cache_dir / "latest_spain_composite.png", format="PNG", optimize=True)
                     img_mixed.save(self.cache_dir / "latest_long_composite.png", format="PNG", optimize=True)
                     img_short.save(self.cache_dir / "latest_short_composite.png", format="PNG", optimize=True)
+                    img_rate.save(self.cache_dir / "latest_rate_composite.png", format="PNG", optimize=True)
                 except Exception as e:
                     logger.warning(f"Error actualizando latest_spain_composite: {e}")
 

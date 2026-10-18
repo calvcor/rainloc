@@ -91,6 +91,7 @@ export class LayerManager {
     this._lightningBatchRaf = null;
     this.radarCoverageGroup = L.layerGroup();
     this.currentRadarMode = prefs.radarMode || 'mixed';
+    this.currentRadarProduct = prefs.radarProduct || 'dbz';
     this.currentAemetPeriod = prefs.aemetPeriod || 'now';
 
     // Estado del Mapa Suave de Acumulados de Lluvia (Interpolación en Navegador)
@@ -1917,13 +1918,15 @@ export class LayerManager {
    */
   _getRadarImageUrl(timestep) {
     const mode = this.currentRadarMode || 'mixed';
+    const product = this.currentRadarProduct || 'dbz';
     const isLatest = !timestep || (this.radarTimeline && this.radarTimeline.length > 0 && timestep === this.radarTimeline[this.radarTimeline.length - 1]?.timestep);
     const vParam = isLatest ? `&_v=${encodeURIComponent((this.radarMetadata && this.radarMetadata.last_updated) || Date.now())}` : '';
     const stParam = (mode === 'single' && this.currentRadarStationId) ? `&station_id=${encodeURIComponent(this.currentRadarStationId)}` : '';
+    const prodParam = `&product=${encodeURIComponent(product)}`;
     if (timestep) {
-      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}&timestep=${encodeURIComponent(timestep)}${vParam}`;
+      return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}${prodParam}&timestep=${encodeURIComponent(timestep)}${vParam}`;
     }
-    return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}&_t=${Date.now()}`;
+    return `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(mode)}${stParam}${prodParam}&_t=${Date.now()}`;
   }
 
   /**
@@ -2002,7 +2005,8 @@ export class LayerManager {
         // Si no teníamos timestep (arranque en frío), lanzar en paralelo la descarga del compuesto más reciente para velocidad instantánea
         if (!this.currentRadarTimestep) {
           const stParam = (this.currentRadarMode === 'single' && this.currentRadarStationId) ? `&station_id=${encodeURIComponent(this.currentRadarStationId)}` : '';
-          const directLatestUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(this.currentRadarMode || 'mixed')}${stParam}`;
+          const prodParam = `&product=${encodeURIComponent(this.currentRadarProduct || 'dbz')}`;
+          const directLatestUrl = `${CONFIG.apiBaseUrl}/radar/image?mode=${encodeURIComponent(this.currentRadarMode || 'mixed')}${stParam}${prodParam}`;
           const signal = this._getModelAbortSignal('radar');
           initialImagePromise = this._fetchModelImage(directLatestUrl, signal, null).catch(() => null);
         }
@@ -2077,7 +2081,7 @@ export class LayerManager {
       const { img: offscreenImg, objectUrl } = imageResult;
 
       // Actualizar canvas único de inspección bajo demanda (solo en escritorio)
-      const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, currentStep, timeText, { mode: 'composite' });
+      const probeData = this._updateSharedProbeCanvas(offscreenImg, bounds, currentStep, timeText, { mode: 'composite', product: this.currentRadarProduct || 'dbz' });
       if (probeData) {
         this.radarCanvasData = probeData;
       }
@@ -3838,6 +3842,18 @@ export class LayerManager {
         });
       }
     }
+  }
+
+  /**
+   * Cambia el producto de radar activo ('dbz' para reflectividad o 'rate' para intensidad)
+   * @param {string} product 
+   */
+  setRadarProduct(product) {
+    const norm = (product === 'rate') ? 'rate' : 'dbz';
+    if (this.currentRadarProduct === norm) return;
+    this.currentRadarProduct = norm;
+    StorageManager.setRadarProduct(norm);
+    this.reloadRadarLayer();
   }
 
   /**
@@ -7015,17 +7031,18 @@ export class LayerManager {
         }, 18000);
       }
 
-      if (!geojson || !geojson.features) {
+      const hasValidFeatures = geojson && Array.isArray(geojson.features) && geojson.features.length > 0;
+      if (!hasValidFeatures) {
         for (const url of fallbackUrls) {
           const fbRes = await this._fetchJsonWithTimeout(url, 3000);
-          if (fbRes.data && fbRes.data.features) {
+          if (fbRes.data && Array.isArray(fbRes.data.features) && fbRes.data.features.length > 0) {
             geojson = fbRes.data;
             break;
           }
         }
       }
 
-      if (geojson && geojson.features) {
+      if (geojson && Array.isArray(geojson.features) && geojson.features.length > 0) {
         this._avametLluviasGeojson = geojson;
         this._avametLluviasGeojsonTime = now;
         try {
@@ -7034,8 +7051,12 @@ export class LayerManager {
       }
     }
 
-    if (!geojson || !geojson.features) {
-      return;
+    if (!geojson || !Array.isArray(geojson.features) || geojson.features.length === 0) {
+      if (this._avametLluviasGeojson && Array.isArray(this._avametLluviasGeojson.features) && this._avametLluviasGeojson.features.length > 0) {
+        geojson = this._avametLluviasGeojson;
+      } else {
+        return;
+      }
     }
 
     this._renderAvametLluviasGeojson(layerGroup, geojson, opacity);
