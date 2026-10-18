@@ -56,10 +56,21 @@ export class SmoothWheelZoomHandler extends L.Handler {
     const delta = L.DomEvent.getWheelDelta(e);
     const sensitivity = map.options.smoothSensitivity || 1.0;
 
-    // Sensibilidad diferenciada: trackpad pinch (movimiento directo de dedos) vs scroll continuo
-    const stepFactor = isPinch ? 0.005 : 0.0028;
+    // Sensibilidad calibrada para velocidad ágil estilo Google Maps:
+    // trackpad pinch (pellizco 1:1) vs desplazamiento/rueda (scroll con recorrido rápido)
+    const stepFactor = isPinch ? 0.08 : 0.16;
 
     this._goalZoom = this._goalZoom + delta * stepFactor * sensitivity;
+
+    // Limitar la acumulación máxima de adelanto respecto al zoom actual (máx. 3 niveles de buffer)
+    const currentZoom = map.getZoom();
+    const maxLead = 3.0;
+    if (this._goalZoom - currentZoom > maxLead) {
+      this._goalZoom = currentZoom + maxLead;
+    } else if (currentZoom - this._goalZoom > maxLead) {
+      this._goalZoom = currentZoom - maxLead;
+    }
+
     if (this._goalZoom < map.getMinZoom() || this._goalZoom > map.getMaxZoom()) {
       this._goalZoom = map._limitZoom(this._goalZoom);
     }
@@ -68,7 +79,7 @@ export class SmoothWheelZoomHandler extends L.Handler {
     this._wheelMouseLatLng = map.containerPointToLatLng(this._wheelMousePosition);
 
     clearTimeout(this._timeoutId);
-    this._timeoutId = setTimeout(this._onWheelEnd.bind(this), 160);
+    this._timeoutId = setTimeout(this._onWheelEnd.bind(this), 140);
 
     L.DomEvent.preventDefault(e);
     L.DomEvent.stopPropagation(e);
@@ -106,8 +117,8 @@ export class SmoothWheelZoomHandler extends L.Handler {
         return;
       }
     } else {
-      // Interpolación suave amortiguada hacia el zoom objetivo (easing exponencial 60/120Hz)
-      this._zoom = currentZoom + diff * 0.28;
+      // Interpolación amortiguada ágil y reactiva (easing estilo Google Maps a 60/120Hz)
+      this._zoom = currentZoom + diff * 0.35;
     }
 
     const delta = this._wheelMousePosition.subtract(this._centerPoint);

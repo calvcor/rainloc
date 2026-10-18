@@ -17,9 +17,9 @@ export const CONFIG = {
     maxBounds: null, // Permite desplazamiento libre sin restricciones
     zoomSnap: 0, // Zoom continuo sin saltos: se ajusta con fluidez 1:1 al movimiento de los dedos
     zoomDelta: 0.5, // Incremento suave para controles manuales (+/-)
-    wheelPxPerZoomLevel: 120, // Desplazamiento y escala amortiguada para rueda de ratón y trackpad
+    wheelPxPerZoomLevel: 60, // Velocidad ágil de zoom estilo Google Maps
     bounceAtZoomLimits: false, // Evita rebotes bruscos al llegar a minZoom/maxZoom
-    smoothSensitivity: 1.0 // Sensibilidad natural para zoom con movimiento táctil y trackpad
+    smoothSensitivity: 1.0 // Sensibilidad reactiva tipo Google Maps
   },
 
   // API Backend URL (FastAPI): Detecta si se accede tras Nginx/Docker en puerto 80 (usando ruta relativa) o en desarrollo directo
