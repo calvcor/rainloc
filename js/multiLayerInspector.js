@@ -1301,7 +1301,7 @@ export class MultiLayerInspector {
 
           sections.push({
             type: "radar_station",
-            title: "Emplazamiento de Radar Meteorológico",
+            title: "Radar Meteorológico",
             headerColor: stBadgeColor,
             icon: "📡",
             name: closestRadarSt.name,
