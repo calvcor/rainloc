@@ -4,6 +4,7 @@
 
 import { CONFIG } from './config.js';
 import { StorageManager } from './storage.js';
+import './smoothWheelZoom.js';
 
 export class MapManager {
   constructor(mapContainerId = 'map') {
@@ -25,7 +26,18 @@ export class MapManager {
    * Inicializa la instancia del mapa Leaflet
    */
   init() {
-    const { initialCenter, initialZoom, minZoom, maxZoom, maxBounds } = CONFIG.map;
+    const {
+      initialCenter,
+      initialZoom,
+      minZoom,
+      maxZoom,
+      maxBounds,
+      zoomSnap,
+      zoomDelta,
+      wheelPxPerZoomLevel,
+      bounceAtZoomLimits,
+      smoothSensitivity
+    } = CONFIG.map;
 
     this.map = L.map(this.containerId, {
       center: initialCenter,
@@ -33,6 +45,14 @@ export class MapManager {
       minZoom: minZoom,
       maxZoom: maxZoom,
       maxBounds: maxBounds,
+      zoomSnap: (zoomSnap !== undefined) ? zoomSnap : 0, // Zoom continuo sin forzar enteros al soltar los dedos
+      zoomDelta: (zoomDelta !== undefined) ? zoomDelta : 0.5, // Control suave en botones (+/-)
+      wheelPxPerZoomLevel: (wheelPxPerZoomLevel !== undefined) ? wheelPxPerZoomLevel : 120,
+      bounceAtZoomLimits: (bounceAtZoomLimits !== undefined) ? bounceAtZoomLimits : false, // Sin efecto rebote brusco en extremos
+      scrollWheelZoom: false, // Desactivar el zoom escalonado predeterminado de Leaflet
+      smoothWheelZoom: true, // Activar zoom fluido continuo amortiguado a 60/120Hz
+      smoothSensitivity: (smoothSensitivity !== undefined) ? smoothSensitivity : 1.0,
+      touchZoom: true, // Pellizco táctil continuo 1:1 con el movimiento de los dedos
       zoomControl: false, // Usamos control personalizado para mejor posición UI
       attributionControl: false // Personalizaremos el control
     });
@@ -153,9 +173,9 @@ export class MapManager {
     }
 
     // Observador de cambios de tamaño en el contenedor del mapa (crítico para PWA standalone en iOS/iPad)
-    if (typeof ResizeObserver !== 'undefined') {
-      const mapContainer = document.getElementById(this.containerId);
-      if (mapContainer) {
+    const mapContainer = document.getElementById(this.containerId);
+    if (mapContainer) {
+      if (typeof ResizeObserver !== 'undefined') {
         const resizeObserver = new ResizeObserver(() => {
           if (this.map) {
             this.map.invalidateSize({ pan: false });
@@ -163,6 +183,14 @@ export class MapManager {
         });
         resizeObserver.observe(mapContainer);
       }
+
+      // Evitar que Safari intercepte el gesto de pellizco con dos dedos para hacer zoom a nivel de página (viewport)
+      const preventNativeSafariGesture = (e) => {
+        e.preventDefault();
+      };
+      mapContainer.addEventListener('gesturestart', preventNativeSafariGesture, { passive: false });
+      mapContainer.addEventListener('gesturechange', preventNativeSafariGesture, { passive: false });
+      mapContainer.addEventListener('gestureend', preventNativeSafariGesture, { passive: false });
     }
 
     // Escuchar cambios de tamaño de ventana y orientación (p. ej. barra de herramientas de Safari en iPad/iOS)
@@ -411,7 +439,8 @@ export class MapManager {
       const tileLayer = L.tileLayer(bm.url, {
         attribution: bm.attribution,
         subdomains: bm.subdomains || 'abc',
-        maxZoom: bm.maxZoom || 19
+        maxZoom: bm.maxZoom || 19,
+        keepBuffer: 4
       });
 
       this.baseLayers[bm.name] = tileLayer;

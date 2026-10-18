@@ -14,7 +14,12 @@ export const CONFIG = {
     initialZoom: 8,
     minZoom: 4,
     maxZoom: 18,
-    maxBounds: null // Permite desplazamiento libre sin restricciones
+    maxBounds: null, // Permite desplazamiento libre sin restricciones
+    zoomSnap: 0, // Zoom continuo sin saltos: se ajusta con fluidez 1:1 al movimiento de los dedos
+    zoomDelta: 0.5, // Incremento suave para controles manuales (+/-)
+    wheelPxPerZoomLevel: 120, // Desplazamiento y escala amortiguada para rueda de ratón y trackpad
+    bounceAtZoomLimits: false, // Evita rebotes bruscos al llegar a minZoom/maxZoom
+    smoothSensitivity: 1.0 // Sensibilidad natural para zoom con movimiento táctil y trackpad
   },
 
   // API Backend URL (FastAPI): Detecta si se accede tras Nginx/Docker en puerto 80 (usando ruta relativa) o en desarrollo directo

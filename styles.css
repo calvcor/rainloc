@@ -416,6 +416,10 @@ body {
   height: 100%;
   z-index: 1;
   background-color: #0b1120;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Efecto suave de desenfoque cuando se carga un modelo de predicción o radar */
