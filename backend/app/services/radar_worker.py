@@ -45,6 +45,16 @@ from app.services.aemet_opendata import aemet_opendata_service
 
 logger = logging.getLogger("rainloc-backend.radar")
 
+# Mapeo de alias de códigos de nodo ODIM/EUMETNET OPERA a los identificadores estándar de RainLoc
+OPERA_NODE_ALIASES: Dict[str, str] = {
+    "esalm": "esnjr",   # Almería (Níjar)
+    "eslpa": "esatn",   # Gran Canaria (Artenara / Las Palmas)
+    "estfn": "esbnv",   # Tenerife (Buenavista del Norte)
+    "essal": "esgrm",   # Salamanca (Guadramiro)
+    "esval": "escul",   # Valencia (Cullera)
+    "espma": "espmb",   # Mallorca (Llucmajor)
+}
+
 # Coordenadas y Grid para el Compuesto de España:
 # Cubre Península Ibérica y Baleares: Lat [35.0, 44.5], Lon [-10.0, 5.0]
 # CRÍTICO: El grid se muestrea en proyección Web Mercator (EPSG:3857) para que
@@ -355,6 +365,9 @@ class RadarService:
 
         # Cache LRU en memoria de matrices históricas recientes (máx 40)
         self._historical_dbz_grids: Dict[Tuple[str, str], np.ndarray] = {}
+
+        # Registro temporal de última emisión detectada de cada estación (epoch seconds)
+        self._station_last_seen: Dict[str, float] = {}
 
         # Intentar cargar matriz cacheada y timeline del disco
         self._load_cached_state()
@@ -813,6 +826,7 @@ class RadarService:
         """
         try:
             # 1. Decodificar capa base de largo alcance (OPERA / DBZH+TH)
+            opera_nodes: List[str] = []
             with h5py.File(io.BytesIO(h5_bytes), "r") as f:
                 raw_data = f["dataset1"]["data1"]["data"][:]
                 what = f["dataset1"]["data1"]["what"].attrs
@@ -820,6 +834,11 @@ class RadarService:
                 offset = float(what.get("offset", -32.0))
                 nodata = float(what.get("nodata", 255.0))
                 undetect = float(what.get("undetect", 0.0))
+
+                if "how" in f and "nodes" in f["how"].attrs:
+                    nodes_raw = f["how"].attrs["nodes"]
+                    nodes_str = nodes_raw.decode("utf-8") if isinstance(nodes_raw, bytes) else str(nodes_raw)
+                    opera_nodes = [n.strip("' \"").lower() for n in nodes_str.split(",")]
 
             dbz_phys = np.where((raw_data == nodata) | (raw_data == undetect), -9999.0, raw_data * gain + offset)
             dbz_phys = np.where(dbz_phys < 5.0, -9999.0, dbz_phys)
@@ -905,7 +924,50 @@ class RadarService:
                 if timestep < latest_existing:
                     is_latest_or_newer = False
 
-            active_ids = list(short_scans.keys())
+            # Recopilar identificadores de estaciones activas en este fotograma
+            active_set = set()
+
+            # 1. Nodos de la red española integrados en el compuesto de OPERA
+            for node in opera_nodes:
+                st_id = OPERA_NODE_ALIASES.get(node, node)
+                if st_id in SPANISH_RADAR_STATIONS:
+                    active_set.add(st_id)
+                    if st_id == "espmb":
+                        active_set.add("espma")
+                    elif st_id == "espma":
+                        active_set.add("espmb")
+
+            # 2. Estaciones con barridos polares de corto alcance procesados o fallback AEMET OpenData
+            for st_id in short_scans.keys():
+                if st_id in SPANISH_RADAR_STATIONS:
+                    active_set.add(st_id)
+                    if st_id == "espmb":
+                        active_set.add("espma")
+                    elif st_id == "espma":
+                        active_set.add("espmb")
+
+            # 3. Fallback de resiliencia: si la cabecera OPERA vino sin 'nodes', mantener como activas
+            # todas las estaciones de la red de OPERA
+            if not opera_nodes:
+                for sid, sinfo in SPANISH_RADAR_STATIONS.items():
+                    if sinfo.get("source") == "OPERA":
+                        active_set.add(sid)
+
+            # 4. Ventana de tolerancia temporal (20 min) para cubrir desfases y ciclos de 10-15 min de AEMET
+            dt_ts = None
+            try:
+                dt_ts = datetime.strptime(timestep[:13], "%Y%m%dT%H%M").replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+            now_epoch = dt_ts.timestamp() if dt_ts else time.time()
+            for st_id in active_set:
+                self._station_last_seen[st_id] = now_epoch
+
+            for st_id, last_ts in list(self._station_last_seen.items()):
+                if abs(now_epoch - last_ts) <= 1200: # 20 minutos
+                    active_set.add(st_id)
+
+            active_ids = sorted(list(active_set))
             active_names = [SPANISH_RADAR_STATIONS[sid]["name"] for sid in active_ids if sid in SPANISH_RADAR_STATIONS]
             missing_ids = [sid for sid in SPANISH_RADAR_STATIONS.keys() if sid not in active_ids]
 

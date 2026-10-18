@@ -3890,7 +3890,9 @@ export class LayerManager {
     const currentEntry = timeline.find(t => t.timestep === currentStep);
 
     // Lista de estaciones activas en este fotograma específico
-    let activeIds = (currentEntry && Array.isArray(currentEntry.active_radars) && currentEntry.active_radars.length > 0)
+    // Si active_radars viene vacío o con datos incompletos (< 6 radares por fotogramas históricos previos),
+    // se toma el catálogo completo como fallback para no mostrar falsos positivos de radares caídos.
+    let activeIds = (currentEntry && Array.isArray(currentEntry.active_radars) && currentEntry.active_radars.length >= 6)
       ? currentEntry.active_radars
       : Object.keys(CONFIG.radarStations);
 
@@ -3909,7 +3911,13 @@ export class LayerManager {
       if (seenLocations.has(locKey)) return;
       seenLocations.add(locKey);
 
-      const isActive = activeIds.includes(st.id);
+      const isActive = activeIds.includes(st.id) ||
+        (st.id === 'espma' && activeIds.includes('espmb')) ||
+        (st.id === 'espmb' && activeIds.includes('espma')) ||
+        (st.id === 'esnjr' && activeIds.includes('esalm')) ||
+        (st.id === 'esatn' && activeIds.includes('eslpa')) ||
+        (st.id === 'esbnv' && activeIds.includes('estfn')) ||
+        (st.id === 'esgrm' && activeIds.includes('essal'));
       const shortKm = st.short_range_km || 145;
       const longKm = st.range_km || 240;
 
