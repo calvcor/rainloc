@@ -3524,6 +3524,9 @@ body.has-timeline-player .coords-bar {
 .radar-coverage-details {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
   padding-left: 22px;
 }
 
@@ -3541,48 +3544,186 @@ body.has-timeline-player .coords-bar {
   gap: 4px;
 }
 
-/* Tooltip de Cobertura de Radares en Leaflet */
+.radar-source-badges-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.badge-source-opera,
+.badge-source-aemet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  cursor: default;
+}
+
+.badge-source-opera {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.badge-source-aemet {
+  color: #38bdf8;
+  background: rgba(2, 132, 199, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.source-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.source-dot.dot-opera {
+  background: #22c55e;
+  box-shadow: 0 0 5px rgba(34, 197, 94, 0.8);
+}
+
+.source-dot.dot-aemet {
+  background: #0284c7;
+  box-shadow: 0 0 5px rgba(56, 189, 248, 0.8);
+}
+
+/* Tooltip enriquecido de Cobertura de Radares en Leaflet */
 .radar-coverage-leaflet-tooltip {
-  background: rgba(15, 23, 42, 0.92) !important;
+  background: rgba(15, 23, 42, 0.94) !important;
   border: 1px solid rgba(56, 189, 248, 0.35) !important;
   border-radius: 8px !important;
   color: #f1f5f9 !important;
-  padding: 8px 10px !important;
-  font-size: 0.75rem !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
-  backdrop-filter: blur(8px) !important;
+  padding: 9px 12px !important;
+  font-size: 0.74rem !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(10px) !important;
+  min-width: 250px;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
 }
 
 .radar-coverage-leaflet-tooltip .tooltip-st-name {
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge.badge-opera {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.20);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge.badge-aemet {
   color: #38bdf8;
-  margin-bottom: 2px;
+  background: rgba(2, 132, 199, 0.22);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge .badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge.badge-opera .badge-dot {
+  background: #22c55e;
+}
+
+.radar-coverage-leaflet-tooltip .tooltip-st-source-badge.badge-aemet .badge-dot {
+  background: #38bdf8;
 }
 
 .radar-coverage-leaflet-tooltip .tooltip-st-status {
-  font-size: 0.72rem;
+  font-size: 0.70rem;
   font-weight: 600;
-  margin-bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
 .radar-coverage-leaflet-tooltip .tooltip-st-status.active {
   color: #22c55e;
 }
 
+.radar-coverage-leaflet-tooltip .tooltip-st-status.active .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+
 .radar-coverage-leaflet-tooltip .tooltip-st-status.missing {
   color: #ef4444;
 }
 
-.radar-coverage-leaflet-tooltip .tooltip-st-info {
-  font-size: 0.7rem;
-  color: #cbd5e1;
+.radar-coverage-leaflet-tooltip .tooltip-st-specs-table {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
 }
 
-.radar-coverage-leaflet-tooltip .tooltip-st-sub {
-  font-size: 0.65rem;
+.radar-coverage-leaflet-tooltip .tooltip-st-spec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.radar-coverage-leaflet-tooltip .st-spec-label {
   color: #94a3b8;
-  margin-top: 2px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.radar-coverage-leaflet-tooltip .st-spec-val {
+  color: #f1f5f9;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.radar-coverage-leaflet-tooltip .st-spec-val.val-opera {
+  color: #4ade80;
+}
+
+.radar-coverage-leaflet-tooltip .st-spec-val.val-aemet {
+  color: #38bdf8;
 }
 
 /* -------------------------------------------------------------

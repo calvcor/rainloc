@@ -3896,6 +3896,7 @@ export class LayerManager {
 
     const mode = this.currentRadarMode || 'mixed';
     const stations = Object.values(CONFIG.radarStations);
+    const seenLocations = new Set();
 
     stations.forEach(st => {
       // En modo single, solo representar la estación seleccionada
@@ -3903,41 +3904,84 @@ export class LayerManager {
         return;
       }
 
+      // Evitar duplicados por alias (ej: espma y espmb)
+      const locKey = `${st.lat.toFixed(3)}_${st.lon.toFixed(3)}`;
+      if (seenLocations.has(locKey)) return;
+      seenLocations.add(locKey);
+
       const isActive = activeIds.includes(st.id);
       const shortKm = st.short_range_km || 145;
       const longKm = st.range_km || 240;
+
+      // Distinción de origen: Verde para OPERA (EUMETNET) y Azul para AEMET
+      const isOpera = (st.source === 'OPERA');
+      const originColor = isOpera ? '#22c55e' : '#0284c7';
+      const originFill = isOpera ? '#22c55e' : '#38bdf8';
+      const originBadgeClass = isOpera ? 'badge-opera' : 'badge-aemet';
+      const originLabel = isOpera ? 'EUMETNET OPERA' : 'AEMET OpenData';
+      const originFullName = isOpera ? 'EUMETNET OPERA (S3/MQTT)' : 'AEMET OpenData (Regional)';
 
       if (isActive) {
         // Cobertura completa de radar meteorológico (240-250 km)
         const circle = L.circle([st.lat, st.lon], {
           radius: longKm * 1000,
-          color: '#0284c7',
+          color: originColor,
           weight: 1.5,
-          fillColor: '#38bdf8',
+          fillColor: originFill,
           fillOpacity: 0.04,
           interactive: false
         });
         this.radarCoverageGroup.addLayer(circle);
 
-        // Marcador central interactivo del radar
+        // Marcador central interactivo del radar (Verde para OPERA, Azul para AEMET)
         const marker = L.circleMarker([st.lat, st.lon], {
-          radius: 4.5,
-          color: '#0284c7',
-          fillColor: '#38bdf8',
-          fillOpacity: 0.9,
+          radius: 5.5,
+          color: '#ffffff',
+          fillColor: originColor,
+          fillOpacity: 1.0,
           weight: 2
         });
 
-        const modeDescription = `Cobertura operativa · ${longKm} km`;
-
         marker.bindTooltip(`
           <div class="radar-station-coverage-tooltip">
-            <div class="tooltip-st-name">${st.name}</div>
-            <div class="tooltip-st-status active">● Operativo en este instante</div>
-            <div class="tooltip-st-info">${modeDescription}</div>
-            <div class="tooltip-st-sub">Altitud: ${st.alt_m} m · Prov: ${st.province}</div>
+            <div class="tooltip-st-header">
+              <div class="tooltip-st-name">${st.name}</div>
+              <span class="tooltip-st-source-badge ${originBadgeClass}">
+                <span class="badge-dot"></span> ${originLabel}
+              </span>
+            </div>
+            <div class="tooltip-st-status active">
+              <span class="status-dot"></span> Operativo en este instante
+            </div>
+            
+            <div class="tooltip-st-specs-table">
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Origen de datos:</span>
+                <span class="st-spec-val ${isOpera ? 'val-opera' : 'val-aemet'}"><strong>${originFullName}</strong></span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Alcance nominal:</span>
+                <span class="st-spec-val">${longKm} km (cobertura total)</span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Frecuencia / Banda:</span>
+                <span class="st-spec-val">${st.band || 'Banda C (5.62 GHz)'}</span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Polarización:</span>
+                <span class="st-spec-val">${st.polarization || 'Dual-Pol'}</span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Altitud antena:</span>
+                <span class="st-spec-val">${st.alt_m} m s.n.m.</span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Indicativo WMO / ODIM:</span>
+                <span class="st-spec-val">${st.wmo_code || '—'} · ${st.id.toUpperCase()}</span>
+              </div>
+            </div>
           </div>
-        `, { direction: 'top', offset: [0, -6], className: 'radar-coverage-leaflet-tooltip' });
+        `, { direction: 'top', offset: [0, -8], className: 'radar-coverage-leaflet-tooltip' });
 
         this.radarCoverageGroup.addLayer(marker);
 
@@ -3955,20 +3999,34 @@ export class LayerManager {
         this.radarCoverageGroup.addLayer(circle);
 
         const marker = L.circleMarker([st.lat, st.lon], {
-          radius: 4,
+          radius: 4.5,
           color: '#ef4444',
           fillColor: '#ef4444',
-          fillOpacity: 0.5,
+          fillOpacity: 0.6,
           weight: 1.5
         });
 
         marker.bindTooltip(`
           <div class="radar-station-coverage-tooltip">
-            <div class="tooltip-st-name">${st.name}</div>
+            <div class="tooltip-st-header">
+              <div class="tooltip-st-name">${st.name}</div>
+              <span class="tooltip-st-source-badge ${originBadgeClass}">
+                <span class="badge-dot"></span> ${originLabel}
+              </span>
+            </div>
             <div class="tooltip-st-status missing">⚠ Sin datos en este fotograma</div>
-            <div class="tooltip-st-sub">Provincia: ${st.province}</div>
+            <div class="tooltip-st-specs-table">
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Origen previsto:</span>
+                <span class="st-spec-val ${isOpera ? 'val-opera' : 'val-aemet'}">${originFullName}</span>
+              </div>
+              <div class="tooltip-st-spec-row">
+                <span class="st-spec-label">Altitud / Provincia:</span>
+                <span class="st-spec-val">${st.alt_m} m · ${st.province}</span>
+              </div>
+            </div>
           </div>
-        `, { direction: 'top', offset: [0, -6], className: 'radar-coverage-leaflet-tooltip' });
+        `, { direction: 'top', offset: [0, -8], className: 'radar-coverage-leaflet-tooltip' });
 
         this.radarCoverageGroup.addLayer(marker);
       }

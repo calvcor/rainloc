@@ -1030,8 +1030,12 @@ export class UIManager {
             </label>
             <div class="radar-coverage-details" id="radar-coverage-container" style="${prefs.showRadarCoverage ? '' : 'display: none;'}">
               <span class="radar-stations-pill" id="radar-active-stations-pill">
-                ● <strong>${Object.keys(CONFIG.radarStations).length} radares con datos</strong>
+                ● <strong>16 radares en red</strong>
               </span>
+              <div class="radar-source-badges-legend">
+                <span class="badge-source-opera" title="Radares con volcado directo en EUMETNET OPERA"><span class="source-dot dot-opera"></span> OPERA</span>
+                <span class="badge-source-aemet" title="Radares regionales integrados vía AEMET OpenData"><span class="source-dot dot-aemet"></span> AEMET</span>
+              </div>
             </div>
           </div>
 

@@ -1274,6 +1274,56 @@ export class MultiLayerInspector {
         }
       }
 
+      // 2.2.1 Emplazamiento de Radar Meteorológico (si el área de cobertura está activa en pantalla)
+      if (this.layerManager && this.layerManager.showRadarCoverage && CONFIG.radarStations) {
+        let closestRadarSt = null;
+        let minRadarPixDist = this._isTouchDevice() ? 32 : 22;
+        const mousePix = this.map.latLngToContainerPoint(latlng);
+        const seenRadarLocs = new Set();
+
+        for (const st of Object.values(CONFIG.radarStations)) {
+          const locKey = `${st.lat.toFixed(3)}_${st.lon.toFixed(3)}`;
+          if (seenRadarLocs.has(locKey)) continue;
+          seenRadarLocs.add(locKey);
+
+          const ptPix = this.map.latLngToContainerPoint([st.lat, st.lon]);
+          const pixDist = Math.hypot(ptPix.x - mousePix.x, ptPix.y - mousePix.y);
+          if (pixDist <= minRadarPixDist) {
+            minRadarPixDist = pixDist;
+            closestRadarSt = st;
+          }
+        }
+
+        if (closestRadarSt) {
+          const isOp = (closestRadarSt.source === 'OPERA');
+          const stBadge = isOp ? 'EUMETNET OPERA' : 'AEMET OpenData';
+          const stBadgeColor = isOp ? '#22c55e' : '#0284c7';
+
+          sections.push({
+            type: "radar_station",
+            title: "Emplazamiento de Radar Meteorológico",
+            headerColor: stBadgeColor,
+            icon: "📡",
+            name: closestRadarSt.name,
+            badge: stBadge,
+            badgeBg: stBadgeColor,
+            badgeColor: "#ffffff",
+            details: `
+              <div style="font-size: 0.74rem; font-weight: 600; color: #f8fafc; margin-bottom: 4px;">
+                <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${stBadgeColor};margin-right:5px;"></span>
+                Origen: <span style="color:${stBadgeColor};">${closestRadarSt.source_name || stBadge}</span>
+              </div>
+              <div style="font-size: 0.70rem; color: #cbd5e1; display:flex; flex-direction:column; gap:2px;">
+                <div>Alcance: <strong>${closestRadarSt.range_km || 240} km</strong> · Altitud antena: <strong>${closestRadarSt.alt_m} m</strong></div>
+                <div>Frecuencia: <strong>${closestRadarSt.band || 'Banda C (5.62 GHz)'}</strong></div>
+                <div>Polarización: <strong>${closestRadarSt.polarization || 'Dual-Pol'}</strong></div>
+                <div>Indicativo WMO: <strong>${closestRadarSt.wmo_code || '—'}</strong> · ODIM: <strong>${closestRadarSt.id.toUpperCase()}</strong></div>
+              </div>
+            `
+          });
+        }
+      }
+
       // 2.3 Caudales en Ríos (SAIH Júcar)
       if (this.layerManager.isLayerOnMap("saih_caudales")) {
         const caudalesGroup = this.layerManager.layers["saih_caudales"];
@@ -2199,6 +2249,8 @@ export class MultiLayerInspector {
         key = `${sec.type}_${code}`;
       } else if (sec.type === 'cuenca') {
         key = `cuenca_${sec.basinId || sec.name}`;
+      } else if (sec.type === 'radar_station') {
+        key = `radar_station_${sec.name}`;
       } else if (sec.type === 'radar') {
         key = `radar_${sec.name}`;
       } else if (sec.type === 'lightning') {
