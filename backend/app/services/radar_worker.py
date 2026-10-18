@@ -124,36 +124,64 @@ def _init_station_geometries():
 
 def colorize_dbz_array(dbz_matrix: np.ndarray) -> np.ndarray:
     """
-    Aplica la rampa de color meteorológica oficial a una matriz 2D de dBZ.
-    Elimina ruidos atmosféricos y ecos no meteorológicos (< 8 dBZ).
+    Aplica la rampa de color meteorológica de alta resolución (13 niveles graduales) a una matriz 2D de dBZ.
+    Límite inferior ampliado a 5 dBZ para captar lloviznas y precipitaciones muy débiles.
     Retorna matriz RGBA (H, W, 4) uint8.
     """
     h, w = dbz_matrix.shape
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
 
-    # Rango 8 a 15 dBZ (Lluvia débil / llovizna) -> Cyan suave
-    m1 = (dbz_matrix >= 8) & (dbz_matrix < 15)
-    rgba[m1] = [56, 189, 248, 175]
+    # 1. Rango 5 a 10 dBZ (Llovizna / trazas muy débiles) -> Cyan suave pastel #7dd3fc
+    m1 = (dbz_matrix >= 5) & (dbz_matrix < 10)
+    rgba[m1] = [125, 211, 252, 160]
 
-    # Rango 15 a 25 dBZ (Lluvia ligera) -> Azul medio
-    m2 = (dbz_matrix >= 15) & (dbz_matrix < 25)
-    rgba[m2] = [2, 132, 199, 200]
+    # 2. Rango 10 a 15 dBZ (Lluvia muy débil) -> Azul cielo #38bdf8
+    m2 = (dbz_matrix >= 10) & (dbz_matrix < 15)
+    rgba[m2] = [56, 189, 248, 180]
 
-    # Rango 25 a 35 dBZ (Lluvia moderada) -> Verde
-    m3 = (dbz_matrix >= 25) & (dbz_matrix < 35)
-    rgba[m3] = [34, 197, 94, 225]
+    # 3. Rango 15 a 20 dBZ (Lluvia débil) -> Azul medio #0284c7
+    m3 = (dbz_matrix >= 15) & (dbz_matrix < 20)
+    rgba[m3] = [2, 132, 199, 200]
 
-    # Rango 35 a 45 dBZ (Lluvia fuerte) -> Amarillo intenso
-    m4 = (dbz_matrix >= 35) & (dbz_matrix < 45)
-    rgba[m4] = [234, 179, 8, 240]
+    # 4. Rango 20 a 25 dBZ (Lluvia débil a moderada) -> Azul cobalto #1d4ed8
+    m4 = (dbz_matrix >= 20) & (dbz_matrix < 25)
+    rgba[m4] = [29, 78, 216, 215]
 
-    # Rango 45 a 55 dBZ (Lluvia muy fuerte / granizo) -> Naranja
-    m5 = (dbz_matrix >= 45) & (dbz_matrix < 55)
-    rgba[m5] = [249, 115, 22, 250]
+    # 5. Rango 25 a 30 dBZ (Lluvia moderada baja) -> Verde esmeralda #10b981
+    m5 = (dbz_matrix >= 25) & (dbz_matrix < 30)
+    rgba[m5] = [16, 185, 129, 225]
 
-    # Rango >= 55 dBZ (Tormenta severa / pedrisco) -> Rojo
-    m6 = (dbz_matrix >= 55)
-    rgba[m6] = [239, 68, 68, 255]
+    # 6. Rango 30 a 35 dBZ (Lluvia moderada) -> Verde puro brillante #22c55e
+    m6 = (dbz_matrix >= 30) & (dbz_matrix < 35)
+    rgba[m6] = [34, 197, 94, 230]
+
+    # 7. Rango 35 a 40 dBZ (Lluvia moderada a fuerte) -> Verde lima #84cc16
+    m7 = (dbz_matrix >= 35) & (dbz_matrix < 40)
+    rgba[m7] = [132, 204, 22, 235]
+
+    # 8. Rango 40 a 45 dBZ (Lluvia fuerte) -> Amarillo intenso #eab308
+    m8 = (dbz_matrix >= 40) & (dbz_matrix < 45)
+    rgba[m8] = [234, 179, 8, 240]
+
+    # 9. Rango 45 a 50 dBZ (Lluvia muy fuerte) -> Ámbar / Dorado #f59e0b
+    m9 = (dbz_matrix >= 45) & (dbz_matrix < 50)
+    rgba[m9] = [245, 158, 11, 245]
+
+    # 10. Rango 50 a 55 dBZ (Chubascos torrenciales) -> Naranja brillante #ea580c
+    m10 = (dbz_matrix >= 50) & (dbz_matrix < 55)
+    rgba[m10] = [234, 88, 12, 250]
+
+    # 11. Rango 55 a 60 dBZ (Tormenta severa) -> Rojo bermellón #dc2626
+    m11 = (dbz_matrix >= 55) & (dbz_matrix < 60)
+    rgba[m11] = [220, 38, 38, 255]
+
+    # 12. Rango 60 a 65 dBZ (Tormenta muy severa / granizo) -> Rojo oscuro carmesí #991b1b
+    m12 = (dbz_matrix >= 60) & (dbz_matrix < 65)
+    rgba[m12] = [153, 27, 27, 255]
+
+    # 13. Rango >= 65 dBZ (Pedrisco / granizo destructivo) -> Púrpura / Magenta #c026d3
+    m13 = (dbz_matrix >= 65)
+    rgba[m13] = [192, 38, 211, 255]
 
     return rgba
 
@@ -403,12 +431,19 @@ class RadarService:
             "short_range_max_km": RADAR_SHORT_RANGE_MAX_KM,
             "timeline": self.get_timeline(),
             "color_scale": [
-                {"min_dbz": 5, "max_dbz": 15, "color": "#38bdf8", "label": "5-15 dBZ (Muy débil)"},
-                {"min_dbz": 15, "max_dbz": 25, "color": "#0284c9", "label": "15-25 dBZ (Débil)"},
-                {"min_dbz": 25, "max_dbz": 35, "color": "#22c55e", "label": "25-35 dBZ (Moderada)"},
-                {"min_dbz": 35, "max_dbz": 45, "color": "#eab308", "label": "35-45 dBZ (Fuerte)"},
-                {"min_dbz": 45, "max_dbz": 55, "color": "#f97316", "label": "45-55 dBZ (Muy fuerte)"},
-                {"min_dbz": 55, "max_dbz": 75, "color": "#ef4444", "label": "≥55 dBZ (Granizo/Severa)"}
+                {"min_dbz": 5, "max_dbz": 10, "color": "#7dd3fc", "label": "5-10 dBZ (Llovizna / Muy débil)"},
+                {"min_dbz": 10, "max_dbz": 15, "color": "#38bdf8", "label": "10-15 dBZ (Muy débil)"},
+                {"min_dbz": 15, "max_dbz": 20, "color": "#0284c7", "label": "15-20 dBZ (Débil)"},
+                {"min_dbz": 20, "max_dbz": 25, "color": "#1d4ed8", "label": "20-25 dBZ (Débil a moderada)"},
+                {"min_dbz": 25, "max_dbz": 30, "color": "#10b981", "label": "25-30 dBZ (Moderada baja)"},
+                {"min_dbz": 30, "max_dbz": 35, "color": "#22c55e", "label": "30-35 dBZ (Moderada)"},
+                {"min_dbz": 35, "max_dbz": 40, "color": "#84cc16", "label": "35-40 dBZ (Moderada a fuerte)"},
+                {"min_dbz": 40, "max_dbz": 45, "color": "#eab308", "label": "40-45 dBZ (Fuerte)"},
+                {"min_dbz": 45, "max_dbz": 50, "color": "#f59e0b", "label": "45-50 dBZ (Muy fuerte)"},
+                {"min_dbz": 50, "max_dbz": 55, "color": "#ea580c", "label": "50-55 dBZ (Torrencial)"},
+                {"min_dbz": 55, "max_dbz": 60, "color": "#dc2626", "label": "55-60 dBZ (Tormenta severa)"},
+                {"min_dbz": 60, "max_dbz": 65, "color": "#991b1b", "label": "60-65 dBZ (Severa / Granizo)"},
+                {"min_dbz": 65, "max_dbz": 80, "color": "#c026d3", "label": "≥65 dBZ (Granizo destructivo)"}
             ]
         }
 
@@ -654,7 +689,7 @@ class RadarService:
                 undetect = float(what.get("undetect", 0.0))
 
             dbz_phys = np.where((raw_data == nodata) | (raw_data == undetect), -9999.0, raw_data * gain + offset)
-            dbz_phys = np.where(dbz_phys < 8.0, -9999.0, dbz_phys)
+            dbz_phys = np.where(dbz_phys < 5.0, -9999.0, dbz_phys)
 
             long_grid = np.full((GRID_H, GRID_W), -9999.0, dtype=np.float32)
             long_grid[SPAIN_VALID_MASK] = dbz_phys[SPAIN_ROW_IDX[SPAIN_VALID_MASK], SPAIN_COL_IDX[SPAIN_VALID_MASK]]

@@ -967,12 +967,19 @@ export class UIManager {
           <div class="radar-dbz-legend">
             <span class="dbz-legend-title">Reflectividad (dBZ):</span>
             <div class="dbz-bar">
-              <span style="background: #38bdf8;" title="5-15 dBZ (Muy débil)">5</span>
-              <span style="background: #0284c7;" title="15-25 dBZ (Débil)">15</span>
-              <span style="background: #22c55e;" title="25-35 dBZ (Moderada)">25</span>
-              <span style="background: #eab308;" title="35-45 dBZ (Fuerte)">35</span>
-              <span style="background: #f97316;" title="45-55 dBZ (Muy fuerte)">45</span>
-              <span style="background: #ef4444;" title="55+ dBZ (Granizo)">55+</span>
+              <span style="background: #7dd3fc; color: #0f172a;" title="5-10 dBZ (Llovizna / Muy débil)">5</span>
+              <span style="background: #38bdf8; color: #0f172a;" title="10-15 dBZ">10</span>
+              <span style="background: #0284c7; color: #fff;" title="15-20 dBZ (Débil)">15</span>
+              <span style="background: #1d4ed8; color: #fff;" title="20-25 dBZ">20</span>
+              <span style="background: #10b981; color: #0f172a;" title="25-30 dBZ (Moderada baja)">25</span>
+              <span style="background: #22c55e; color: #0f172a;" title="30-35 dBZ (Moderada)">30</span>
+              <span style="background: #84cc16; color: #0f172a;" title="35-40 dBZ">35</span>
+              <span style="background: #eab308; color: #0f172a;" title="40-45 dBZ (Fuerte)">40</span>
+              <span style="background: #f59e0b; color: #0f172a;" title="45-50 dBZ (Muy fuerte)">45</span>
+              <span style="background: #ea580c; color: #fff;" title="50-55 dBZ (Torrencial)">50</span>
+              <span style="background: #dc2626; color: #fff;" title="55-60 dBZ (Tormenta severa)">55</span>
+              <span style="background: #991b1b; color: #fff;" title="60-65 dBZ (Granizo)">60</span>
+              <span style="background: #c026d3; color: #fff;" title="≥65 dBZ (Granizo destructivo)">65+</span>
             </div>
           </div>
 

@@ -79,14 +79,21 @@ export class MultiLayerInspector {
         return null;
       }
 
-      // Paleta meteorológica oficial de RainLoc (valores dBZ, etiquetas y colores exactos)
+      // Paleta meteorológica oficial de RainLoc (13 niveles graduales calibrados con alta resolución)
       const palette = [
-        { minDbz: 55, dbz: 55, label: 'Muy Fuerte / Granizo', rgb: [239, 68, 68], color: '#ef4444' },
-        { minDbz: 45, dbz: 45, label: 'Muy Fuerte', rgb: [249, 115, 22], color: '#f97316' },
-        { minDbz: 35, dbz: 35, label: 'Fuerte', rgb: [234, 179, 8], color: '#eab308' },
-        { minDbz: 25, dbz: 25, label: 'Moderada', rgb: [34, 197, 94], color: '#22c55e' },
-        { minDbz: 15, dbz: 15, label: 'Ligera', rgb: [2, 132, 199], color: '#0284c7' },
-        { minDbz: 8,  dbz: 10, label: 'Débil', rgb: [56, 189, 248], color: '#38bdf8' }
+        { minDbz: 65, dbz: 65, label: 'Granizo Destructivo', rgb: [192, 38, 211], color: '#c026d3' },
+        { minDbz: 60, dbz: 60, label: 'Severa / Granizo', rgb: [153, 27, 27], color: '#991b1b' },
+        { minDbz: 55, dbz: 55, label: 'Tormenta Severa', rgb: [220, 38, 38], color: '#dc2626' },
+        { minDbz: 50, dbz: 50, label: 'Chubasco Torrencial', rgb: [234, 88, 12], color: '#ea580c' },
+        { minDbz: 45, dbz: 45, label: 'Muy Fuerte', rgb: [245, 158, 11], color: '#f59e0b' },
+        { minDbz: 40, dbz: 40, label: 'Fuerte', rgb: [234, 179, 8], color: '#eab308' },
+        { minDbz: 35, dbz: 35, label: 'Moderada-Fuerte', rgb: [132, 204, 22], color: '#84cc16' },
+        { minDbz: 30, dbz: 30, label: 'Moderada', rgb: [34, 197, 94], color: '#22c55e' },
+        { minDbz: 25, dbz: 25, label: 'Moderada Baja', rgb: [16, 185, 129], color: '#10b981' },
+        { minDbz: 20, dbz: 20, label: 'Débil a Moderada', rgb: [29, 78, 216], color: '#1d4ed8' },
+        { minDbz: 15, dbz: 15, label: 'Débil', rgb: [2, 132, 199], color: '#0284c7' },
+        { minDbz: 10, dbz: 10, label: 'Muy Débil', rgb: [56, 189, 248], color: '#38bdf8' },
+        { minDbz: 5,  dbz: 5,  label: 'Llovizna / Muy Débil', rgb: [125, 211, 252], color: '#7dd3fc' }
       ];
 
       let bestMatch = palette[palette.length - 1];

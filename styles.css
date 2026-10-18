@@ -2070,7 +2070,7 @@ body {
 
 .dbz-bar {
   display: flex;
-  height: 14px;
+  height: 15px;
   border-radius: 3px;
   overflow: hidden;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -2081,10 +2081,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.55rem;
+  font-size: 0.5rem;
   font-weight: 700;
-  color: #000;
-  text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
+  letter-spacing: -0.02em;
 }
 
 .radar-source-link {

@@ -25,31 +25,44 @@ from app.config import (
 
 logger = logging.getLogger("rainloc-backend.aemet_opendata")
 
-# Mapeo exacto de índices de paleta de la imagen GIF de AEMET a valores dBZ
-# Descarta completamente fondos (0, 1), relieve topográfico (2), bordes CCAA/provinciales (10) y textos (42)
+# Mapeo exacto y calibrado de índices de la paleta oficial de radar AEMET a valores dBZ (puntos medios de intervalos de 6 dBZ)
+# El índice 10 (amarillo, 51.0 dBZ) se procesa dinámicamente para conservar la lluvia fuerte y filtrar líneas de mapa
 AEMET_INDEX_TO_DBZ: Dict[int, float] = {
-    11: 10.0,
-    12: 10.0,
-    13: 10.0,  # Azul marino (6-12 dBZ / lluvia muy débil)
-    14: 10.0,
-    16: 12.0,  # Azul oscuro (12-18 dBZ)
-    17: 12.0,
-    18: 12.0,
-    20: 15.0,
-    21: 15.0,
-    22: 18.0,
-    23: 18.0,  # Azul cielo (18-24 dBZ)
-    24: 20.0,
-    25: 22.0,
-    26: 24.0,  # Cian (24-30 dBZ)
-    29: 24.0,
-    6:  30.0,  # Verde oliva (30-36 dBZ)
-    7:  36.0,  # Verde medio (36-42 dBZ)
-    8:  42.0,  # Verde claro (42-48 dBZ)
-    9:  48.0,  # Amarillo/Naranja (48-54 dBZ)
-    4:  54.0,  # Naranja fuerte (54-60 dBZ)
-    3:  60.0,  # Rojo (60-66 dBZ)
-    5:  66.0,  # Púrpura / Granizo (>66 dBZ)
+    # Trazas / lluvia muy débil (6 a 12 dBZ)
+    11: 7.0,
+    12: 7.0,
+    13: 9.0,
+    14: 9.0,
+    # Lluvia débil (12 a 18 dBZ, Bloque 1 azul oscuro #0000fc)
+    16: 15.0,
+    17: 15.0,
+    18: 15.0,
+    # Lluvia débil a moderada (18 a 24 dBZ, Bloque 2 azul cielo #0094fc)
+    20: 18.0,
+    21: 18.0,
+    22: 21.0,
+    23: 21.0,
+    24: 24.0,
+    25: 24.0,
+    # Lluvia moderada baja (24 a 30 dBZ, Bloque 3 cian #00fcfc)
+    26: 27.0,
+    29: 27.0,
+    # Lluvia moderada (30 a 36 dBZ, Bloque 4 verde oliva #438323)
+    6:  33.0,
+    # Lluvia moderada a fuerte (36 a 42 dBZ, Bloque 5 verde medio #00c000)
+    7:  39.0,
+    # Lluvia fuerte (42 a 48 dBZ, Bloque 6 verde claro #00ff00)
+    8:  45.0,
+    # Lluvia muy fuerte / núcleos convectivos (48 a 54 dBZ, Bloque 7 amarillo #ffff00)
+    10: 51.0,
+    # Tormenta fuerte (54 a 60 dBZ, Bloque 8 ámbar/dorado #ffbb00)
+    9:  57.0,
+    # Tormenta muy fuerte (60 a 66 dBZ, Bloque 9 naranja intenso #ff7f00)
+    4:  63.0,
+    # Tormenta severa / pedrisco (66 a 72 dBZ, Bloque 10 rojo intenso #ff0000)
+    3:  69.0,
+    # Granizo destructivo / núcleos severos (> 72 dBZ, Bloque 11 púrpura/magenta #c8005a)
+    5:  75.0,
 }
 
 
@@ -189,7 +202,20 @@ class AemetOpenDataService:
             # A partir de la fila 480 se encuentra la barra de leyenda y logos.
             radar_h = min(480, arr.shape[0])
             radar_w = min(480, arr.shape[1])
-            radar_arr = arr[:radar_h, :radar_w]
+            radar_arr = arr[:radar_h, :radar_w].copy()
+
+            # Separar el índice 10 (amarillo, 51.0 dBZ) de las líneas de mapa
+            # Si un píxel 10 tiene vecinos con eco de precipitación, es lluvia convectiva fuerte
+            is_10 = (radar_arr == 10)
+            if np.any(is_10):
+                rain_src_mask = np.isin(radar_arr, [3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 29])
+                has_rain_neighbor = np.zeros_like(is_10, dtype=bool)
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        if dy == 0 and dx == 0:
+                            continue
+                        has_rain_neighbor |= np.roll(np.roll(rain_src_mask, dy, axis=0), dx, axis=1)
+                radar_arr = np.where(is_10 & (~has_rain_neighbor), 0, radar_arr)
 
             # El centro exacto del radar se sitúa en (240, 240)
             c_y, c_x = 240.0, 240.0
@@ -252,12 +278,12 @@ class AemetOpenDataService:
                     coverage_mask[gy, sub_x[row_in_range]] = True
                 
                 row_dbz = dbz_sub[r_i]
-                rain_mask = row_dbz >= 8.0
+                rain_mask = row_dbz >= 5.0
                 if np.any(rain_mask):
                     target_cols = sub_x[rain_mask]
                     short_grid[gy, target_cols] = np.maximum(short_grid[gy, target_cols], row_dbz[rain_mask])
 
-            pixels_mapped = int(np.sum(dbz_sub >= 8.0))
+            pixels_mapped = int(np.sum(dbz_sub >= 5.0))
             logger.info(f"AEMET OpenData: Radar {st['name']} decodificado limpiamente ({pixels_mapped} celdas de lluvia real en rejilla Web Mercator).")
             return True
 
