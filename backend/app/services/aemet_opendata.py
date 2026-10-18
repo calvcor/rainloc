@@ -166,16 +166,20 @@ class AemetOpenDataService:
         gif_bytes: bytes,
         short_grid: np.ndarray,
         coverage_mask: np.ndarray,
-        max_km: float = RADAR_SHORT_RANGE_MAX_KM
+        max_km: Optional[float] = None
     ) -> bool:
         """
         Decodifica la imagen GIF del radar regional de AEMET, extrae únicamente los
         píxeles meteorológicos reales (descartando las líneas de mapa y leyendas)
         y los reproyecta a la rejilla nacional de RainLoc (1500x950 Web Mercator).
+        Por defecto utiliza el alcance nominal completo del radar regional (240 km).
         """
         st = SPANISH_RADAR_STATIONS.get(st_id)
         if not st:
             return False
+
+        if max_km is None:
+            max_km = float(st.get("range_km", 240.0))
 
         try:
             img = Image.open(io.BytesIO(gif_bytes))

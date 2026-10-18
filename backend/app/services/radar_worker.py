@@ -665,7 +665,8 @@ class RadarService:
 
             short_scans = self._fetch_matching_short_range_scans(timestep)
             for st_id, st_h5 in short_scans.items():
-                self._map_station_short_range_scan(st_id, st_h5, short_grid_1d, coverage_mask_1d)
+                st_range = float(SPANISH_RADAR_STATIONS.get(st_id, {}).get("range_km", 240.0))
+                self._map_station_short_range_scan(st_id, st_h5, short_grid_1d, coverage_mask_1d, max_km=st_range)
 
             short_grid_2d = short_grid_1d.reshape(GRID_H, GRID_W)
             cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
@@ -684,7 +685,7 @@ class RadarService:
                 is_near_realtime = False
 
             if is_near_realtime and aemet_opendata_service.is_configured:
-                priority_stations = ["escul", "espma", "espmb"]
+                priority_stations = ["escul", "espma", "espmb", "escor", "esgrm"]
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
                     for st_id in priority_stations
@@ -693,8 +694,9 @@ class RadarService:
                 for st_id, aemet_code in missing_aemet:
                     gif_bytes = aemet_opendata_service.fetch_regional_radar_gif(aemet_code)
                     if gif_bytes:
+                        st_range = float(SPANISH_RADAR_STATIONS[st_id].get("range_km", 240.0))
                         mapped = aemet_opendata_service.decode_and_blend_station(
-                            st_id, gif_bytes, short_grid_2d, cov_mask_2d
+                            st_id, gif_bytes, short_grid_2d, cov_mask_2d, max_km=st_range
                         )
                         if mapped:
                             short_scans[st_id] = b"AEMET_OPENDATA_FALLBACK"
