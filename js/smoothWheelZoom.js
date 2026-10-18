@@ -56,15 +56,15 @@ export class SmoothWheelZoomHandler extends L.Handler {
     const delta = L.DomEvent.getWheelDelta(e);
     const sensitivity = map.options.smoothSensitivity || 1.0;
 
-    // Sensibilidad calibrada para velocidad ágil estilo Google Maps:
-    // trackpad pinch (pellizco 1:1) vs desplazamiento/rueda (scroll con recorrido rápido)
-    const stepFactor = isPinch ? 0.08 : 0.16;
+    // Sensibilidad equilibrada y suave:
+    // trackpad pinch (pellizco fino con dos dedos) vs desplazamiento/rueda (scroll progresivo y controlable)
+    const stepFactor = isPinch ? 0.03 : 0.045;
 
     this._goalZoom = this._goalZoom + delta * stepFactor * sensitivity;
 
-    // Limitar la acumulación máxima de adelanto respecto al zoom actual (máx. 3 niveles de buffer)
+    // Limitar la acumulación máxima de adelanto respecto al zoom actual (máx. 1.5 niveles para evitar embalarse)
     const currentZoom = map.getZoom();
-    const maxLead = 3.0;
+    const maxLead = 1.5;
     if (this._goalZoom - currentZoom > maxLead) {
       this._goalZoom = currentZoom + maxLead;
     } else if (currentZoom - this._goalZoom > maxLead) {
@@ -117,8 +117,8 @@ export class SmoothWheelZoomHandler extends L.Handler {
         return;
       }
     } else {
-      // Interpolación amortiguada ágil y reactiva (easing estilo Google Maps a 60/120Hz)
-      this._zoom = currentZoom + diff * 0.35;
+      // Interpolación amortiguada suave y controlada a 60/120Hz
+      this._zoom = currentZoom + diff * 0.24;
     }
 
     const delta = this._wheelMousePosition.subtract(this._centerPoint);
