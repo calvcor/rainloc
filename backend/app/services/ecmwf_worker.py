@@ -61,6 +61,10 @@ SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID
 # Pasos estándar de predicción ECMWF (cada 3 horas hasta +144h y cada 6 horas hasta +240h / 10 días)
 ECMWF_STEPS = list(range(3, 147, 3)) + list(range(150, 246, 6))
 
+# Configuración de resolución ECMWF Open Data: 0.1° (~10 km / resolución nativa)
+ECMWF_RESOLUTION = "0p1"
+ECMWF_RESOLUTION_LABEL = "0.1° (~10 km)"
+
 # Fuentes de ECMWF Open Data en orden de prioridad (Replicas Cloud de alta disponibilidad sin 429)
 DATA_SOURCES = ["aws", "azure"]
 
@@ -514,7 +518,7 @@ class ECMWFWorker:
         try:
             for src in DATA_SOURCES:
                 try:
-                    c = Client(source=src, maximum_retries=1, retry_after=1)
+                    c = Client(source=src, resol=ECMWF_RESOLUTION, maximum_retries=1, retry_after=1)
                     c.retrieve(
                         date=c_dt.date(),
                         time=c_dt.hour,
@@ -569,8 +573,8 @@ class ECMWFWorker:
         """Intenta descargar el archivo GRIB2 de un paso específico probando fuentes con reintentos."""
         for src in DATA_SOURCES:
             try:
-                logger.info(f"ECMWF: Consultando paso +{step}h en fuente {src.upper()}...")
-                c = Client(source=src, maximum_retries=2, retry_after=2)
+                logger.info(f"ECMWF: Consultando paso +{step}h ({ECMWF_RESOLUTION_LABEL}) en fuente {src.upper()}...")
+                c = Client(source=src, resol=ECMWF_RESOLUTION, maximum_retries=2, retry_after=2)
                 c.retrieve(
                     date=cycle_dt.date(),
                     time=cycle_dt.hour,
@@ -692,7 +696,7 @@ class ECMWFWorker:
             "cycle": latest_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "cycle_str": cycle_str,
             "status": "processing",
-            "resolution": "0.25° (~25 km)",
+            "resolution": ECMWF_RESOLUTION_LABEL,
             "bbox": SPAIN_BBOX,
             "steps": [],
             "available_steps": [],
@@ -717,7 +721,7 @@ class ECMWFWorker:
         else:
             logger.info(f"ECMWF: Pasos disponibles: {len(available_steps)}/{len(steps_to_process)}. Comprobando si el supercomputador ha publicado el paso +{missing_steps[0]}h...")
 
-        client = Client(source="aws", maximum_retries=2, retry_after=2)
+        client = Client(source="aws", resol=ECMWF_RESOLUTION, maximum_retries=2, retry_after=2)
         last_total_matrix: Optional[np.ndarray] = None
         new_steps_downloaded = 0
 

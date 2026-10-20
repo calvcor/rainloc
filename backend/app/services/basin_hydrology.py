@@ -384,7 +384,7 @@ class BasinHydrologyService:
             model_name = "NOAA GFS (25 km)"
         else:
             worker = ecmwf_worker
-            model_name = "ECMWF IFS (25 km)"
+            model_name = "ECMWF IFS (10 km)"
 
         meta = worker.get_metadata()
         steps_info = meta.get("steps", [])

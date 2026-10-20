@@ -417,9 +417,9 @@ export const CONFIG = {
       },
       {
         id: 'ecmwf_ifs',
-        name: 'Modelo ECMWF-IFS (25 km)',
+        name: 'Modelo ECMWF-IFS (10 km)',
         subtitle: 'Previsión global determinista (10 días)',
-        description: 'Referencia global del Centro Europeo para predicción a medio plazo (ECMWF Open Data, hasta 240h).',
+        description: 'Referencia global de alta resolución del Centro Europeo (ECMWF Open Data 0.1°, hasta 240h).',
         type: 'model',
         defaultActive: false,
         defaultOpacity: 0.65,

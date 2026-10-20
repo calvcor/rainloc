@@ -470,7 +470,7 @@ export class CuencasLayer {
       arome: 'AROME (1.3 km)',
       icon: 'ICON-EU (6.5 km)',
       gem: 'GEM GDPS (15 km)',
-      ecmwf: 'ECMWF IFS (25 km)',
+      ecmwf: 'ECMWF IFS (10 km)',
       gfs: 'NOAA GFS (25 km)'
     };
     const defaultModelLabel = modelNames[activeModel] || (activeModel ? activeModel.toUpperCase() : 'ECMWF IFS');

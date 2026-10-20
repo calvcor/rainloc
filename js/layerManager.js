@@ -8648,7 +8648,7 @@ export class LayerManager {
       icon: '🇩🇪 DWD ICON-EU (6.5 km)',
       ukmo: '🇬🇧 UKMO Global (10 km)',
       gem: '🇨🇦 GEM GDPS (15 km)',
-      ecmwf: '🇪🇺 ECMWF IFS (25 km)',
+      ecmwf: '🇪🇺 ECMWF IFS (10 km)',
       gfs: '🇺🇸 NOAA GFS (25 km)'
     };
 

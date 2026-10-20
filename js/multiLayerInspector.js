@@ -1893,7 +1893,7 @@ export class MultiLayerInspector {
 
           sections.push({
             type: "model",
-            title: "ECMWF IFS (25 km)",
+            title: "ECMWF IFS (10 km)",
             headerColor: "#059669",
             icon: "🇪🇺",
             name: `${typeLabel} (+${step}h)`,
