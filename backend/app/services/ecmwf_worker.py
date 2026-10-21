@@ -61,9 +61,13 @@ SPAIN_GRID_LONS = np.linspace(SPAIN_BBOX["lon_min"], SPAIN_BBOX["lon_max"], GRID
 # Pasos estándar de predicción ECMWF (cada 3 horas hasta +144h y cada 6 horas hasta +240h / 10 días)
 ECMWF_STEPS = list(range(3, 147, 3)) + list(range(150, 246, 6))
 
-# Configuración de resolución ECMWF Open Data: 0.1° (~10 km / resolución nativa)
-ECMWF_RESOLUTION = "0p1"
+# Configuración de resolución ECMWF Open Data:
+# - Nativa primaria: 0.1° (~10 km)
+# - Fallback provisional: 0.25° (~25 km) para adelantar la corrida 2 horas antes de que salga 0.1°
+ECMWF_PRIMARY_RESOLUTION = "0p1"
+ECMWF_FALLBACK_RESOLUTION = "0p25"
 ECMWF_RESOLUTION_LABEL = "0.1° (~10 km)"
+ECMWF_FALLBACK_LABEL = "0.25° (~25 km) [provisional]"
 
 # Fuentes de ECMWF Open Data en orden de prioridad (Replicas Cloud de alta disponibilidad sin 429)
 DATA_SOURCES = ["aws", "azure"]
@@ -134,7 +138,7 @@ class ECMWFWorker:
         self._subscribers: Set[asyncio.Queue] = set()
         self._load_latest_manifest_from_disk()
 
-    def notify_ecmwf_update(self, cycle_str: str, available_steps: List[int], step_added: Optional[int] = None, status: str = "ready", is_syncing: bool = False):
+    def notify_ecmwf_update(self, cycle_str: str, available_steps: List[int], step_added: Optional[int] = None, status: str = "ready", is_syncing: bool = False, is_provisional: bool = False, resolution: Optional[str] = None):
         """Notifica de forma inmediata y thread-safe a todos los clientes SSE conectados."""
         max_step = max(available_steps) if available_steps else 0
         run_str = ""
@@ -158,6 +162,8 @@ class ECMWFWorker:
             "is_complete": is_complete,
             "is_updating": is_syncing or (max_step < target_max and status != "complete"),
             "status": status,
+            "is_provisional": is_provisional,
+            "resolution": resolution or (ECMWF_FALLBACK_LABEL if is_provisional else ECMWF_RESOLUTION_LABEL),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         dead_subscribers = set()
@@ -506,23 +512,18 @@ class ECMWFWorker:
         except Exception as e:
             logger.warning(f"ECMWF: Error purgando ciclos anteriores: {e}")
 
-    def _is_remote_cycle_available(self, c_dt: datetime) -> bool:
-        """Comprueba si el primer paso (+3h) de un ciclo específico ya está disponible en AWS o Azure."""
-        cycle_str = c_dt.strftime("%Y%m%d_%Hz")
-        cycle_dir = self.cache_dir / cycle_str
-        if (cycle_dir / "manifest.json").exists():
-            return True
-
+    def _is_remote_step_available(self, c_dt: datetime, step: int = 3, resol: str = ECMWF_PRIMARY_RESOLUTION) -> bool:
+        """Comprueba de forma rápida si un paso y resolución específica están publicados en AWS o Azure."""
         with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as tf:
             tmp_path = Path(tf.name)
         try:
             for src in DATA_SOURCES:
                 try:
-                    c = Client(source=src, resol=ECMWF_RESOLUTION, maximum_retries=1, retry_after=1)
+                    c = Client(source=src, resol=resol, maximum_retries=1, retry_after=1)
                     c.retrieve(
                         date=c_dt.date(),
                         time=c_dt.hour,
-                        step=3,
+                        step=step,
                         type="fc",
                         param="tp",
                         target=str(tmp_path)
@@ -536,8 +537,13 @@ class ECMWFWorker:
                 tmp_path.unlink(missing_ok=True)
         return False
 
-    def _detect_latest_cycle(self) -> Optional[datetime]:
-        """Detecta la fecha y hora del ciclo más reciente publicado en ECMWF Open Data (vía AWS / Azure)."""
+    def _detect_latest_cycle(self) -> Tuple[Optional[datetime], str]:
+        """
+        Detecta la fecha y hora del ciclo más reciente y la mejor resolución disponible:
+        - Prioridad 1: 0.1° (~10 km) si ya está disponible en AWS/Azure.
+        - Prioridad 2: 0.25° (~25 km) si 0.1° aún no se ha publicado para ese ciclo (adelanto provisional).
+        - Si un ciclo ya está descargado a 0.25°, detecta cuándo sale 0.1° para actualizarlo automáticamente.
+        """
         now = datetime.now(timezone.utc)
         candidate_cycles = []
         for d in range(3):
@@ -549,11 +555,34 @@ class ECMWFWorker:
 
         for c_dt in candidate_cycles:
             cycle_str = c_dt.strftime("%Y%m%d_%Hz")
-            if self._is_remote_cycle_available(c_dt):
-                logger.info(f"ECMWF: Ciclo disponible detectado: {cycle_str}")
-                return c_dt
+            cycle_dir = self.cache_dir / cycle_str
+            manifest_file = cycle_dir / "manifest.json"
 
-        # Si no se detecta ciclo remoto accesible, utilizar el más reciente disponible en caché local
+            # 1. ¿Está ya disponible 0.1° nativo en remoto?
+            if self._is_remote_step_available(c_dt, step=3, resol=ECMWF_PRIMARY_RESOLUTION):
+                logger.info(f"ECMWF: Ciclo disponible detectado en resolución nativa 0.1°: {cycle_str}")
+                return c_dt, ECMWF_PRIMARY_RESOLUTION
+
+            # 2. Si ya tenemos este ciclo localmente procesado a 0.1° completo, mantenerlo
+            if manifest_file.exists():
+                try:
+                    with open(manifest_file, "r", encoding="utf-8") as f:
+                        m_data = json.load(f)
+                        if m_data.get("grid_resol") == ECMWF_PRIMARY_RESOLUTION and m_data.get("status") == "complete":
+                            return c_dt, ECMWF_PRIMARY_RESOLUTION
+                except Exception:
+                    pass
+
+            # 3. Fallback provisional: ¿Está disponible 0.25° en remoto?
+            if self._is_remote_step_available(c_dt, step=3, resol=ECMWF_FALLBACK_RESOLUTION):
+                logger.info(f"ECMWF: Ciclo detectado en resolución provisional 0.25° (a la espera de 0.1°): {cycle_str}")
+                return c_dt, ECMWF_FALLBACK_RESOLUTION
+
+            # 4. Si ya existe en caché local aunque sea 0.25°
+            if manifest_file.exists():
+                return c_dt, ECMWF_FALLBACK_RESOLUTION
+
+        # Fallback a directorio local existente más reciente
         if self.cache_dir.exists():
             existing = sorted([d for d in self.cache_dir.iterdir() if d.is_dir() and "_" in d.name and (d / "manifest.json").exists()], reverse=True)
             if existing:
@@ -563,18 +592,21 @@ class ECMWFWorker:
                     d_p = parts[0]
                     h_p = int(parts[1].replace("z", ""))
                     c_dt = datetime(int(d_p[:4]), int(d_p[4:6]), int(d_p[6:8]), h_p, 0, tzinfo=timezone.utc)
-                    logger.info(f"ECMWF: Utilizando ciclo local más reciente en caché: {latest_existing_name}")
-                    return c_dt
+                    with open(existing[0] / "manifest.json", "r", encoding="utf-8") as f:
+                        m_data = json.load(f)
+                        r = m_data.get("grid_resol", ECMWF_PRIMARY_RESOLUTION)
+                    return c_dt, r
                 except Exception:
                     pass
-        return None
+        return None, ECMWF_PRIMARY_RESOLUTION
 
-    def _download_step_grib(self, client: Any, cycle_dt: datetime, step: int, target_file: Path) -> bool:
+    def _download_step_grib(self, client: Any, cycle_dt: datetime, step: int, target_file: Path, resol: str = ECMWF_PRIMARY_RESOLUTION) -> bool:
         """Intenta descargar el archivo GRIB2 de un paso específico probando fuentes con reintentos."""
+        resol_label = ECMWF_RESOLUTION_LABEL if resol == ECMWF_PRIMARY_RESOLUTION else ECMWF_FALLBACK_LABEL
         for src in DATA_SOURCES:
             try:
-                logger.info(f"ECMWF: Consultando paso +{step}h ({ECMWF_RESOLUTION_LABEL}) en fuente {src.upper()}...")
-                c = Client(source=src, resol=ECMWF_RESOLUTION, maximum_retries=2, retry_after=2)
+                logger.info(f"ECMWF: Consultando paso +{step}h ({resol_label}) en fuente {src.upper()}...")
+                c = Client(source=src, resol=resol, maximum_retries=2, retry_after=2)
                 c.retrieve(
                     date=cycle_dt.date(),
                     time=cycle_dt.hour,
@@ -680,7 +712,7 @@ class ECMWFWorker:
         t_start = time.time()
         logger.info("ECMWF: Comprobando nuevo ciclo del modelo IFS...")
 
-        latest_dt = self._detect_latest_cycle()
+        latest_dt, target_resol = self._detect_latest_cycle()
         if not latest_dt:
             logger.warning("ECMWF: No se pudo determinar el ciclo más reciente.")
             return self.get_metadata()
@@ -691,24 +723,37 @@ class ECMWFWorker:
 
         # Cargar manifiesto existente si ya teníamos datos de este ciclo
         manifest_file = cycle_dir / "manifest.json"
+        existing_manifest = None
+        if manifest_file.exists():
+            try:
+                with open(manifest_file, "r", encoding="utf-8") as f:
+                    existing_manifest = json.load(f)
+            except Exception:
+                pass
+
+        # Detectar si estamos actualizando/sobreescribiendo un ciclo existente de 0.25° a 0.1°
+        is_upgrade = False
+        if existing_manifest:
+            prev_resol = existing_manifest.get("grid_resol", ECMWF_FALLBACK_RESOLUTION)
+            if prev_resol == ECMWF_FALLBACK_RESOLUTION and target_resol == ECMWF_PRIMARY_RESOLUTION:
+                is_upgrade = True
+                logger.info(f"ECMWF: ¡Resolución nativa 0.1° ya disponible para ciclo {cycle_str}! Sobreescribiendo versión provisional 0.25°...")
+
+        resol_label_full = ECMWF_RESOLUTION_LABEL if target_resol == ECMWF_PRIMARY_RESOLUTION else ECMWF_FALLBACK_LABEL
+
         manifest_data: Dict[str, Any] = {
             "model": "ECMWF IFS (Open Data)",
             "cycle": latest_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "cycle_str": cycle_str,
             "status": "processing",
-            "resolution": ECMWF_RESOLUTION_LABEL,
+            "resolution": resol_label_full,
+            "grid_resol": target_resol,
+            "is_provisional": (target_resol == ECMWF_FALLBACK_RESOLUTION),
             "bbox": SPAIN_BBOX,
-            "steps": [],
-            "available_steps": [],
+            "steps": existing_manifest.get("steps", []) if (existing_manifest and not is_upgrade) else [],
+            "available_steps": existing_manifest.get("available_steps", []) if (existing_manifest and not is_upgrade) else [],
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-
-        if manifest_file.exists():
-            try:
-                with open(manifest_file, "r", encoding="utf-8") as f:
-                    manifest_data = json.load(f)
-            except Exception:
-                pass
 
         available_steps = set(manifest_data.get("available_steps", []))
         # En ECMWF IFS Open Data, las corridas intermedias (06z y 18z) solo llegan hasta +144h
@@ -717,11 +762,11 @@ class ECMWFWorker:
 
         missing_steps = [s for s in steps_to_process if s not in available_steps]
         if not missing_steps:
-            logger.info(f"ECMWF: Todos los pasos (+{min(steps_to_process)}h..+{max(steps_to_process)}h) ya están al día en caché para el ciclo {cycle_str}.")
+            logger.info(f"ECMWF: Todos los pasos (+{min(steps_to_process)}h..+{max(steps_to_process)}h) ya están al día en caché para el ciclo {cycle_str} [{resol_label_full}].")
         else:
-            logger.info(f"ECMWF: Pasos disponibles: {len(available_steps)}/{len(steps_to_process)}. Comprobando si el supercomputador ha publicado el paso +{missing_steps[0]}h...")
+            logger.info(f"ECMWF: Pasos disponibles: {len(available_steps)}/{len(steps_to_process)}. Comprobando si el supercomputador ha publicado el paso +{missing_steps[0]}h ({resol_label_full})...")
 
-        client = Client(source="aws", resol=ECMWF_RESOLUTION, maximum_retries=2, retry_after=2)
+        client = Client(source="aws", resol=target_resol, maximum_retries=2, retry_after=2)
         last_total_matrix: Optional[np.ndarray] = None
         new_steps_downloaded = 0
 
@@ -731,16 +776,16 @@ class ECMWFWorker:
             interval_png_path = cycle_dir / f"interval_step_{step:02d}.png"
             interval_npz_path = cycle_dir / f"interval_step_{step:02d}.npz"
 
-            # Si ya está completamente procesado en disco, cargamos la matriz total para el siguiente delta
-            if step in available_steps and total_png_path.exists() and total_npz_path.exists() and interval_png_path.exists():
+            # Si ya está completamente procesado en disco y NO es upgrade, cargamos la matriz total para el siguiente delta
+            if (not is_upgrade) and step in available_steps and total_png_path.exists() and total_npz_path.exists() and interval_png_path.exists():
                 last_total_matrix = self._load_grid_file(cycle_dir / f"total_step_{step:02d}")
                 continue
 
             # Descargar archivo GRIB2 temporal para este step
             tmp_grib = cycle_dir / f"tmp_{cycle_str}_step{step:02d}.grib2"
             try:
-                logger.info(f"ECMWF: Comprobando y descargando paso +{step}h del ciclo {cycle_str}...")
-                ok = self._download_step_grib(client, latest_dt, step, tmp_grib)
+                logger.info(f"ECMWF: Comprobando y descargando paso +{step}h del ciclo {cycle_str} ({resol_label_full})...")
+                ok = self._download_step_grib(client, latest_dt, step, tmp_grib, resol=target_resol)
                 if not ok:
                     logger.info(f"ECMWF: Paso +{step}h aún no disponible en el supercomputador. Deteniendo pipeline progresivo.")
                     break
@@ -820,7 +865,9 @@ class ECMWFWorker:
                     cycle_str=cycle_str,
                     available_steps=manifest_data["available_steps"],
                     step_added=step,
-                    status=manifest_data["status"]
+                    status=manifest_data["status"],
+                    is_provisional=manifest_data["is_provisional"],
+                    resolution=manifest_data["resolution"]
                 )
 
             finally:

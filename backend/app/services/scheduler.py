@@ -106,7 +106,8 @@ class BackgroundScheduler:
             try:
                 meta = ecmwf_worker.get_metadata()
                 is_complete = bool(meta and meta.get("is_complete"))
-                sleep_interval = self.ecmwf_interval if is_complete else self.ecmwf_updating_interval
+                is_provisional = bool(meta and meta.get("is_provisional"))
+                sleep_interval = self.ecmwf_interval if (is_complete and not is_provisional) else self.ecmwf_updating_interval
 
                 logger.debug(f"Scheduler ECMWF: Próxima comprobación en {sleep_interval}s (completado={is_complete}).")
                 await asyncio.sleep(sleep_interval)

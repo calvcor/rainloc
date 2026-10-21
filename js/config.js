@@ -989,12 +989,16 @@ export function formatEcmwfTimestamp(metadata) {
     (rawMax !== null && rawMax < targetMax && metadata.status !== 'complete')
   );
 
+  const provPill = metadata.is_provisional
+    ? ` <span class="badge-provisional" style="font-size: 0.72rem; color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; padding: 1px 5px; margin-left: 4px;" title="Resolución 25 km provisional mientras ECMWF termina de publicar la de 10 km (0.1°)">25 km prov.</span>`
+    : '';
+
   if (isUpdating && (rawMax === null || rawMax < targetMax)) {
     const stepText = (rawMax !== null && rawMax > 0) ? ` (+${rawMax}h)` : '';
-    return `Salida modelo: <strong>${dateText} (${run})</strong> <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
+    return `Salida modelo: <strong>${dateText} (${run})</strong>${provPill} <span class="ecmwf-updating-tag" title="Descargando nueva salida del modelo progresivamente"><span class="sync-pulse-dot"></span> Actualizando${stepText}</span>`;
   }
 
-  return `Salida modelo: <strong>${dateText} (${run})</strong>`;
+  return `Salida modelo: <strong>${dateText} (${run})</strong>${provPill}`;
 }
 
 /**
