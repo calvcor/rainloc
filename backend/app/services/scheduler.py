@@ -310,11 +310,12 @@ class BackgroundScheduler:
             self._icon_task = asyncio.create_task(self._icon_loop())
             self._gem_task = asyncio.create_task(self._gem_loop())
             self._ukmo_task = asyncio.create_task(self._ukmo_loop())
+            self._saih_task = asyncio.create_task(self._saih_loop())
             # Iniciar cliente MQTT de radar en segundo plano
             radar_service.start_mqtt_client()
             # Iniciar conexión WebSocket de rayos en segundo plano
             lightning_service.start()
-            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + Modelos NWP).")
+            logger.info("BackgroundScheduler activado (AEMET + Radar ORD + Rayos + SAIH/ACA + Modelos NWP).")
 
     def stop(self):
         if self._running:

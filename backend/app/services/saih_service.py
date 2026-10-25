@@ -288,7 +288,17 @@ class SAIHService:
             for st in all_stations
             if st.get("lat") is not None and st.get("lon") is not None
         ]
-        return {"type": "FeatureCollection", "features": features}
+        geojson_data = {"type": "FeatureCollection", "features": features}
+        try:
+            with open(GEOJSON_FILE, "w", encoding="utf-8") as f:
+                json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+            frontend_geojson = Path(__file__).parent.parent.parent.parent / "data" / "saih_aforos.geojson"
+            if frontend_geojson.parent.exists():
+                with open(frontend_geojson, "w", encoding="utf-8") as f:
+                    json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        return geojson_data
 
     def get_station_by_id(self, id_variable: str) -> Optional[Dict[str, Any]]:
         key = str(id_variable).strip()
@@ -544,7 +554,17 @@ class SAIHService:
             for emb in all_embalses
             if emb.get("lat") is not None and emb.get("lon") is not None
         ]
-        return {"type": "FeatureCollection", "features": features}
+        geojson_data = {"type": "FeatureCollection", "features": features}
+        try:
+            with open(EMBALSES_GEOJSON_FILE, "w", encoding="utf-8") as f:
+                json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+            frontend_geojson = Path(__file__).parent.parent.parent.parent / "data" / "saih_embalses.geojson"
+            if frontend_geojson.parent.exists():
+                with open(frontend_geojson, "w", encoding="utf-8") as f:
+                    json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        return geojson_data
 
     def get_embalse_by_id(self, id_or_code: str) -> Optional[Dict[str, Any]]:
         key = str(id_or_code).strip().upper()

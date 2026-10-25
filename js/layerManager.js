@@ -5677,6 +5677,17 @@ export class LayerManager {
       }
 
       if (geojson && geojson.features) {
+        // Garantizar que la red ACA de Conques Internes esté presente incluso con cachés locales estáticas
+        const hasAca = geojson.features.some(f => f.properties && (f.properties.red === 'ACA' || f.properties.cuenca === 'Conques Internes de Catalunya'));
+        if (!hasAca) {
+          try {
+            const acaFb = await this._fetchJsonWithTimeout('./data/aca_aforos.geojson', 2000);
+            if (acaFb && acaFb.data && Array.isArray(acaFb.data.features)) {
+              geojson.features = geojson.features.concat(acaFb.data.features);
+            }
+          } catch (e) {}
+        }
+
         this._caudalesGeojson = geojson;
         this._caudalesGeojsonTime = now;
         try {
@@ -6616,6 +6627,17 @@ export class LayerManager {
       }
 
       if (geojson && geojson.features) {
+        // Garantizar que los embalses de la red ACA de Conques Internes estén presentes
+        const hasAcaEmb = geojson.features.some(f => f.properties && (f.properties.red === 'ACA' || f.properties.cuenca === 'Conques Internes de Catalunya'));
+        if (!hasAcaEmb) {
+          try {
+            const acaFb = await this._fetchJsonWithTimeout('./data/aca_embalses.geojson', 2000);
+            if (acaFb && acaFb.data && Array.isArray(acaFb.data.features)) {
+              geojson.features = geojson.features.concat(acaFb.data.features);
+            }
+          } catch (e) {}
+        }
+
         this._embalsesGeojson = geojson;
         this._embalsesGeojsonTime = now;
         try {

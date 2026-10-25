@@ -4,7 +4,12 @@ Cubre las Cuencas Internas de Cataluña (Conques Internes de Catalunya).
 Proporciona en tiempo real:
  - Caudales y niveles en ríos (84 estaciones de aforo).
  - Estado de embalses y presas (11 embalses).
- - Series temporales históricas a resolución de 5 minutos para caudales y volúmenes.
+ - Series temporales históricas para caudales y volúmenes.
+Incorpora arquitectura híbrida resiliente:
+ 1. Conexión de baja latencia con el visor AETR oficial de la ACA (aplicacions.aca.gencat.cat).
+ 2. Fallback automático y sincronización en tiempo real con la API Open Data oficial de la Generalitat de Catalunya:
+    - Rius i cabals: https://analisi.transparenciacatalunya.cat/resource/hprm-xuw7.json
+    - Embassaments: https://analisi.transparenciacatalunya.cat/resource/gn9e-3qhr.json
 """
 
 import asyncio
@@ -24,16 +29,31 @@ UTC_TZ = timezone.utc
 SYNC_TTL_SECONDS = 300  # 5 minutos de frescura en caché
 
 ACA_BASE_URL = "https://aplicacions.aca.gencat.cat/aetr/vishid/v2"
+SOCRATA_AFOROS_URL = "https://analisi.transparenciacatalunya.cat/resource/hprm-xuw7.json"
+SOCRATA_EMBALSES_URL = "https://analisi.transparenciacatalunya.cat/resource/gn9e-3qhr.json"
+
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 RainLoc/3.0"
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "public" / "data"
+PUBLIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 STATIC_ACA_AFOROS_FILE = DATA_DIR / "aca_aforos_estaciones.json"
 STATIC_ACA_EMBALSES_FILE = DATA_DIR / "aca_embalses_estaciones.json"
 
 ACA_AFOROS_GEOJSON_FILE = DATA_DIR / "aca_aforos.geojson"
 ACA_EMBALSES_GEOJSON_FILE = DATA_DIR / "aca_embalses.geojson"
+
+SOCRATA_EMBALSES_MAP: Dict[str, str] = {
+    "170600-001": "Embassament de Darnius Boadella (Darnius)",
+    "080581-002": "Embassament de Foix (Castellet i la Gornal)",
+    "082687-001": "Embassament de la Baells (Cercs)",
+    "081419-003": "Embassament de la Llosa del Cavall (Navès)",
+    "430537-001": "Embassament de Riudecanyes",
+    "250753-004": "Embassament de Sant Ponç (Clariana de Cardener)",
+    "083036-001": "Embassament de Sau (Vilanova de Sau)",
+    "430496-001": "Embassament de Siurana (Cornudella de Montsant)",
+    "171169-001": "Embassament de Susqueda (Osor)",
+}
 
 
 def _parse_coords(point_str: Optional[str]) -> tuple[Optional[float], Optional[float]]:
@@ -63,19 +83,17 @@ def _parse_float(val: Any) -> Optional[float]:
         return None
 
 
-def _format_madrid_iso(iso_utc_str: Optional[str]) -> str:
-    """Convierte una marca temporal UTC ISO 8601 a hora local de Madrid 'YYYY-MM-DD HH:mm:ss'."""
-    if not iso_utc_str:
+def _format_madrid_iso(iso_str: Optional[str]) -> str:
+    """Convierte una marca temporal a formato local 'YYYY-MM-DD HH:mm:ss'."""
+    if not iso_str:
         return datetime.now(MADRID_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        clean_str = iso_utc_str.replace("Z", "+00:00")
-        if "+0000" in clean_str:
-            clean_str = clean_str.replace("+0000", "+00:00")
-        dt_utc = datetime.fromisoformat(clean_str)
-        dt_madrid = dt_utc.astimezone(MADRID_TZ)
-        return dt_madrid.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return str(iso_utc_str)[:19].replace("T", " ")
+    clean = str(iso_str).strip()
+    if "T" in clean:
+        clean = clean.split(".")[0].replace("T", " ")
+        if len(clean) == 10:
+            clean += " 00:00:00"
+        return clean[:19]
+    return clean[:19]
 
 
 class ACAService:
@@ -92,8 +110,47 @@ class ACAService:
         self._aforos_catalog: Dict[str, Dict[str, Any]] = {}
         self._embalses_catalog: Dict[str, Dict[str, Any]] = {}
 
+        self._socrata_aforos_map: Dict[str, str] = {}
         self._sync_lock = asyncio.Lock()
         self._load_cached_files()
+        self._load_socrata_mapping()
+
+    def _load_socrata_mapping(self):
+        mapping_file = DATA_DIR / "aca_socrata_mapping.json"
+        if mapping_file.exists():
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    self._socrata_aforos_map = json.load(f)
+            except Exception as e:
+                logger.warning(f"Error cargando aca_socrata_mapping.json: {e}")
+
+    def _get_socrata_aforo_code(self, raw_code: str) -> Optional[str]:
+        if raw_code in self._socrata_aforos_map:
+            return self._socrata_aforos_map[raw_code]
+        clean = raw_code.replace("ACA_", "").replace("aca_aforo_", "")
+        if clean in self._socrata_aforos_map:
+            return self._socrata_aforos_map[clean]
+        # Búsqueda por estación
+        st = self._aforos_by_id.get(clean) or self._aforos_by_id.get(raw_code)
+        if st and st.get("codigo_corto") in self._socrata_aforos_map:
+            return self._socrata_aforos_map[st["codigo_corto"]]
+        return None
+
+    def _get_socrata_embalse_name(self, raw_code: str) -> Optional[str]:
+        clean = raw_code.replace("ACA_", "").replace("aca_embalse_", "").replace("_vol", "").replace("_cota", "")
+        if clean in SOCRATA_EMBALSES_MAP:
+            return SOCRATA_EMBALSES_MAP[clean]
+        emb = self._embalses_by_id.get(clean) or self._embalses_by_id.get(raw_code)
+        if emb:
+            c_short = emb.get("codigo_corto")
+            if c_short in SOCRATA_EMBALSES_MAP:
+                return SOCRATA_EMBALSES_MAP[c_short]
+            lname = str(emb.get("nombre", "")).lower()
+            for sname in SOCRATA_EMBALSES_MAP.values():
+                key = lname.replace("embassament de ", "").replace("embassament del ", "").split("(")[0].strip()
+                if key and key in sname.lower():
+                    return sname
+        return None
 
     def _load_cached_files(self):
         """Carga datos cacheados desde disco si existen."""
@@ -149,29 +206,54 @@ class ACAService:
                 self._embalses_by_id[c_short] = emb
                 self._embalses_by_id[f"aca_embalse_{c_short}"] = emb
 
-    def _ensure_aforos_catalog(self) -> Dict[str, Any]:
-        if not self._aforos_catalog:
-            try:
-                now_ts = int(datetime.now(MADRID_TZ).timestamp())
-                url_cat = f"{ACA_BASE_URL}/catalog/public/rivergauges?json=false&_t={now_ts}"
-                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-                with urllib.request.urlopen(req_cat, timeout=12) as resp:
-                    self._aforos_catalog = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Error descargando catálogo de aforos ACA: {e}")
-        return self._aforos_catalog
+    def _fetch_socrata_aforos_readings(self) -> Dict[str, Dict[str, Any]]:
+        """Descarga lecturas en tiempo real de caudales y niveles desde el portal Open Data de la Generalitat."""
+        url = f"{SOCRATA_AFOROS_URL}?$order=dia%20DESC&$limit=400"
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        readings_by_code: Dict[str, Dict[str, Any]] = {}
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                for item in data:
+                    c = item.get("codi_estacio")
+                    if not c:
+                        continue
+                    if c not in readings_by_code:
+                        readings_by_code[c] = {}
+                    vtype = item.get("tipus_variable")
+                    val = _parse_float(item.get("valor"))
+                    dia = item.get("dia")
+                    if vtype == "Cabal riu" and "caudal" not in readings_by_code[c]:
+                        readings_by_code[c]["caudal"] = val
+                        readings_by_code[c]["time"] = dia
+                    elif vtype == "Nivell riu" and "nivel" not in readings_by_code[c]:
+                        readings_by_code[c]["nivel"] = val
+                        if "time" not in readings_by_code[c]:
+                            readings_by_code[c]["time"] = dia
+        except Exception as e:
+            logger.warning(f"Error descargando datos de aforos ACA desde Socrata Open Data: {e}")
+        return readings_by_code
 
-    def _ensure_embalses_catalog(self) -> Dict[str, Any]:
-        if not self._embalses_catalog:
-            try:
-                now_ts = int(datetime.now(MADRID_TZ).timestamp())
-                url_cat = f"{ACA_BASE_URL}/catalog/public/reservoir?json=false&_t={now_ts}"
-                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-                with urllib.request.urlopen(req_cat, timeout=12) as resp:
-                    self._embalses_catalog = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Error descargando catálogo de embalses ACA: {e}")
-        return self._embalses_catalog
+    def _fetch_socrata_embalses_readings(self) -> Dict[str, Dict[str, Any]]:
+        """Descarga lecturas de volumen, cota y llenado de embalses desde el portal Open Data de la Generalitat."""
+        url = f"{SOCRATA_EMBALSES_URL}?$order=dia%20DESC&$limit=50"
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        readings_by_name: Dict[str, Dict[str, Any]] = {}
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                for item in data:
+                    name = item.get("estaci")
+                    if name and name not in readings_by_name:
+                        readings_by_name[name] = {
+                            "vol": _parse_float(item.get("volum_embassat")),
+                            "pct": _parse_float(item.get("percentatge_volum_embassat")),
+                            "cota": _parse_float(item.get("nivell_absolut")),
+                            "time": item.get("dia"),
+                        }
+        except Exception as e:
+            logger.warning(f"Error descargando datos de embalses ACA desde Socrata Open Data: {e}")
+        return readings_by_name
 
     # ==========================================
     # 1. AFOROS Y CAUDALES EN RÍOS
@@ -179,191 +261,110 @@ class ACAService:
 
     def sync_aforos_metadata(self) -> List[Dict[str, Any]]:
         """
-        Sincroniza todas las estaciones de aforo de ríos de la ACA:
-        - Catálogo estático (metadatos, nombres, cuencas, ríos)
-        - Alertas y umbrales de retorno (T2, T5, T10)
-        - Lecturas de caudal y nivel en tiempo real
+        Sincroniza todas las estaciones de aforo de ríos de la ACA de manera resiliente:
+        1. Intenta consulta rápida al visor AETR v2.
+        2. Si no responde, recurre a Open Data Generalitat (hprm-xuw7).
+        3. Preserva siempre los últimos datos válidos para evitar caídas a 'None' o puntos grises.
         """
         now_madrid = datetime.now(MADRID_TZ)
         now_iso = now_madrid.strftime("%Y-%m-%d %H:%M:%S")
-
-        # 1. Catálogo
         now_ts = int(now_madrid.timestamp())
-        if not self._aforos_catalog:
-            try:
-                url_cat = f"{ACA_BASE_URL}/catalog/public/rivergauges?json=false&_t={now_ts}"
-                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-                with urllib.request.urlopen(req_cat, timeout=12) as resp:
-                    self._aforos_catalog = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Error descargando catálogo de aforos ACA: {e}")
 
-        # 2. Umbrales de retorno (T2, T5, T10, T25, T50)
-        thresholds_by_code: Dict[str, Dict[str, Any]] = {}
-        try:
-            url_alert = f"{ACA_BASE_URL}/alerts/rivergauges?_t={now_ts}"
-            req_alert = urllib.request.Request(url_alert, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-            with urllib.request.urlopen(req_alert, timeout=12) as resp:
-                alerts_data = json.loads(resp.read().decode("utf-8"))
-                if isinstance(alerts_data, dict):
-                    for code, info in alerts_data.items():
-                        if isinstance(info, dict):
-                            for k, v in info.items():
-                                if isinstance(v, list) and len(v) >= 4:
-                                    # v = [caudal_actual, T2, T5, T10, T25, T50]
-                                    thresholds_by_code[code] = {
-                                        "caudal_alert": _parse_float(v[0]),
-                                        "amarillo": _parse_float(v[1]),
-                                        "naranja": _parse_float(v[2]),
-                                        "rojo": _parse_float(v[3]),
-                                    }
-                                    break
-        except Exception as e:
-            logger.warning(f"Error descargando alertas/umbrales ACA: {e}")
-
-        # 3. Lecturas en tiempo real de todas las estaciones (lote global)
+        # 1. Intentar AETR v2 con timeout estricto de 2.5s
         live_data_by_code: Dict[str, Dict[str, Any]] = {}
         try:
-            # Una llamada a una estación existente con cache-buster devuelve el lote entero de 84 estaciones
             sample_code = "171812-001"
             url_live = f"{ACA_BASE_URL}/data/public/rivergauges/{sample_code}?_t={now_ts}"
             req_live = urllib.request.Request(url_live, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-            with urllib.request.urlopen(req_live, timeout=12) as resp:
+            with urllib.request.urlopen(req_live, timeout=2.5) as resp:
                 live_batch = json.loads(resp.read().decode("utf-8"))
                 if isinstance(live_batch, dict):
                     live_data_by_code = live_batch
         except Exception as e:
-            logger.warning(f"Error descargando lecturas en tiempo real de aforos ACA: {e}")
+            logger.debug(f"AETR v2 aforos no disponible ({e}), utilizando fallback Open Data Generalitat.")
 
-        # 4. Consolidar dataset unificado
-        all_codes = set(self._aforos_catalog.keys()) | set(live_data_by_code.keys())
-        aforos_list = []
+        # 2. Si AETR no respondió o está incompleto, consultar Socrata
+        socrata_readings = {}
+        if not live_data_by_code:
+            socrata_readings = self._fetch_socrata_aforos_readings()
 
-        # Estaciones que necesitan consulta de fallback (ej. canales/acequias secundarias con null en live batch)
-        for code in all_codes:
-            meta = self._aforos_catalog.get(code, {})
-            live = live_data_by_code.get(code, {})
-            thresh = thresholds_by_code.get(code, {})
-            sensors = meta.get("sensors", {}) if isinstance(meta, dict) else {}
+        # Si tenemos lista base en caché, actualizar sobre ella para conservar metadatos y coordenadas
+        existing_list = list(self._aforos)
+        if not existing_list and STATIC_ACA_AFOROS_FILE.exists():
+            try:
+                with open(STATIC_ACA_AFOROS_FILE, "r", encoding="utf-8") as f:
+                    existing_list = json.load(f)
+            except Exception:
+                pass
 
-            # Coordenadas
-            loc_str = live.get("location") or meta.get("point") or meta.get("location")
-            lat, lon = _parse_coords(loc_str)
-            if lat is None or lon is None:
-                continue
+        if not existing_list:
+            logger.warning("No hay lista base de aforos ACA disponible para sincronizar.")
+            return self._aforos
 
-            # Valores en tiempo real
-            popup = live.get("popup", {})
-            popup_dict = popup if isinstance(popup, dict) else {}
-            q_obj = popup_dict.get("river_flow", {}) if isinstance(popup_dict, dict) else {}
-            lvl_obj = popup_dict.get("river_level", {}) if isinstance(popup_dict, dict) else {}
+        updated_list = []
+        for st in existing_list:
+            st_dict = dict(st)
+            code_short = st_dict.get("codigo_corto") or st_dict.get("codigo", "").replace("ACA_", "")
 
-            raw_caudal = _parse_float(q_obj.get("value")) if q_obj else thresh.get("caudal_alert")
-            if raw_caudal is None and live.get("value") is not None:
-                raw_caudal = _parse_float(live.get("value"))
+            new_caudal = None
+            new_nivel = None
+            new_time = None
 
-            raw_nivel = _parse_float(lvl_obj.get("value")) if lvl_obj else None
-            nivel_unit = lvl_obj.get("unit") or "cm"
+            # A) Desde lote AETR v2 si llegó
+            if live_data_by_code and code_short in live_data_by_code:
+                live_entry = live_data_by_code[code_short]
+                popup = live_entry.get("popup", {}) if isinstance(live_entry.get("popup"), dict) else {}
+                q_obj = popup.get("river_flow", {}) if isinstance(popup.get("river_flow"), dict) else {}
+                lvl_obj = popup.get("river_level", {}) if isinstance(popup.get("river_level"), dict) else {}
 
-            raw_time = q_obj.get("time") or lvl_obj.get("time") or live.get("time")
+                raw_q = _parse_float(q_obj.get("value")) if q_obj else None
+                raw_lvl = _parse_float(lvl_obj.get("value")) if lvl_obj else None
+                if raw_q is not None:
+                    new_caudal = raw_q
+                if raw_lvl is not None:
+                    new_nivel = round(raw_lvl / 100.0, 3) if lvl_obj.get("unit") == "cm" else raw_lvl
+                raw_t = q_obj.get("time") or lvl_obj.get("time") or live_entry.get("time")
+                if raw_t:
+                    new_time = _format_madrid_iso(raw_t)
 
-            # Detectar si los sensores están en l/s (canales, acequias como Séquia Monar)
-            is_liters_per_sec = False
-            primary_flow_unit = q_obj.get("unit") or live.get("unit")
-            if primary_flow_unit == "l/s":
-                is_liters_per_sec = True
-            else:
-                for s_key, s_data in sensors.items():
-                    if isinstance(s_data, dict) and (s_data.get("unit") == "l/s" or s_data.get("type") == "channel_flow"):
-                        is_liters_per_sec = True
-                        break
+            # B) Desde fallback Socrata
+            if (new_caudal is None or new_nivel is None) and socrata_readings:
+                s_code = self._get_socrata_aforo_code(code_short)
+                if s_code and s_code in socrata_readings:
+                    s_data = socrata_readings[s_code]
+                    if new_caudal is None and "caudal" in s_data:
+                        new_caudal = s_data["caudal"]
+                    if new_nivel is None and "nivel" in s_data:
+                        new_nivel = s_data["nivel"]
+                    if not new_time and "time" in s_data:
+                        new_time = _format_madrid_iso(s_data["time"])
 
-            # Si el valor de caudal o nivel sigue en null en el lote general, consultar último punto de la serie histórica
-            if raw_caudal is None and raw_nivel is None and sensors:
-                try:
-                    s_iso_fb = (now_madrid - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%S")
-                    e_iso_fb = now_madrid.strftime("%Y-%m-%dT%H:%M:%S")
-                    fb_url = f"{ACA_BASE_URL}/chart/public/rivergauges/{code}?from={s_iso_fb}&to={e_iso_fb}&_t={now_ts}"
-                    req_fb = urllib.request.Request(fb_url, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-                    with urllib.request.urlopen(req_fb, timeout=5) as resp_fb:
-                        chart_fb = json.loads(resp_fb.read().decode("utf-8"))
-                        if isinstance(chart_fb, dict) and chart_fb:
-                            first_signal = list(chart_fb.keys())[0]
-                            pts_fb = chart_fb.get(first_signal, {})
-                            if isinstance(pts_fb, dict) and pts_fb:
-                                valid_pts = [(t, v) for t, v in pts_fb.items() if v is not None]
-                                if valid_pts:
-                                    last_t_fb, last_v_fb = valid_pts[-1]
-                                    raw_caudal = _parse_float(last_v_fb)
-                                    raw_time = last_t_fb
-                except Exception as fb_err:
-                    logger.debug(f"Fallback chart no disponible para aforo {code}: {fb_err}")
+            # C) Asignar valores nuevos O conservar el último valor previo si no hay nueva lectura
+            if new_caudal is not None:
+                st_dict["caudal"] = new_caudal
+                st_dict["ultimo_caudal"] = new_caudal
+                st_dict["caudal_actual"] = new_caudal
+                st_dict["lastValue"] = new_caudal
 
-            # Normalizar caudal a m³/s si venía en l/s
-            if raw_caudal is not None and is_liters_per_sec:
-                caudal_val = round(raw_caudal / 1000.0, 4)
-            else:
-                caudal_val = raw_caudal
+            if new_nivel is not None:
+                st_dict["nivel"] = new_nivel
+                st_dict["ultimo_nivel"] = new_nivel
+                st_dict["nivel_actual"] = new_nivel
+                st_dict["nivel_cm"] = round(new_nivel * 100, 1)
 
-            # Normalizar nivel a metros si viene en cm
-            nivel_m = round(raw_nivel / 100.0, 3) if (raw_nivel is not None and nivel_unit == "cm") else raw_nivel
+            if new_time:
+                st_dict["ultima_hora"] = new_time
+                st_dict["fecha_comunicacion"] = new_time
+            elif not st_dict.get("ultima_hora"):
+                st_dict["ultima_hora"] = now_iso
+                st_dict["fecha_comunicacion"] = now_iso
 
-            update_time = _format_madrid_iso(raw_time) if raw_time else now_iso
+            st_dict["cuenca"] = "Conques Internes de Catalunya"
+            st_dict["fuente"] = "Agència Catalana de l'Aigua (ACA)"
+            updated_list.append(st_dict)
 
-            name = meta.get("name") or live.get("name") or f"Aforament {code}"
-            river = meta.get("waterbody") or meta.get("river") or ""
-            subbasin = meta.get("subbasin") or meta.get("basin") or "Conques Internes de Catalunya"
-            municipality = meta.get("municipality") or ""
-            comarca = meta.get("comarca") or ""
-
-            umbrales = {
-                "amarillo": thresh.get("amarillo"),
-                "naranja": thresh.get("naranja"),
-                "rojo": thresh.get("rojo"),
-            }
-
-            st_dict = {
-                "id_estacion": f"aca_aforo_{code}",
-                "codigo": f"ACA_{code}",
-                "codigo_corto": code,
-                "id_variable": f"aca_aforo_{code}",
-                "nombre": name,
-                "rio": river,
-                "municipio": municipality,
-                "poblacion": municipality,
-                "comarca": comarca,
-                "provincia": meta.get("province", "Catalunya"),
-                "cuenca": "Conques Internes de Catalunya",
-                "subcuenca": subbasin,
-                "lat": lat,
-                "lon": lon,
-                "red": "ACA",
-                "caudal": caudal_val,
-                "ultimo_caudal": caudal_val,
-                "caudal_actual": caudal_val,
-                "lastValue": caudal_val,
-                "nivel": nivel_m,
-                "ultimo_nivel": nivel_m,
-                "nivel_actual": nivel_m,
-                "nivel_cm": raw_nivel if nivel_unit == "cm" else (round(raw_nivel * 100, 1) if raw_nivel else None),
-                "umbrales": umbrales,
-                "aviso": umbrales.get("amarillo"),
-                "prealerta": umbrales.get("naranja"),
-                "alerta": umbrales.get("rojo"),
-                "tipo_umbral": "caudal",
-                "unidad_umbrales": "m³/s",
-                "unidad_grafica": "m³/s",
-                "ultima_hora": update_time,
-                "fecha_comunicacion": update_time,
-                "fuente": "Agència Catalana de l'Aigua (ACA)",
-                "unidad": "m³/s",
-                "unidad_caudal": "m³/s",
-                "unidad_nivel": "m",
-            }
-            aforos_list.append(st_dict)
-
-        if aforos_list:
-            self._aforos = aforos_list
+        if updated_list:
+            self._aforos = updated_list
             self._index_aforos()
             self._last_aforos_sync_time = datetime.now()
 
@@ -385,12 +386,14 @@ class ACAService:
             with open(ACA_AFOROS_GEOJSON_FILE, "w", encoding="utf-8") as f:
                 json.dump(geojson_data, f, ensure_ascii=False, indent=2)
 
-            if PUBLIC_DATA_DIR.exists():
-                try:
-                    with open(PUBLIC_DATA_DIR / "aca_aforos.geojson", "w", encoding="utf-8") as f:
-                        json.dump(geojson_data, f, ensure_ascii=False, indent=2)
-                except Exception:
-                    pass
+            PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(PUBLIC_DATA_DIR / "aca_aforos.geojson", "w", encoding="utf-8") as f:
+                    json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+                with open(PUBLIC_DATA_DIR / "aca_aforos_estaciones.json", "w", encoding="utf-8") as f:
+                    json.dump(self._aforos, f, ensure_ascii=False, indent=2)
+            except Exception as pe:
+                logger.debug(f"No se pudo escribir en PUBLIC_DATA_DIR: {pe}")
 
             logger.info(f"Sincronizados {len(self._aforos)} aforos de caudal de la ACA correctamente.")
 
@@ -446,117 +449,111 @@ class ACAService:
 
     def sync_embalses_metadata(self) -> List[Dict[str, Any]]:
         """
-        Sincroniza los 11 embalses principales de las Cuencas Internas de Cataluña:
-        - Catálogo estático (capacidad máxima, río, comarca, municipio)
-        - Lectura en tiempo real (volumen hm³, porcentaje llenado, cota msnm)
+        Sincroniza los 11 embalses principales de las Cuencas Internas de Cataluña de manera resiliente:
+        1. Intenta visor AETR v2.
+        2. Recurre a Open Data Generalitat (gn9e-3qhr).
+        3. Preserva valores anteriores para evitar puntos grises.
         """
         now_madrid = datetime.now(MADRID_TZ)
         now_iso = now_madrid.strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1. Catálogo
-        if not self._embalses_catalog:
-            try:
-                url_cat = f"{ACA_BASE_URL}/catalog/public/reservoir?json=false"
-                req_cat = urllib.request.Request(url_cat, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req_cat, timeout=12) as resp:
-                    self._embalses_catalog = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Error descargando catálogo de embalses ACA: {e}")
-
-        # 2. Lecturas en tiempo real
+        # 1. Intentar AETR v2 con timeout estricto de 2.5s
         live_embalses_by_code: Dict[str, Dict[str, Any]] = {}
         try:
             sample_code = "080581-002"
             url_live = f"{ACA_BASE_URL}/data/public/reservoir/{sample_code}"
             req_live = urllib.request.Request(url_live, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_live, timeout=12) as resp:
+            with urllib.request.urlopen(req_live, timeout=2.5) as resp:
                 live_batch = json.loads(resp.read().decode("utf-8"))
                 if isinstance(live_batch, dict):
                     live_embalses_by_code = live_batch
         except Exception as e:
-            logger.warning(f"Error descargando lecturas en tiempo real de embalses ACA: {e}")
+            logger.debug(f"AETR v2 embalses no disponible ({e}), utilizando fallback Open Data Generalitat.")
 
-        # 3. Consolidar
-        all_codes = set(self._embalses_catalog.keys()) | set(live_embalses_by_code.keys())
-        emb_list = []
+        # 2. Fallback Socrata
+        socrata_embalses = {}
+        if not live_embalses_by_code:
+            socrata_embalses = self._fetch_socrata_embalses_readings()
 
-        for code in all_codes:
-            meta = self._embalses_catalog.get(code, {})
-            live = live_embalses_by_code.get(code, {})
-            add_info = meta.get("addicionalInfo", {}) if isinstance(meta.get("addicionalInfo"), dict) else {}
+        existing_emb = list(self._embalses)
+        if not existing_emb and STATIC_ACA_EMBALSES_FILE.exists():
+            try:
+                with open(STATIC_ACA_EMBALSES_FILE, "r", encoding="utf-8") as f:
+                    existing_emb = json.load(f)
+            except Exception:
+                pass
 
-            loc_str = live.get("location") or meta.get("location") or meta.get("point")
-            lat, lon = _parse_coords(loc_str)
-            if lat is None or lon is None:
-                continue
+        if not existing_emb:
+            logger.warning("No hay lista base de embalses ACA disponible para sincronizar.")
+            return self._embalses
 
-            popup = live.get("popup", {}) if isinstance(live.get("popup"), dict) else {}
-            vol_obj = popup.get("volume", {})
-            cap_obj = popup.get("capacity", {})
-            lvl_obj = popup.get("level", {})
+        updated_emb = []
+        for emb in existing_emb:
+            emb_dict = dict(emb)
+            code_short = emb_dict.get("codigo_corto") or emb_dict.get("codigo", "").replace("ACA_", "")
 
-            vol_actual = _parse_float(vol_obj.get("value"))
-            pct_actual = _parse_float(cap_obj.get("value")) if cap_obj else _parse_float(live.get("value"))
-            cota_actual = _parse_float(lvl_obj.get("value"))
+            new_vol = None
+            new_pct = None
+            new_cota = None
+            new_time = None
 
-            cap_max_raw = meta.get("maximumCapacity") or add_info.get("Capacitat màxima embassament")
-            cap_max = _parse_float(cap_max_raw)
+            # A) Desde AETR v2
+            if live_embalses_by_code and code_short in live_embalses_by_code:
+                live = live_embalses_by_code[code_short]
+                popup = live.get("popup", {}) if isinstance(live.get("popup"), dict) else {}
+                vol_obj = popup.get("volume", {})
+                cap_obj = popup.get("capacity", {})
+                lvl_obj = popup.get("level", {})
+                new_vol = _parse_float(vol_obj.get("value"))
+                new_pct = _parse_float(cap_obj.get("value")) if cap_obj else _parse_float(live.get("value"))
+                new_cota = _parse_float(lvl_obj.get("value"))
+                raw_t = vol_obj.get("time") or cap_obj.get("time") or lvl_obj.get("time") or live.get("time")
+                if raw_t:
+                    new_time = _format_madrid_iso(raw_t)
 
-            # Si falta porcentaje y tenemos volumen y capacidad máxima:
-            if pct_actual is None and vol_actual is not None and cap_max and cap_max > 0:
-                pct_actual = round((vol_actual / cap_max) * 100, 1)
+            # B) Desde fallback Socrata
+            if (new_vol is None or new_pct is None) and socrata_embalses:
+                s_name = self._get_socrata_embalse_name(code_short)
+                if s_name and s_name in socrata_embalses:
+                    s_info = socrata_embalses[s_name]
+                    if new_vol is None and s_info.get("vol") is not None:
+                        new_vol = s_info["vol"]
+                    if new_pct is None and s_info.get("pct") is not None:
+                        new_pct = s_info["pct"]
+                    if new_cota is None and s_info.get("cota") is not None:
+                        new_cota = s_info["cota"]
+                    if not new_time and s_info.get("time"):
+                        new_time = _format_madrid_iso(s_info["time"])
 
-            # Si falta volumen y tenemos porcentaje y capacidad:
-            if vol_actual is None and pct_actual is not None and cap_max and cap_max > 0:
-                vol_actual = round((pct_actual / 100.0) * cap_max, 2)
+            # C) Asignar valores calculando porcentajes si procede
+            cap_max = _parse_float(emb_dict.get("capacidad") or emb_dict.get("capacidad_nmn"))
+            if new_pct is None and new_vol is not None and cap_max and cap_max > 0:
+                new_pct = round((new_vol / cap_max) * 100, 1)
+            elif new_vol is None and new_pct is not None and cap_max and cap_max > 0:
+                new_vol = round((new_pct / 100.0) * cap_max, 2)
 
-            raw_time = vol_obj.get("time") or cap_obj.get("time") or lvl_obj.get("time") or live.get("time")
-            update_time = _format_madrid_iso(raw_time)
+            if new_vol is not None:
+                emb_dict["volumen_actual"] = new_vol
+                emb_dict["ultimo_volumen"] = new_vol
+            if new_pct is not None:
+                emb_dict["porcentaje"] = new_pct
+                emb_dict["porcentaje_llenado"] = new_pct
+            if new_cota is not None:
+                emb_dict["cota_actual"] = new_cota
 
-            name = meta.get("name") or live.get("name") or f"Embassament {code}"
-            subcuenca = add_info.get("Subconca") or add_info.get("Conca") or meta.get("subbasin") or meta.get("basin") or "Cuencas Internas de Cataluña"
-            municipio = add_info.get("Terme municipal") or meta.get("municipality") or ""
-            provincia = add_info.get("Província") or meta.get("province") or "Catalunya"
-            comarca = add_info.get("Comarca") or meta.get("comarca") or ""
-            rio = add_info.get("Riu") or meta.get("waterbody") or ""
+            if new_time:
+                emb_dict["ultima_hora"] = new_time
+                emb_dict["fecha_comunicacion"] = new_time
+            elif not emb_dict.get("ultima_hora"):
+                emb_dict["ultima_hora"] = now_iso
+                emb_dict["fecha_comunicacion"] = now_iso
 
-            st_dict = {
-                "id_estacion": f"aca_embalse_{code}",
-                "codigo": f"ACA_{code}",
-                "codigo_corto": code,
-                "id_variable": f"aca_embalse_{code}",
-                "id_volumen": f"aca_embalse_{code}_vol",
-                "id_cota": f"aca_embalse_{code}_cota",
-                "nombre": name,
-                "tipo": "Embalse",
-                "lat": lat,
-                "lon": lon,
-                "red": "ACA",
-                "cuenca": "Conques Internes de Catalunya",
-                "subcuenca": subcuenca,
-                "rio": rio,
-                "municipio": municipio,
-                "poblacion": municipio,
-                "comarca": comarca,
-                "provincia": provincia,
-                "ultimo_volumen": vol_actual,
-                "volumen_actual": vol_actual,
-                "capacidad": cap_max,
-                "capacidad_nmn": cap_max,
-                "porcentaje": pct_actual,
-                "porcentaje_llenado": pct_actual,
-                "cota_actual": cota_actual,
-                "ultima_hora": update_time,
-                "fecha_comunicacion": update_time,
-                "fuente": "Agència Catalana de l'Aigua (ACA)",
-                "unidad": "hm³",
-                "unidad_volumen": "hm³",
-                "unidad_cota": "msnm",
-            }
-            emb_list.append(st_dict)
+            emb_dict["cuenca"] = "Conques Internes de Catalunya"
+            emb_dict["fuente"] = "Agència Catalana de l'Aigua (ACA)"
+            updated_emb.append(emb_dict)
 
-        if emb_list:
-            self._embalses = emb_list
+        if updated_emb:
+            self._embalses = updated_emb
             self._index_embalses()
             self._last_embalses_sync_time = datetime.now()
 
@@ -578,12 +575,14 @@ class ACAService:
             with open(ACA_EMBALSES_GEOJSON_FILE, "w", encoding="utf-8") as f:
                 json.dump(geojson_data, f, ensure_ascii=False, indent=2)
 
-            if PUBLIC_DATA_DIR.exists():
-                try:
-                    with open(PUBLIC_DATA_DIR / "aca_embalses.geojson", "w", encoding="utf-8") as f:
-                        json.dump(geojson_data, f, ensure_ascii=False, indent=2)
-                except Exception:
-                    pass
+            PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(PUBLIC_DATA_DIR / "aca_embalses.geojson", "w", encoding="utf-8") as f:
+                    json.dump(geojson_data, f, ensure_ascii=False, indent=2)
+                with open(PUBLIC_DATA_DIR / "aca_embalses_estaciones.json", "w", encoding="utf-8") as f:
+                    json.dump(self._embalses, f, ensure_ascii=False, indent=2)
+            except Exception as pe:
+                logger.debug(f"No se pudo escribir en PUBLIC_DATA_DIR: {pe}")
 
             logger.info(f"Sincronizados {len(self._embalses)} embalses de la ACA correctamente.")
 
@@ -647,7 +646,8 @@ class ACAService:
         is_embalse: bool = False,
     ) -> Dict[str, Any]:
         """
-        Consulta la serie temporal histórica (paso de 5 min) de aforos o embalses en la API de la ACA.
+        Consulta la serie temporal histórica de aforos o embalses en la API de la ACA.
+        Con fallback automático a Open Data Generalitat de Catalunya si AETR no responde.
         """
         raw_code = (
             str(id_variable)
@@ -690,29 +690,28 @@ class ACAService:
             or id_variable.startswith("aca_embalse_")
             or raw_code in self._embalses_by_id
             or raw_code in self._embalses_catalog
+            or self._get_socrata_embalse_name(raw_code) is not None
         )
 
         endpoint_type = "reservoir" if is_emb else "rivergauges"
         now_ts = int(now_madrid.timestamp())
         url = f"{ACA_BASE_URL}/chart/public/{endpoint_type}/{raw_code}?from={start_iso}&to={end_iso}&_t={now_ts}"
 
-        def _fetch():
+        def _fetch_aetr():
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
             try:
-                with urllib.request.urlopen(req, timeout=12) as resp:
+                with urllib.request.urlopen(req, timeout=2.0) as resp:
                     if resp.status == 200:
                         return json.loads(resp.read().decode("utf-8"))
-            except Exception as e:
-                logger.warning(f"Error consultando histórico ACA ({endpoint_type}/{raw_code}): {e}")
+            except Exception:
+                pass
             return {}
 
-        raw_data = await asyncio.to_thread(_fetch)
+        raw_data = await asyncio.to_thread(_fetch_aetr)
         series = []
         effective_unit = "m³/s" if not is_emb else "hm³"
 
-        if isinstance(raw_data, dict):
-            # Para aforos de caudal: buscar la señal de caudal (generalmente CALC...)
-            # Para embalses: buscar volumen, capacidad o nivel según variable_type
+        if isinstance(raw_data, dict) and raw_data:
             target_signal_key = None
             if not is_emb:
                 if variable_type == "nivel":
@@ -721,7 +720,6 @@ class ACAService:
                             target_signal_key = k
                             break
                 if not target_signal_key:
-                    # Elegir la señal con valores de caudal (priorizar CALC...)
                     for k in raw_data.keys():
                         if k.startswith("CALC") or "Q" in k or "CAUDAL" in k or "FLOW" in k.upper():
                             target_signal_key = k
@@ -729,7 +727,6 @@ class ACAService:
                 if not target_signal_key and len(raw_data) > 0:
                     target_signal_key = list(raw_data.keys())[0]
             else:
-                # Para embalse:
                 meta_emb = self._embalses_catalog.get(raw_code, {})
                 sensors = meta_emb.get("sensors", {})
                 vt = str(variable_type).lower() if variable_type else "volumen"
@@ -754,7 +751,7 @@ class ACAService:
 
             if target_signal_key and target_signal_key in raw_data:
                 points_dict = raw_data[target_signal_key]
-                meta_st = self._ensure_embalses_catalog().get(raw_code, {}) if is_emb else self._ensure_aforos_catalog().get(raw_code, {})
+                meta_st = self._embalses_catalog.get(raw_code, {}) if is_emb else self._aforos_catalog.get(raw_code, {})
                 sensors = meta_st.get("sensors", {}) if isinstance(meta_st, dict) else {}
                 sensor_meta = sensors.get(target_signal_key, {}) if isinstance(sensors, dict) else {}
                 sensor_unit = sensor_meta.get("unit") or ""
@@ -791,6 +788,69 @@ class ACAService:
                                 "valor": v_float,
                                 "estado": 0,
                             })
+
+        # ========================================================
+        # Fallback a Open Data Generalitat si AETR no dio puntos
+        # ========================================================
+        if not series:
+            def _fetch_socrata_series():
+                pts = []
+                eff_u = "m³/s"
+                limit_recs = max(30, min(120, int(hours // 24) * 2 + 30))
+                try:
+                    if is_emb:
+                        s_name = self._get_socrata_embalse_name(raw_code)
+                        if s_name:
+                            vt = str(variable_type).lower() if variable_type else "volumen"
+                            if "cota" in vt or "level" in vt:
+                                val_field = "nivell_absolut"
+                                eff_u = "msnm"
+                            elif "porcent" in vt or "%" in vt:
+                                val_field = "percentatge_volum_embassat"
+                                eff_u = "%"
+                            else:
+                                val_field = "volum_embassat"
+                                eff_u = "hm³"
+
+                            url_e = f"{SOCRATA_EMBALSES_URL}?estaci={urllib.parse.quote(s_name)}&$order=dia%20DESC&$limit={limit_recs}"
+                            req_e = urllib.request.Request(url_e, headers={"User-Agent": USER_AGENT})
+                            with urllib.request.urlopen(req_e, timeout=5) as r:
+                                records = json.loads(r.read().decode("utf-8"))
+                                records.reverse()
+                                for rec in records:
+                                    vf = _parse_float(rec.get(val_field))
+                                    if vf is not None:
+                                        pts.append({
+                                            "fecha": _format_madrid_iso(rec.get("dia")),
+                                            "valor": vf,
+                                            "estado": 0,
+                                        })
+                    else:
+                        s_code = self._get_socrata_aforo_code(raw_code)
+                        if s_code:
+                            v_filter = "Nivell riu" if variable_type == "nivel" else "Cabal riu"
+                            eff_u = "m" if variable_type == "nivel" else "m³/s"
+                            url_q = f"{SOCRATA_AFOROS_URL}?codi_estacio={urllib.parse.quote(s_code)}&tipus_variable={urllib.parse.quote(v_filter)}&$order=dia%20DESC&$limit={limit_recs}"
+                            req_q = urllib.request.Request(url_q, headers={"User-Agent": USER_AGENT})
+                            with urllib.request.urlopen(req_q, timeout=5) as r:
+                                records = json.loads(r.read().decode("utf-8"))
+                                records.reverse()
+                                for rec in records:
+                                    vf = _parse_float(rec.get("valor"))
+                                    if vf is not None:
+                                        pts.append({
+                                            "fecha": _format_madrid_iso(rec.get("dia")),
+                                            "valor": vf,
+                                            "estado": 0,
+                                        })
+                except Exception as err:
+                    logger.warning(f"Error consultando serie Open Data para {raw_code}: {err}")
+                return pts, eff_u
+
+            s_pts, s_u = await asyncio.to_thread(_fetch_socrata_series)
+            if s_pts:
+                series = s_pts
+                effective_unit = s_u
 
         # Ordenar cronológicamente
         series.sort(key=lambda x: str(x.get("fecha") or ""))
