@@ -5937,7 +5937,7 @@ export class LayerManager {
     const isEbro = props.red === 'EBRO' || (props.id_variable && String(props.id_variable).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
     const isSegura = props.red === 'CHS' || props.cuenca === 'Segura' || (props.id_variable && String(props.id_variable).startsWith('segura_')) || (props.codigo && String(props.codigo).startsWith('SEGURA_'));
     const isAca = props.red === 'ACA' || props.cuenca === 'Conques Internes de Catalunya' || (props.id_variable && String(props.id_variable).startsWith('aca_')) || (props.codigo && String(props.codigo).startsWith('ACA_'));
-    const isDuero = props.red === 'CHD' || props.red === 'DUERO' || (props.id_variable && String(props.id_variable).startsWith('duero_')) || (props.codigo && String(props.codigo).startsWith('EA'));
+    const isDuero = (props.red === 'CHD' || props.red === 'DUERO' || (props.id_variable && String(props.id_variable).startsWith('duero_')) || (props.codigo && String(props.codigo).startsWith('EA'))) && props.red !== 'CHJ';
 
     if (subcuencaBadge) {
       subcuencaBadge.textContent = props.subcuenca ? `Cuenca: ${props.subcuenca}` : (isDuero ? 'Cuenca del Duero' : (isAca ? 'Cuencas Internas de Cataluña' : (isSegura ? 'Cuenca del Segura' : (isEbro ? 'Cuenca del Ebro' : (isGuadal ? 'Cuenca del Guadalquivir' : (isHidro ? 'Cuencas Andaluzas' : 'Demarcación CHJ'))))));
@@ -7831,7 +7831,7 @@ export class LayerManager {
     const isEbro = props.red === 'EBRO' || (props.id_estacion && String(props.id_estacion).startsWith('ebro_')) || (props.codigo && String(props.codigo).startsWith('EBRO_'));
     const isSegura = props.red === 'CHS' || props.cuenca === 'Segura' || (props.id_estacion && String(props.id_estacion).startsWith('segura_')) || (props.codigo && String(props.codigo).startsWith('SEGURA_'));
     const isAca = props.red === 'ACA' || props.cuenca === 'Conques Internes de Catalunya' || (props.id_estacion && String(props.id_estacion).startsWith('aca_')) || (props.codigo && String(props.codigo).startsWith('ACA_'));
-    const isDuero = props.red === 'CHD' || props.red === 'DUERO' || (props.id_estacion && String(props.id_estacion).startsWith('duero_')) || (props.codigo && String(props.codigo).startsWith('EM'));
+    const isDuero = (props.red === 'CHD' || props.red === 'DUERO' || (props.id_estacion && String(props.id_estacion).startsWith('duero_')) || (props.codigo && String(props.codigo).startsWith('EM'))) && props.red !== 'CHJ';
 
     if (title) title.textContent = props.nombre || (isDuero ? 'Embalse Duero' : (isAca ? 'Embalse ACA' : (isSegura ? 'Embalse Segura' : (isEbro ? 'Embalse Ebro' : (isGuadal ? 'Embalse Guadalquivir' : (isHidro ? 'Embalse Hidrosur' : 'Embalse CHJ'))))));
     if (subtitle) {

@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+try:
+    from curl_cffi import requests as curl_requests
+except ImportError:
+    curl_requests = None
+
 from pyproj import Transformer
 from app.services.hidrosur_service import hidrosur_service
 from app.services.guadalquivir_service import guadalquivir_service
@@ -68,9 +73,33 @@ class SAIHService:
         self._history_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
         self._history_cache_lock = asyncio.Lock()
 
+        self._chj_session: Optional[Any] = None
+        self._chj_session_time: float = 0.0
+
         self._load_stations_from_disk()
         self._load_embalses_from_disk()
         self._load_pluvios_from_disk()
+
+    def _get_chj_session(self):
+        """
+        Devuelve una sesión de curl_cffi que emula TLS/JA3 de Chrome para interactuar
+        de forma legítima con los endpoints de series temporales de la CHJ.
+        La sesión se inicializa visitando mapa-aforos para obtener las cookies de sesión (F5 TS01/CHJ).
+        """
+        if curl_requests is None:
+            return None
+        now = time.time()
+        if self._chj_session is None or (now - self._chj_session_time) > 1800:
+            try:
+                s = curl_requests.Session()
+                s.get(f"{SAIH_BASE_URL}/mapa-aforos", impersonate="chrome", timeout=12)
+                self._chj_session = s
+                self._chj_session_time = now
+            except Exception as e:
+                logger.warning(f"Error calentando sesión CHJ: {e}")
+                self._chj_session = curl_requests.Session()
+                self._chj_session_time = now
+        return self._chj_session
 
     # ==========================================
     # CAUDALES (AFOROS)
@@ -82,7 +111,14 @@ class SAIHService:
             try:
                 with open(STATIC_STATIONS_FILE, "r", encoding="utf-8") as f:
                     self._stations = json.load(f)
-                    self._stations_by_id = {st["id_variable"]: st for st in self._stations}
+                    self._stations_by_id = {}
+                    for st in self._stations:
+                        if "id_variable" in st:
+                            self._stations_by_id[str(st["id_variable"])] = st
+                        if "id_estacion" in st:
+                            self._stations_by_id[str(st["id_estacion"])] = st
+                        if "codigo" in st:
+                            self._stations_by_id[str(st["codigo"]).upper()] = st
                     mtime = datetime.fromtimestamp(STATIC_STATIONS_FILE.stat().st_mtime)
                     self._last_sync_time = mtime
                     logger.info(f"Cargadas {len(self._stations)} estaciones de caudal desde fichero local.")
@@ -131,6 +167,8 @@ class SAIHService:
                         "nombre": item.get("fldTNombre", ""),
                         "variable": item.get("fldTNombreVariable", ""),
                         "tipo": item.get("fldTTipo", "Af"),
+                        "red": "CHJ",
+                        "cuenca": "Júcar",
                         "id_estacion": str(item.get("idEstacionRemota", "")),
                         "lat": round(lat, 6),
                         "lon": round(lon, 6),
@@ -176,7 +214,14 @@ class SAIHService:
                     json.dump(geojson_data, f, ensure_ascii=False, indent=2)
 
             self._stations = stations
-            self._stations_by_id = {st["id_variable"]: st for st in self._stations}
+            self._stations_by_id = {}
+            for st in self._stations:
+                if "id_variable" in st:
+                    self._stations_by_id[str(st["id_variable"])] = st
+                if "id_estacion" in st:
+                    self._stations_by_id[str(st["id_estacion"])] = st
+                if "codigo" in st:
+                    self._stations_by_id[str(st["codigo"]).upper()] = st
             self._last_sync_time = datetime.now()
             logger.info(f"Sincronización SAIH caudales completada: {len(stations)} estaciones actualizadas.")
             return self._stations
@@ -406,6 +451,8 @@ class SAIHService:
                         "codigo": item.get("fldTCodigo", ""),
                         "nombre": item.get("fldTNombre", ""),
                         "tipo": "Embalse",
+                        "red": "CHJ",
+                        "cuenca": "Júcar",
                         "lat": round(lat, 6),
                         "lon": round(lon, 6),
                         "poblacion": item.get("fldTPoblacion", ""),
@@ -1008,6 +1055,22 @@ class SAIHService:
             )
 
         if result is None:
+            station_info = self.get_station_by_id(id_variable) or self.get_embalse_by_id(id_variable)
+
+            actual_var_id = str(id_variable).strip()
+            if station_info:
+                if station_info.get("tipo") == "Embalse":
+                    if variable_type == "cota":
+                        actual_var_id = str(station_info.get("id_cota") or station_info.get("id_volumen") or actual_var_id)
+                    elif variable_type == "caudal_salida_rio":
+                        actual_var_id = str(station_info.get("id_caudal_rio") or station_info.get("id_volumen") or actual_var_id)
+                    elif variable_type == "caudal_recibido":
+                        actual_var_id = str(station_info.get("id_caudal_in") or station_info.get("id_volumen") or actual_var_id)
+                    else:
+                        actual_var_id = str(station_info.get("id_volumen") or actual_var_id)
+                elif station_info.get("id_variable"):
+                    actual_var_id = str(station_info["id_variable"])
+
             now = datetime.now(MADRID_TZ)
             if not end_date or not isinstance(end_date, str):
                 end_dt = now
@@ -1021,25 +1084,46 @@ class SAIHService:
             else:
                 start_date_str = str(start_date)
 
-            encoded_start = urllib.parse.quote(start_date_str)
-            encoded_end = urllib.parse.quote(end_date_str)
-            url = f"{SAIH_BASE_URL}/admin/variables/valor/{id_variable}/{encoded_start}/{encoded_end}"
-
             def _fetch():
-                req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    if resp.status != 200:
-                        return None
-                    return json.loads(resp.read().decode("utf-8"))
+                encoded_start = urllib.parse.quote(start_date_str)
+                encoded_end = urllib.parse.quote(end_date_str)
+                url = f"{SAIH_BASE_URL}/admin/variables/valor/{actual_var_id}/{encoded_start}/{encoded_end}"
+                headers = {
+                    "Referer": f"{SAIH_BASE_URL}/mapa-aforos",
+                    "Accept": "application/json, text/plain, */*",
+                }
+                session = self._get_chj_session()
+                if session is not None:
+                    try:
+                        resp = session.get(url, headers=headers, impersonate="chrome", timeout=12)
+                        if resp.status_code == 200 and not resp.text.startswith("<"):
+                            return resp.json()
+                        if "Request Rejected" in resp.text:
+                            logger.info(f"Sesión CHJ expirada al consultar variable {actual_var_id}, renovando...")
+                            session.get(f"{SAIH_BASE_URL}/mapa-aforos", impersonate="chrome", timeout=10)
+                            resp = session.get(url, headers=headers, impersonate="chrome", timeout=12)
+                            if resp.status_code == 200 and not resp.text.startswith("<"):
+                                return resp.json()
+                    except Exception as e:
+                        logger.warning(f"Error consultando serie CHJ con curl_cffi para {actual_var_id}: {e}")
+
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        if resp.status == 200:
+                            txt = resp.read().decode("utf-8")
+                            if not txt.startswith("<"):
+                                return json.loads(txt)
+                except Exception:
+                    pass
+                return None
 
             loop = asyncio.get_running_loop()
             try:
                 raw_series = await loop.run_in_executor(None, _fetch)
             except Exception as e:
-                logger.error(f"Error consultando histórico para variable {id_variable}: {e}")
+                logger.debug(f"Aviso consultando endpoint remoto CHJ para {actual_var_id}: {e}")
                 raw_series = None
-
-            station_info = self.get_station_by_id(id_variable) or self.get_embalse_by_id(id_variable)
 
             series = []
             if raw_series and isinstance(raw_series, list):
@@ -1059,6 +1143,31 @@ class SAIHService:
 
                 # Ordenar de forma estrictamente cronológica por timestamp ISO
                 series.sort(key=lambda x: str(x.get("fecha") or ""))
+
+            if not series and station_info:
+                val = None
+                if station_info.get("tipo") == "Embalse":
+                    if variable_type == "cota":
+                        val = station_info.get("cota_actual")
+                    elif variable_type == "caudal_salida_rio":
+                        val = station_info.get("caudal_salida_rio") or station_info.get("caudal_salida")
+                    elif variable_type == "caudal_recibido":
+                        val = station_info.get("caudal_recibido")
+                    else:
+                        val = station_info.get("volumen_actual")
+                else:
+                    val = station_info.get("ultimo_caudal") if station_info.get("ultimo_caudal") is not None else station_info.get("caudal")
+
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        curr_time = station_info.get("fecha_comunicacion") or station_info.get("ultima_hora") or end_date_str
+                        series = [
+                            {"fecha": start_date_str, "valor": fval, "estado": 1},
+                            {"fecha": curr_time, "valor": fval, "estado": 1}
+                        ]
+                    except (ValueError, TypeError):
+                        pass
 
             result = {
                 "id_variable": str(id_variable),
