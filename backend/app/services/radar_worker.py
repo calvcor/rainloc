@@ -54,6 +54,13 @@ OPERA_NODE_ALIASES: Dict[str, str] = {
     "essal": "esgrm",   # Salamanca (Guadramiro)
     "esval": "escul",   # Valencia (Cullera)
     "espma": "espmb",   # Mallorca (Llucmajor)
+    "esllm": "espmb",   # Mallorca (Llucmajor): nodo real en ORD (WMO 08308)
+}
+
+# Identificador del nodo en las rutas PVOL del bucket ORD (ES/<nodo>/PVOL/) cuando difiere del de RainLoc.
+# Llucmajor publica sus volúmenes como 'esllm' aunque AEMET no lo integra en el compuesto OPERA.
+S3_PVOL_NODE_IDS: Dict[str, str] = {
+    "espmb": "esllm",
 }
 
 # Coordenadas y Grid para el Compuesto de España:
@@ -73,9 +80,10 @@ SPAIN_BBOX = {"lat_min": 35.0, "lat_max": 44.5, "lon_min": -10.0, "lon_max": 5.0
 RADAR_SOURCE_STALE_MINUTES = 20
 RADAR_AEMET_ONLY_STEP_MINUTES = 5
 
-# Radares regionales de AEMET usados en modo de emergencia (sin OPERA): los que caen dentro de la
-# rejilla nacional (excluye Canarias) y sin repetir imagen regional (espma/espmb comparten 'pm').
-AEMET_ONLY_STATIONS: List[str] = []
+# Radares regionales de AEMET candidatos al fallback por radar (y al modo de emergencia sin OPERA):
+# los que caen dentro de la rejilla nacional (excluye Canarias), sin repetir imagen regional
+# (espma/espmb comparten 'pm').
+AEMET_REGIONAL_STATIONS: List[str] = []
 _seen_aemet_codes: Set[str] = set()
 for _sid, _st in SPANISH_RADAR_STATIONS.items():
     _code = _st.get("aemet_code")
@@ -85,7 +93,7 @@ for _sid, _st in SPANISH_RADAR_STATIONS.items():
         and SPAIN_BBOX["lon_min"] <= _st["lon"] <= SPAIN_BBOX["lon_max"]
     ):
         _seen_aemet_codes.add(_code)
-        AEMET_ONLY_STATIONS.append(_sid)
+        AEMET_REGIONAL_STATIONS.append(_sid)
 R_EARTH = 6378137.0
 Y_MERC_MIN = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(SPAIN_BBOX["lat_min"])/2))
 Y_MERC_MAX = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(SPAIN_BBOX["lat_max"])/2))
@@ -826,7 +834,7 @@ class RadarService:
         results = {}
 
         def fetch_station(st_id: str):
-            prefix = f"{date_prefix}ES/{st_id}/PVOL/"
+            prefix = f"{date_prefix}ES/{S3_PVOL_NODE_IDS.get(st_id, st_id)}/PVOL/"
             keys = self._fetch_s3_latest_keys(prefix, max_keys=200)
             vradh_keys = [k for k in keys if "DBZH_VRADH.h5" in k]
             if not vradh_keys:
@@ -896,8 +904,10 @@ class RadarService:
             short_grid_2d = short_grid_1d.reshape(GRID_H, GRID_W)
             cov_mask_2d = coverage_mask_1d.reshape(GRID_H, GRID_W)
 
-            # 2.1 Fallback con AEMET OpenData para estaciones sin volcado en S3 (ej: Cullera 'escul', Murcia 'espma', Baleares 'espmb')
-            # Las estaciones como Cullera ('escul' / 'va') no disponen de volcado directo en OPERA ni en S3 PVOL.
+            # 2.1 Fallback por radar con AEMET OpenData: cada radar que no esté ni en el compuesto OPERA
+            # (nodos de la cabecera) ni en los PVOL de S3 se completa con su imagen regional de AEMET.
+            # Es dinámico: cubre los radares que AEMET nunca publica en OPERA (Cullera, Murcia, Coruña,
+            # Almería, Palencia...) y cualquiera que deje de publicarse en el futuro.
             # CRÍTICO: Solo se integra AEMET OpenData si el fotograma es en vivo / tiempo casi real (últimos 20 min).
             # Evita inyectar la imagen actual o estática en fotogramas históricos o pasados.
             target_ts = timestep[:13] if len(timestep) >= 13 else ""
@@ -910,13 +920,16 @@ class RadarService:
                 is_near_realtime = False
 
             if is_near_realtime and aemet_opendata_service.is_configured:
-                # Sin OPERA se usan todos los radares regionales de AEMET de la Península y Baleares;
-                # con OPERA, solo los que no tienen volcado propio.
-                stations = AEMET_ONLY_STATIONS if aemet_only else ["escul", "esmur", "espmb", "escor", "esgrm"]
+                # Radares ya cubiertos, agrupados por imagen regional de AEMET (espma/espmb comparten 'pm').
+                covered_ids = set(short_scans) | {OPERA_NODE_ALIASES.get(n, n) for n in opera_nodes}
+                covered_codes = {
+                    SPANISH_RADAR_STATIONS[sid].get("aemet_code")
+                    for sid in covered_ids if sid in SPANISH_RADAR_STATIONS
+                }
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
-                    for st_id in stations
-                    if st_id in SPANISH_RADAR_STATIONS and st_id not in short_scans and "aemet_code" in SPANISH_RADAR_STATIONS[st_id]
+                    for st_id in AEMET_REGIONAL_STATIONS
+                    if SPANISH_RADAR_STATIONS[st_id]["aemet_code"] not in covered_codes
                 ]
                 for st_id, aemet_code in missing_aemet:
                     gif_bytes = aemet_opendata_service.fetch_regional_radar_gif(aemet_code)
@@ -1118,7 +1131,11 @@ class RadarService:
             if aemet_only:
                 logger.info(f"Compuesto de emergencia solo-AEMET generado ({timestep}) con {len(short_scans)} radares regionales de AEMET OpenData.")
             else:
-                logger.info(f"Compuesto Mixto de España procesado con éxito ({timestep}) con {len(short_scans)} radares de corto alcance integrados.")
+                aemet_ids = sorted(k for k, v in short_scans.items() if v == b"AEMET_OPENDATA_FALLBACK")
+                logger.info(
+                    f"Compuesto Mixto de España procesado con éxito ({timestep}) con {len(short_scans)} radares de corto alcance integrados"
+                    + (f" ({len(aemet_ids)} vía AEMET OpenData: {', '.join(aemet_ids)})." if aemet_ids else ".")
+                )
             return True
         except Exception as e:
             logger.error(f"Error generando compuesto ({timestep}): {e}")
