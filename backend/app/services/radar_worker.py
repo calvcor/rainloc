@@ -60,6 +60,7 @@ OPERA_NODE_ALIASES: Dict[str, str] = {
     "esftn": "esmur",   # Murcia (Fortuna), WMO 08364
     "esccd": "escor",   # A Coruña (Cerceda), WMO 08007
     "esatp": "eslid",   # Palencia (Autilla del Pino), WMO 08072
+    "essls": "esast",   # Asturias (Salas / Pico Aguión), WMO 08019
 }
 
 # Identificador del nodo en las rutas PVOL del bucket ORD (ES/<nodo>/PVOL/) cuando difiere del de RainLoc.
@@ -70,6 +71,7 @@ S3_PVOL_NODE_IDS: Dict[str, str] = {
     "esmur": "esftn",
     "escor": "esccd",
     "eslid": "esatp",
+    "esast": "essls",
 }
 
 # Coordenadas y Grid para el Compuesto de España:
