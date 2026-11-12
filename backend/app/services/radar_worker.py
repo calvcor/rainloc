@@ -55,12 +55,21 @@ OPERA_NODE_ALIASES: Dict[str, str] = {
     "esval": "escul",   # Valencia (Cullera)
     "espma": "espmb",   # Mallorca (Llucmajor)
     "esllm": "espmb",   # Mallorca (Llucmajor): nodo real en ORD (WMO 08308)
+    # Radares renovados que AEMET publica en ORD desde nov 2026 con un nodo nuevo
+    "escll": "escul",   # Valencia (Cullera), WMO 08289
+    "esftn": "esmur",   # Murcia (Fortuna), WMO 08364
+    "esccd": "escor",   # A Coruña (Cerceda), WMO 08007
+    "esatp": "eslid",   # Palencia (Autilla del Pino), WMO 08072
 }
 
 # Identificador del nodo en las rutas PVOL del bucket ORD (ES/<nodo>/PVOL/) cuando difiere del de RainLoc.
 # Llucmajor publica sus volúmenes como 'esllm' aunque AEMET no lo integra en el compuesto OPERA.
 S3_PVOL_NODE_IDS: Dict[str, str] = {
     "espmb": "esllm",
+    "escul": "escll",
+    "esmur": "esftn",
+    "escor": "esccd",
+    "eslid": "esatp",
 }
 
 # Coordenadas y Grid para el Compuesto de España:
@@ -906,8 +915,8 @@ class RadarService:
 
             # 2.1 Fallback por radar con AEMET OpenData: cada radar que no esté ni en el compuesto OPERA
             # (nodos de la cabecera) ni en los PVOL de S3 se completa con su imagen regional de AEMET.
-            # Es dinámico: cubre los radares que AEMET nunca publica en OPERA (Cullera, Murcia, Coruña,
-            # Almería, Palencia...) y cualquiera que deje de publicarse en el futuro.
+            # Es dinámico: cubre los radares que AEMET no publica en ORD (Almería, nov 2026) y cualquiera
+            # que deje de publicarse en el futuro.
             # CRÍTICO: Solo se integra AEMET OpenData si el fotograma es en vivo / tiempo casi real (últimos 20 min).
             # Evita inyectar la imagen actual o estática en fotogramas históricos o pasados.
             target_ts = timestep[:13] if len(timestep) >= 13 else ""

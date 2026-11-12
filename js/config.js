@@ -566,11 +566,11 @@ export const CONFIG = {
       source: 'OPERA',
       source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8072',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     },
     'essse': {
       id: 'essse',
@@ -698,6 +698,24 @@ export const CONFIG = {
       antenna_diam: '4.2 m',
       beam: '0.9°'
     },
+    'essls': {
+      id: 'essls',
+      name: 'Asturias / Salas',
+      province: 'Asturias',
+      lat: 43.4625,
+      lon: -6.3021,
+      range_km: 240,
+      short_range_km: 145,
+      alt_m: 932,
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
+      band: 'Banda C (5.62 GHz)',
+      polarization: 'Doble Polarización (Dual-Pol)',
+      doppler: 'Doppler',
+      wmo_code: '8019',
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
+    },
     'escul': {
       id: 'escul',
       name: 'Valencia / Cullera (Muntanya de les Raboses)',
@@ -707,14 +725,14 @@ export const CONFIG = {
       range_km: 240,
       short_range_km: 145,
       alt_m: 247,
-      source: 'AEMET',
-      source_name: 'AEMET OpenData (Regional)',
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8289',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     },
     'espmb': {
       id: 'espmb',
@@ -725,14 +743,14 @@ export const CONFIG = {
       range_km: 240,
       short_range_km: 145,
       alt_m: 130,
-      source: 'AEMET',
-      source_name: 'AEMET OpenData (Regional)',
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8308',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     },
     'espma': {
       id: 'espma',
@@ -743,14 +761,14 @@ export const CONFIG = {
       range_km: 240,
       short_range_km: 145,
       alt_m: 130,
-      source: 'AEMET',
-      source_name: 'AEMET OpenData (Regional)',
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8308',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     },
     'esmur': {
       id: 'esmur',
@@ -761,14 +779,14 @@ export const CONFIG = {
       range_km: 240,
       short_range_km: 145,
       alt_m: 1274,
-      source: 'AEMET',
-      source_name: 'AEMET OpenData (Regional)',
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8364',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     },
     'escor': {
       id: 'escor',
@@ -779,14 +797,14 @@ export const CONFIG = {
       range_km: 240,
       short_range_km: 145,
       alt_m: 612,
-      source: 'AEMET',
-      source_name: 'AEMET OpenData (Regional)',
+      source: 'OPERA',
+      source_name: 'EUMETNET OPERA (S3/MQTT)',
       band: 'Banda C (5.62 GHz)',
-      polarization: 'Polarización Simple (Single-Pol)',
+      polarization: 'Doble Polarización (Dual-Pol)',
       doppler: 'Doppler',
       wmo_code: '8007',
-      antenna_diam: '4.2 m',
-      beam: '0.9°'
+      antenna_diam: '4.5 m',
+      beam: '0.95°'
     }
   }
 };
