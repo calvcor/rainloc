@@ -46,6 +46,7 @@ except ImportError:
     CFGRIB_AVAILABLE = False
 
 from app.config import settings
+from app.services.array_cache import BoundedArrayCache
 
 logger = logging.getLogger("rainloc-backend.arome")
 
@@ -131,7 +132,8 @@ class AROMEWorker:
         self.current_manifest: Optional[Dict[str, Any]] = None
         self._sync_lock = asyncio.Lock()
         self._is_syncing: bool = False
-        self._in_memory_arrays: Dict[str, np.ndarray] = {}
+        # Caché LRU acotada: antes era un dict sin límite que crecía varios GB al día
+        self._in_memory_arrays = BoundedArrayCache()
         self._subscribers: Set[asyncio.Queue] = set()
         self._load_latest_manifest_from_disk()
 
@@ -959,6 +961,8 @@ class AROMEWorker:
             for old_dir in dirs[keep:]:
                 logger.info(f"AROME: Eliminando ciclo antiguo {old_dir.name}")
                 shutil.rmtree(old_dir, ignore_errors=True)
+            # Liberar de memoria las matrices de los ciclos eliminados
+            self._in_memory_arrays.retain_prefixes(d.name for d in dirs[:keep])
         except Exception as e:
             logger.warning(f"Error en limpieza de ciclos antiguos de AROME: {e}")
 
