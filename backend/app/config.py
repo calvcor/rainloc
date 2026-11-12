@@ -108,6 +108,9 @@ try:
         # Radar ORD (Open Radar Data / CloudFerro S3)
         ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
         ORD_S3_BUCKET: str = "openradar-24h"
+        # Respaldo oficial de EUMETNET (ECMWF), usado si el principal deja de publicar
+        ORD_S3_BACKUP_ENDPOINT: str = "https://object-store.os-api.cci1.ecmwf.int"
+        ORD_S3_BACKUP_BUCKET: str = "openradar-24h-backup"
         ORD_MQTT_HOST: str = "api.openradardata.eumetnet.eu"
         ORD_MQTT_PORT: int = 8884
         ORD_MQTT_USER: str = "everyone"
@@ -192,8 +195,10 @@ except ImportError:
         AEMET_OPENDATA_BASE_URL: str = os.getenv("AEMET_OPENDATA_BASE_URL", "https://opendata.aemet.es/opendata/api")
         EBRO_API_KEY: Optional[str] = os.getenv("EBRO_API_KEY", None)
         AEMET_HARMONIE_DOWNLOAD_URL: str = os.getenv("AEMET_HARMONIE_DOWNLOAD_URL", "https://www.aemet.es/es/api-eltiempo/modelos/download/harmonie/PB")
-        ORD_S3_ENDPOINT: str = "https://s3.waw3-1.cloudferro.com"
-        ORD_S3_BUCKET: str = "openradar-24h"
+        ORD_S3_ENDPOINT: str = os.getenv("ORD_S3_ENDPOINT", "https://s3.waw3-1.cloudferro.com")
+        ORD_S3_BUCKET: str = os.getenv("ORD_S3_BUCKET", "openradar-24h")
+        ORD_S3_BACKUP_ENDPOINT: str = os.getenv("ORD_S3_BACKUP_ENDPOINT", "https://object-store.os-api.cci1.ecmwf.int")
+        ORD_S3_BACKUP_BUCKET: str = os.getenv("ORD_S3_BACKUP_BUCKET", "openradar-24h-backup")
         ORD_MQTT_HOST: str = os.getenv("ORD_MQTT_HOST", "api.openradardata.eumetnet.eu")
         ORD_MQTT_PORT: int = int(os.getenv("ORD_MQTT_PORT", "8884"))
         ORD_MQTT_USER: str = os.getenv("ORD_MQTT_USER", "everyone")

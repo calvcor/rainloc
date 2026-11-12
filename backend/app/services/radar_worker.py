@@ -67,6 +67,25 @@ RADAR_SYNC_WINDOW_HOURS = 24
 RADAR_RETENTION_HOURS = 25
 
 SPAIN_BBOX = {"lat_min": 35.0, "lat_max": 44.5, "lon_min": -10.0, "lon_max": 5.0}
+
+# Si el último compuesto OPERA disponible es más antiguo que esto, se considera la fuente caída:
+# se prueba el bucket de respaldo y, si tampoco hay datos, se generan fotogramas solo con AEMET.
+RADAR_SOURCE_STALE_MINUTES = 20
+RADAR_AEMET_ONLY_STEP_MINUTES = 5
+
+# Radares regionales de AEMET usados en modo de emergencia (sin OPERA): los que caen dentro de la
+# rejilla nacional (excluye Canarias) y sin repetir imagen regional (espma/espmb comparten 'pm').
+AEMET_ONLY_STATIONS: List[str] = []
+_seen_aemet_codes: Set[str] = set()
+for _sid, _st in SPANISH_RADAR_STATIONS.items():
+    _code = _st.get("aemet_code")
+    if (
+        _code and _code not in _seen_aemet_codes
+        and SPAIN_BBOX["lat_min"] <= _st["lat"] <= SPAIN_BBOX["lat_max"]
+        and SPAIN_BBOX["lon_min"] <= _st["lon"] <= SPAIN_BBOX["lon_max"]
+    ):
+        _seen_aemet_codes.add(_code)
+        AEMET_ONLY_STATIONS.append(_sid)
 R_EARTH = 6378137.0
 Y_MERC_MIN = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(SPAIN_BBOX["lat_min"])/2))
 Y_MERC_MAX = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(SPAIN_BBOX["lat_max"])/2))
@@ -376,6 +395,15 @@ class RadarService:
         # Registro temporal de última emisión detectada de cada estación (epoch seconds)
         self._station_last_seen: Dict[str, float] = {}
 
+        # Fuentes S3 de Open Radar Data (principal + respaldo oficial). La activa se elige en cada sync.
+        self._s3_sources: List[Tuple[str, str]] = [("principal", f"{settings.ORD_S3_ENDPOINT}/{settings.ORD_S3_BUCKET}")]
+        backup_endpoint = getattr(settings, "ORD_S3_BACKUP_ENDPOINT", "")
+        backup_bucket = getattr(settings, "ORD_S3_BACKUP_BUCKET", "")
+        if backup_endpoint and backup_bucket:
+            self._s3_sources.append(("respaldo", f"{backup_endpoint}/{backup_bucket}"))
+        self._active_s3_name, self._active_s3_base = self._s3_sources[0]
+        self.state["s3_source"] = self._active_s3_name
+
         # Intentar cargar matriz cacheada y timeline del disco
         self._load_cached_state()
 
@@ -534,6 +562,8 @@ class RadarService:
             ],
             "default_mode": "mixed",
             "latest_composite": self.state["latest_composite"],
+            "s3_source": self.state.get("s3_source"),
+            "opera_stale": self.state.get("opera_stale", False),
             "composite_bounds": self.state["composite_bounds"],
             "stations": SPANISH_RADAR_STATIONS,
             "short_range_max_km": RADAR_SHORT_RANGE_MAX_KM,
@@ -675,8 +705,9 @@ class RadarService:
     # -------------------------------------------------------------
     # Ingesta desde S3
     # -------------------------------------------------------------
-    def _fetch_s3_latest_keys(self, prefix: str, max_keys: int = 1000, max_pages: int = 10) -> List[str]:
+    def _fetch_s3_latest_keys(self, prefix: str, max_keys: int = 1000, max_pages: int = 10, base: Optional[str] = None) -> List[str]:
         """Consulta la API REST de S3 para listar los archivos de un prefijo (con paginación)."""
+        base = base or self._active_s3_base
         ns = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
         keys: List[str] = []
         token: Optional[str] = None
@@ -685,7 +716,7 @@ class RadarService:
                 params = {"list-type": "2", "prefix": prefix, "max-keys": str(max_keys)}
                 if token:
                     params["continuation-token"] = token
-                url = f"{settings.ORD_S3_ENDPOINT}/{settings.ORD_S3_BUCKET}?{urllib.parse.urlencode(params)}"
+                url = f"{base}?{urllib.parse.urlencode(params)}"
                 req = urllib.request.Request(url, headers={"User-Agent": settings.AEMET_USER_AGENT})
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     root = ET.fromstring(resp.read())
@@ -695,12 +726,12 @@ class RadarService:
                     break
             return keys
         except Exception as e:
-            logger.warning(f"Error listando claves S3 ({prefix}): {e}")
+            logger.warning(f"Error listando claves S3 ({base} {prefix}): {e}")
             return keys
 
-    def _download_s3_file(self, s3_key: str) -> Optional[bytes]:
+    def _download_s3_file(self, s3_key: str, base: Optional[str] = None) -> Optional[bytes]:
         """Descarga un fichero de forma pública y sin firma desde S3."""
-        url = f"{settings.ORD_S3_ENDPOINT}/{settings.ORD_S3_BUCKET}/{s3_key}"
+        url = f"{base or self._active_s3_base}/{s3_key}"
         req = urllib.request.Request(url, headers={"User-Agent": settings.AEMET_USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=25) as resp:
@@ -835,39 +866,29 @@ class RadarService:
     # -------------------------------------------------------------
     # Procesamiento de HDF5 y Generación del Compuesto Mixto
     # -------------------------------------------------------------
-    def process_opera_composite(self, h5_bytes: bytes, timestep: str) -> bool:
+    def process_opera_composite(self, h5_bytes: Optional[bytes], timestep: str) -> bool:
         """
         Extrae el mosaico de largo alcance de OPERA, descarga los barridos de corto alcance
         de las estaciones de AEMET, genera los 3 modos de compuesto (Mixto, Corto, Largo)
         y actualiza la línea temporal.
+
+        Con h5_bytes=None genera un fotograma solo con AEMET OpenData (modo de emergencia
+        cuando ninguna fuente S3 de OPERA tiene datos recientes).
         """
+        aemet_only = h5_bytes is None
         try:
             # 1. Decodificar capa base de largo alcance (OPERA / DBZH+TH)
             opera_nodes: List[str] = []
-            with h5py.File(io.BytesIO(h5_bytes), "r") as f:
-                raw_data = f["dataset1"]["data1"]["data"][:]
-                what = f["dataset1"]["data1"]["what"].attrs
-                gain = float(what.get("gain", 0.5))
-                offset = float(what.get("offset", -32.0))
-                nodata = float(what.get("nodata", 255.0))
-                undetect = float(what.get("undetect", 0.0))
-
-                if "how" in f and "nodes" in f["how"].attrs:
-                    nodes_raw = f["how"].attrs["nodes"]
-                    nodes_str = nodes_raw.decode("utf-8") if isinstance(nodes_raw, bytes) else str(nodes_raw)
-                    opera_nodes = [n.strip("' \"").lower() for n in nodes_str.split(",")]
-
-            dbz_phys = np.where((raw_data == nodata) | (raw_data == undetect), -9999.0, raw_data * gain + offset)
-            dbz_phys = np.where(dbz_phys < 5.0, -9999.0, dbz_phys)
-
             long_grid = np.full((GRID_H, GRID_W), -9999.0, dtype=np.float32)
-            long_grid[SPAIN_VALID_MASK] = dbz_phys[SPAIN_ROW_IDX[SPAIN_VALID_MASK], SPAIN_COL_IDX[SPAIN_VALID_MASK]]
+            if not aemet_only:
+                long_grid = self._decode_opera_long_range(h5_bytes, opera_nodes)
 
             # 2. Descargar y proyectar barridos de corto alcance (DBZH+VRADH)
             short_grid_1d = np.full((GRID_H * GRID_W,), -9999.0, dtype=np.float32)
             coverage_mask_1d = np.zeros((GRID_H * GRID_W,), dtype=bool)
 
-            short_scans = self._fetch_matching_short_range_scans(timestep)
+            # En modo solo-AEMET no se consultan los PVOL de S3: la fuente está caída.
+            short_scans = {} if aemet_only else self._fetch_matching_short_range_scans(timestep)
             for st_id, st_h5 in short_scans.items():
                 st_range = float(SPANISH_RADAR_STATIONS.get(st_id, {}).get("range_km", 240.0))
                 self._map_station_short_range_scan(st_id, st_h5, short_grid_1d, coverage_mask_1d, max_km=st_range)
@@ -889,10 +910,12 @@ class RadarService:
                 is_near_realtime = False
 
             if is_near_realtime and aemet_opendata_service.is_configured:
-                priority_stations = ["escul", "esmur", "espmb", "escor", "esgrm"]
+                # Sin OPERA se usan todos los radares regionales de AEMET de la Península y Baleares;
+                # con OPERA, solo los que no tienen volcado propio.
+                stations = AEMET_ONLY_STATIONS if aemet_only else ["escul", "esmur", "espmb", "escor", "esgrm"]
                 missing_aemet = [
                     (st_id, SPANISH_RADAR_STATIONS[st_id]["aemet_code"])
-                    for st_id in priority_stations
+                    for st_id in stations
                     if st_id in SPANISH_RADAR_STATIONS and st_id not in short_scans and "aemet_code" in SPANISH_RADAR_STATIONS[st_id]
                 ]
                 for st_id, aemet_code in missing_aemet:
@@ -905,6 +928,48 @@ class RadarService:
                         if mapped:
                             short_scans[st_id] = b"AEMET_OPENDATA_FALLBACK"
 
+            if aemet_only and not short_scans:
+                logger.warning(f"Radar: Ningún radar de AEMET OpenData disponible para el fotograma de emergencia {timestep}.")
+                return False
+
+            return self._finalize_composite(timestep, long_grid, short_grid_2d, short_scans, opera_nodes, aemet_only)
+        except Exception as e:
+            logger.error(f"Error procesando compuesto HDF5 ({timestep}): {e}")
+            return False
+
+    def _decode_opera_long_range(self, h5_bytes: bytes, opera_nodes: List[str]) -> np.ndarray:
+        """Decodifica el compuesto OPERA (DBZH) a la rejilla nacional y añade sus nodos a opera_nodes."""
+        with h5py.File(io.BytesIO(h5_bytes), "r") as f:
+            raw_data = f["dataset1"]["data1"]["data"][:]
+            what = f["dataset1"]["data1"]["what"].attrs
+            gain = float(what.get("gain", 0.5))
+            offset = float(what.get("offset", -32.0))
+            nodata = float(what.get("nodata", 255.0))
+            undetect = float(what.get("undetect", 0.0))
+
+            if "how" in f and "nodes" in f["how"].attrs:
+                nodes_raw = f["how"].attrs["nodes"]
+                nodes_str = nodes_raw.decode("utf-8") if isinstance(nodes_raw, bytes) else str(nodes_raw)
+                opera_nodes.extend(n.strip("' \"").lower() for n in nodes_str.split(","))
+
+        dbz_phys = np.where((raw_data == nodata) | (raw_data == undetect), -9999.0, raw_data * gain + offset)
+        dbz_phys = np.where(dbz_phys < 5.0, -9999.0, dbz_phys)
+
+        long_grid = np.full((GRID_H, GRID_W), -9999.0, dtype=np.float32)
+        long_grid[SPAIN_VALID_MASK] = dbz_phys[SPAIN_ROW_IDX[SPAIN_VALID_MASK], SPAIN_COL_IDX[SPAIN_VALID_MASK]]
+        return long_grid
+
+    def _finalize_composite(
+        self,
+        timestep: str,
+        long_grid: np.ndarray,
+        short_grid_2d: np.ndarray,
+        short_scans: Dict[str, bytes],
+        opera_nodes: List[str],
+        aemet_only: bool = False,
+    ) -> bool:
+        """Fusiona capas, guarda matrices/PNG, actualiza estado y línea temporal."""
+        try:
             # 3. Generar el Compuesto Mixto de Alta Definición
             # Fusión por reflectividad máxima (np.maximum) entre el compuesto de largo alcance (EUMETNET / OPERA)
             # y los barridos de corto alcance / AEMET OpenData (short_grid_2d).
@@ -918,6 +983,14 @@ class RadarService:
             np.savez_compressed(self.composites_dir / f"composite_{timestep}.npz", data=mixed_grid) # Alias estándar
             np.savez_compressed(self.composites_dir / f"short_{timestep}.npz", data=short_grid_2d)
             np.savez_compressed(self.composites_dir / f"long_{timestep}.npz", data=mixed_grid)
+
+            # Marca de fotograma solo-AEMET: permite sustituirlo por el compuesto OPERA real
+            # cuando la fuente se recupere y lo publique (backfill).
+            flag = self.composites_dir / f"aemetonly_{timestep}.flag"
+            if aemet_only:
+                flag.touch()
+            else:
+                flag.unlink(missing_ok=True)
 
             # 5. Generar y guardar imágenes PNG transparentes georreferenciadas
             img_mixed = Image.fromarray(colorize_dbz_array(mixed_grid), "RGBA")
@@ -964,8 +1037,8 @@ class RadarService:
                         active_set.add("espmb")
 
             # 3. Fallback de resiliencia: si la cabecera OPERA vino sin 'nodes', mantener como activas
-            # todas las estaciones de la red de OPERA
-            if not opera_nodes:
+            # todas las estaciones de la red de OPERA (no aplica a fotogramas solo-AEMET)
+            if not opera_nodes and not aemet_only:
                 for sid, sinfo in SPANISH_RADAR_STATIONS.items():
                     if sinfo.get("source") == "OPERA":
                         active_set.add(sid)
@@ -1030,7 +1103,8 @@ class RadarService:
                 "time_only_local": ts_info["time_only_local"],
                 "png_url": f"/api/v1/radar/image?timestep={timestep}",
                 "active_radars_count": len(active_ids),
-                "active_radars": active_ids
+                "active_radars": active_ids,
+                "aemet_only": aemet_only
             })
             self.timeline.sort(key=lambda x: x["timestep"])
             if len(self.timeline) > 288:
@@ -1041,65 +1115,106 @@ class RadarService:
             if is_latest_or_newer:
                 self.notify_radar_update(timestep, self.state["latest_composite"]["bounds"])
 
-            logger.info(f"Compuesto Mixto de España procesado con éxito ({timestep}) con {len(short_scans)} radares de corto alcance integrados.")
+            if aemet_only:
+                logger.info(f"Compuesto de emergencia solo-AEMET generado ({timestep}) con {len(short_scans)} radares regionales de AEMET OpenData.")
+            else:
+                logger.info(f"Compuesto Mixto de España procesado con éxito ({timestep}) con {len(short_scans)} radares de corto alcance integrados.")
             return True
         except Exception as e:
-            logger.error(f"Error procesando compuesto HDF5 ({timestep}): {e}")
+            logger.error(f"Error generando compuesto ({timestep}): {e}")
             return False
 
     # -------------------------------------------------------------
     # Sincronización periódica y Backfill de 24 Horas
     # -------------------------------------------------------------
+    def _list_recent_dbz_keys(self, base: str, now: datetime) -> Tuple[List[Tuple[str, str]], Optional[str]]:
+        """
+        Lista los compuestos OPERA DBZH de ayer y hoy en una fuente S3.
+        Devuelve (fotogramas dentro de la ventana de sincronización, timestep más reciente disponible).
+        """
+        today_prefix = now.strftime("%Y/%m/%d/")
+        yesterday_prefix = (now - timedelta(days=1)).strftime("%Y/%m/%d/")
+        all_comp_keys = (
+            self._fetch_s3_latest_keys(f"{yesterday_prefix}OPERA/COMP/", base=base)
+            + self._fetch_s3_latest_keys(f"{today_prefix}OPERA/COMP/", base=base)
+        )
+        dbz_keys = [k for k in all_comp_keys if "DBZH.h5" in k and "@" in k]
+        if not dbz_keys:
+            return [], None
+
+        # Solo fotogramas dentro de la ventana de sincronización. Los más antiguos los
+        # borraría _cleanup_old_cache() al final del ciclo y se reprocesarían en bucle
+        # (p. ej. cuando el feed OPERA deja de publicar y solo quedan claves de ayer).
+        window_ts = (now - timedelta(hours=RADAR_SYNC_WINDOW_HOURS)).strftime("%Y%m%dT%H%M")
+        recent = []
+        for k in dbz_keys[-288:]:
+            ts = k.split("@")[1]
+            if ts[:13] >= window_ts:
+                recent.append((k, ts))
+        return recent, dbz_keys[-1].split("@")[1]
+
+    def _generate_aemet_only_frame(self, now: datetime) -> bool:
+        """Genera el fotograma actual solo con AEMET OpenData (modo de emergencia sin OPERA)."""
+        if not aemet_opendata_service.is_configured:
+            return False
+        step = RADAR_AEMET_ONLY_STEP_MINUTES
+        ts = now.replace(minute=(now.minute // step) * step, second=0, microsecond=0).strftime("%Y%m%dT%H%M")
+        if (self.composites_dir / f"mixed_{ts}.png").exists():
+            return False
+        return self.process_opera_composite(None, ts)
+
     async def sync_radar_data(self) -> Dict[str, Any]:
-        """Comprueba, descarga y sincroniza los compuestos nacionales disponibles de las últimas 24 horas."""
+        """
+        Comprueba, descarga y sincroniza los compuestos nacionales disponibles de las últimas 24 horas.
+
+        Fuentes, por orden: bucket S3 principal de Open Radar Data, bucket de respaldo oficial (ECMWF)
+        si el principal no tiene datos recientes, y fotogramas solo-AEMET si ninguno los tiene.
+        """
         with self._sync_lock:
             loop = asyncio.get_running_loop()
             now = datetime.now(timezone.utc)
+            stale_ts = (now - timedelta(minutes=RADAR_SOURCE_STALE_MINUTES)).strftime("%Y%m%dT%H%M")
 
-            today_prefix = now.strftime("%Y/%m/%d/")
-            yesterday_prefix = (now - timedelta(days=1)).strftime("%Y/%m/%d/")
+            # 1. Elegir la fuente S3 con el compuesto más reciente (el respaldo solo se consulta
+            #    si el principal está desactualizado; en empate se mantiene el principal).
+            best: Optional[Tuple[str, str, List[Tuple[str, str]], Optional[str]]] = None
+            for name, base in self._s3_sources:
+                recent, last_ts = await loop.run_in_executor(None, self._list_recent_dbz_keys, base, now)
+                if best is None or (last_ts or "") > (best[3] or ""):
+                    best = (name, base, recent, last_ts)
+                if last_ts and last_ts[:13] >= stale_ts:
+                    break
+            name, base, recent_dbz_keys, last_ts = best
 
-            comp_keys = await loop.run_in_executor(None, self._fetch_s3_latest_keys, f"{today_prefix}OPERA/COMP/")
-            yesterday_keys = await loop.run_in_executor(None, self._fetch_s3_latest_keys, f"{yesterday_prefix}OPERA/COMP/")
+            if name != self._active_s3_name:
+                logger.warning(f"Radar: Cambio de fuente S3 OPERA: {self._active_s3_name} -> {name} (último compuesto: {last_ts}).")
+                self._active_s3_name, self._active_s3_base = name, base
+                self.state["s3_source"] = name
 
-            all_comp_keys = yesterday_keys + comp_keys
-            dbz_keys = [k for k in all_comp_keys if "DBZH.h5" in k]
+            source_stale = not last_ts or last_ts[:13] < stale_ts
+            if source_stale != self.state.get("opera_stale", False):
+                if source_stale:
+                    logger.warning(
+                        f"Radar: Ninguna fuente S3 tiene compuestos OPERA de los últimos {RADAR_SOURCE_STALE_MINUTES} min "
+                        f"(último: {last_ts or 'ninguno'}). Activado modo de emergencia solo-AEMET."
+                    )
+                else:
+                    logger.info(f"Radar: Compuestos OPERA recuperados (último: {last_ts}). Modo de emergencia desactivado.")
+                self.state["opera_stale"] = source_stale
 
-            if not dbz_keys:
-                logger.warning("Radar: No se encontraron claves DBZH en S3.")
-                return self.get_metadata()
-
-            # Solo fotogramas dentro de la ventana de sincronización. Los más antiguos los
-            # borraría _cleanup_old_cache() al final del ciclo y se reprocesarían en bucle
-            # (p. ej. cuando el feed OPERA deja de publicar y solo quedan claves de ayer).
-            window_ts = (now - timedelta(hours=RADAR_SYNC_WINDOW_HOURS)).strftime("%Y%m%dT%H%M")
-            recent_dbz_keys = []
-            for k in dbz_keys[-288:]:
-                ts = k.split("@")[1] if "@" in k else now.strftime("%Y%m%dT%H%M")
-                if ts[:13] >= window_ts:
-                    recent_dbz_keys.append((k, ts))
-
-            if not recent_dbz_keys:
-                last_ts = dbz_keys[-1].split("@")[1] if "@" in dbz_keys[-1] else "?"
-                logger.warning(
-                    f"Radar: Sin fotogramas OPERA en las últimas {RADAR_SYNC_WINDOW_HOURS}h "
-                    f"(último disponible: {last_ts}). Se omite la sincronización."
-                )
-                self._cleanup_old_cache()
-                return self.get_metadata()
-
-            keys_to_download = []
-            for k, ts in recent_dbz_keys:
-                mixed_file = self.composites_dir / f"mixed_{ts}.png"
-                if not mixed_file.exists():
-                    keys_to_download.append((k, ts))
+            # 2. Descargar fotogramas pendientes (o generados en modo solo-AEMET, para sustituirlos)
+            keys_to_download = [
+                (k, ts) for k, ts in recent_dbz_keys
+                if not (self.composites_dir / f"mixed_{ts}.png").exists()
+                or (self.composites_dir / f"aemetonly_{ts}.flag").exists()
+            ]
 
             if keys_to_download:
-                logger.info(f"Radar: Sincronizando {len(keys_to_download)} fotogramas nuevos/pendientes con compuesto mixto...")
+                logger.info(f"Radar: Sincronizando {len(keys_to_download)} fotogramas nuevos/pendientes con compuesto mixto (fuente: {name})...")
 
                 def download_and_process(item):
                     key, ts = item
-                    h5_bytes = self._download_s3_file(key)
+                    h5_bytes = self._download_s3_file(key, base=base)
                     if h5_bytes:
                         self.process_opera_composite(h5_bytes, ts)
 
@@ -1109,12 +1224,16 @@ class RadarService:
 
                 # Procesar en paralelo
                 await loop.run_in_executor(None, process_all)
-            else:
+            elif recent_dbz_keys and not source_stale:
                 # Si no hay fotogramas nuevos pendientes, refrescar el fotograma más reciente con fallback AEMET en directo
                 latest_k, latest_ts = recent_dbz_keys[-1]
-                h5_bytes = await loop.run_in_executor(None, self._download_s3_file, latest_k)
+                h5_bytes = await loop.run_in_executor(None, self._download_s3_file, latest_k, base)
                 if h5_bytes:
                     await loop.run_in_executor(None, self.process_opera_composite, h5_bytes, latest_ts)
+
+            # 3. Sin OPERA reciente en ninguna fuente: fotograma de emergencia solo con AEMET OpenData
+            if source_stale:
+                await loop.run_in_executor(None, self._generate_aemet_only_frame, now)
 
             self._cleanup_old_cache()
             return self.get_metadata()
