@@ -3877,6 +3877,31 @@ export class LayerManager {
   }
 
   /**
+   * Indica si un radar ha aportado datos al fotograma de radar mostrado (active_radars de la timeline).
+   * Lo usan la superposición de coberturas y el inspector unificado del mapa.
+   * @param {string} stationId
+   * @returns {boolean}
+   */
+  isRadarStationActive(stationId) {
+    const timeline = this.radarTimeline || [];
+    const currentEntry = timeline.find(t => t.timestep === this.currentRadarTimestep);
+
+    // Si active_radars viene vacío o incompleto (< 6 radares por fotogramas históricos previos),
+    // se dan todos por activos para no mostrar falsos positivos de radares caídos.
+    const activeIds = (currentEntry && Array.isArray(currentEntry.active_radars) && currentEntry.active_radars.length >= 6)
+      ? currentEntry.active_radars
+      : null;
+    if (!activeIds) return true;
+
+    // Alias de identificadores ODIM (Llucmajor tiene dos ids; nodos antiguos de OPERA)
+    const aliases = {
+      espma: ['espmb'], espmb: ['espma'],
+      esnjr: ['esalm'], esatn: ['eslpa'], esbnv: ['estfn'], esgrm: ['essal']
+    };
+    return activeIds.includes(stationId) || (aliases[stationId] || []).some(a => activeIds.includes(a));
+  }
+
+  /**
    * Dibuja y actualiza dinámicamente las áreas de cobertura de cada radar para el instante temporal actual
    */
   _updateRadarCoverageOverlay() {
@@ -3884,17 +3909,6 @@ export class LayerManager {
     this.radarCoverageGroup.clearLayers();
 
     if (!this.isLayerOnMap('radar')) return;
-
-    const timeline = this.radarTimeline || [];
-    const currentStep = this.currentRadarTimestep;
-    const currentEntry = timeline.find(t => t.timestep === currentStep);
-
-    // Lista de estaciones activas en este fotograma específico
-    // Si active_radars viene vacío o con datos incompletos (< 6 radares por fotogramas históricos previos),
-    // se toma el catálogo completo como fallback para no mostrar falsos positivos de radares caídos.
-    let activeIds = (currentEntry && Array.isArray(currentEntry.active_radars) && currentEntry.active_radars.length >= 6)
-      ? currentEntry.active_radars
-      : Object.keys(CONFIG.radarStations);
 
     const mode = this.currentRadarMode || 'mixed';
     const stations = Object.values(CONFIG.radarStations);
@@ -3911,13 +3925,7 @@ export class LayerManager {
       if (seenLocations.has(locKey)) return;
       seenLocations.add(locKey);
 
-      const isActive = activeIds.includes(st.id) ||
-        (st.id === 'espma' && activeIds.includes('espmb')) ||
-        (st.id === 'espmb' && activeIds.includes('espma')) ||
-        (st.id === 'esnjr' && activeIds.includes('esalm')) ||
-        (st.id === 'esatn' && activeIds.includes('eslpa')) ||
-        (st.id === 'esbnv' && activeIds.includes('estfn')) ||
-        (st.id === 'esgrm' && activeIds.includes('essal'));
+      const isActive = this.isRadarStationActive(st.id);
       const shortKm = st.short_range_km || 145;
       const longKm = st.range_km || 240;
 
@@ -3925,9 +3933,6 @@ export class LayerManager {
       const isOpera = (st.source === 'OPERA');
       const originColor = isOpera ? '#22c55e' : '#0284c7';
       const originFill = isOpera ? '#22c55e' : '#38bdf8';
-      const originBadgeClass = isOpera ? 'badge-opera' : 'badge-aemet';
-      const originLabel = isOpera ? 'EUMETNET OPERA' : 'AEMET OpenData';
-      const originFullName = isOpera ? 'EUMETNET OPERA (S3/MQTT)' : 'AEMET OpenData (Regional)';
 
       if (isActive) {
         // Cobertura completa de radar meteorológico (240-250 km)
@@ -3947,49 +3952,10 @@ export class LayerManager {
           color: '#ffffff',
           fillColor: originColor,
           fillOpacity: 1.0,
-          weight: 2
+          weight: 2,
+          interactive: false
         });
 
-        marker.bindTooltip(`
-          <div class="radar-station-coverage-tooltip">
-            <div class="tooltip-st-header">
-              <div class="tooltip-st-name">${st.name}</div>
-              <span class="tooltip-st-source-badge ${originBadgeClass}">
-                <span class="badge-dot"></span> ${originLabel}
-              </span>
-            </div>
-            <div class="tooltip-st-status active">
-              <span class="status-dot"></span> Operativo en este instante
-            </div>
-            
-            <div class="tooltip-st-specs-table">
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Origen de datos:</span>
-                <span class="st-spec-val ${isOpera ? 'val-opera' : 'val-aemet'}"><strong>${originFullName}</strong></span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Alcance nominal:</span>
-                <span class="st-spec-val">${longKm} km (cobertura total)</span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Frecuencia / Banda:</span>
-                <span class="st-spec-val">${st.band || 'Banda C (5.62 GHz)'}</span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Polarización:</span>
-                <span class="st-spec-val">${st.polarization || 'Dual-Pol'}</span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Altitud antena:</span>
-                <span class="st-spec-val">${st.alt_m} m s.n.m.</span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Indicativo WMO / ODIM:</span>
-                <span class="st-spec-val">${st.wmo_code || '—'} · ${st.id.toUpperCase()}</span>
-              </div>
-            </div>
-          </div>
-        `, { direction: 'top', offset: [0, -8], className: 'radar-coverage-leaflet-tooltip' });
 
         this.radarCoverageGroup.addLayer(marker);
 
@@ -4011,30 +3977,10 @@ export class LayerManager {
           color: '#ef4444',
           fillColor: '#ef4444',
           fillOpacity: 0.6,
-          weight: 1.5
+          weight: 1.5,
+          interactive: false
         });
 
-        marker.bindTooltip(`
-          <div class="radar-station-coverage-tooltip">
-            <div class="tooltip-st-header">
-              <div class="tooltip-st-name">${st.name}</div>
-              <span class="tooltip-st-source-badge ${originBadgeClass}">
-                <span class="badge-dot"></span> ${originLabel}
-              </span>
-            </div>
-            <div class="tooltip-st-status missing">⚠ Sin datos en este fotograma</div>
-            <div class="tooltip-st-specs-table">
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Origen previsto:</span>
-                <span class="st-spec-val ${isOpera ? 'val-opera' : 'val-aemet'}">${originFullName}</span>
-              </div>
-              <div class="tooltip-st-spec-row">
-                <span class="st-spec-label">Altitud / Provincia:</span>
-                <span class="st-spec-val">${st.alt_m} m · ${st.province}</span>
-              </div>
-            </div>
-          </div>
-        `, { direction: 'top', offset: [0, -8], className: 'radar-coverage-leaflet-tooltip' });
 
         this.radarCoverageGroup.addLayer(marker);
       }

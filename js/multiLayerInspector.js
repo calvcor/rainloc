@@ -1298,20 +1298,33 @@ export class MultiLayerInspector {
           const isOp = (closestRadarSt.source === 'OPERA');
           const stBadge = isOp ? 'EUMETNET OPERA' : 'AEMET OpenData';
           const stBadgeColor = isOp ? '#22c55e' : '#0284c7';
+          // Estado en el fotograma mostrado (mismo criterio que el marcador verde/rojo de la cobertura)
+          const stActive = this.layerManager.isRadarStationActive
+            ? this.layerManager.isRadarStationActive(closestRadarSt.id)
+            : true;
+          const stStatusHtml = stActive
+            ? `<div style="font-size: 0.72rem; font-weight: 600; color: #4ade80; margin-bottom: 4px;">
+                <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,0.8);margin-right:5px;"></span>
+                Operativo en este fotograma
+              </div>`
+            : `<div style="font-size: 0.72rem; font-weight: 600; color: #f87171; margin-bottom: 4px;">
+                ⚠ Sin datos en este fotograma
+              </div>`;
 
           sections.push({
             type: "radar_station",
             title: "Radar Meteorológico",
-            headerColor: stBadgeColor,
+            headerColor: stActive ? stBadgeColor : '#ef4444',
             icon: "📡",
             name: closestRadarSt.name,
             badge: stBadge,
             badgeBg: stBadgeColor,
             badgeColor: "#ffffff",
             details: `
+              ${stStatusHtml}
               <div style="font-size: 0.74rem; font-weight: 600; color: #f8fafc; margin-bottom: 4px;">
                 <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${stBadgeColor};margin-right:5px;"></span>
-                Origen: <span style="color:${stBadgeColor};">${closestRadarSt.source_name || stBadge}</span>
+                ${stActive ? 'Origen' : 'Origen previsto'}: <span style="color:${stBadgeColor};">${closestRadarSt.source_name || stBadge}</span>
               </div>
               <div style="font-size: 0.70rem; color: #cbd5e1; display:flex; flex-direction:column; gap:2px;">
                 <div>Alcance: <strong>${closestRadarSt.range_km || 240} km</strong> · Altitud antena: <strong>${closestRadarSt.alt_m} m</strong></div>
