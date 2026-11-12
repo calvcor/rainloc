@@ -6,6 +6,9 @@ services:
       dockerfile: backend/Dockerfile
     container_name: rainloc-backend
     restart: unless-stopped
+    # Límite de memoria: si hay una fuga, el OOM killer reinicia solo este contenedor
+    # en lugar de presionar a todo el servidor (16 GB compartidos con otros servicios).
+    mem_limit: 8g
     env_file:
       - path: .env
         required: false

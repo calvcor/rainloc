@@ -11,6 +11,7 @@ import json
 import logging
 import asyncio
 import threading
+import urllib.parse
 import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
@@ -59,6 +60,12 @@ OPERA_NODE_ALIASES: Dict[str, str] = {
 # Cubre Península Ibérica y Baleares: Lat [35.0, 44.5], Lon [-10.0, 5.0]
 # CRÍTICO: El grid se muestrea en proyección Web Mercator (EPSG:3857) para que
 # Leaflet (L.imageOverlay) pinte la imagen sin distorsión (eliminando el error de hasta 18km).
+# Ventanas temporales del radar. La ventana de sincronización DEBE ser menor que la de
+# retención: si se descargan fotogramas que la limpieza ya considera caducados, se borran
+# al final de cada ciclo y se vuelven a descargar en el siguiente (bucle de CPU/RAM).
+RADAR_SYNC_WINDOW_HOURS = 24
+RADAR_RETENTION_HOURS = 25
+
 SPAIN_BBOX = {"lat_min": 35.0, "lat_max": 44.5, "lon_min": -10.0, "lon_max": 5.0}
 R_EARTH = 6378137.0
 Y_MERC_MIN = R_EARTH * np.log(np.tan(np.pi/4 + np.radians(SPAIN_BBOX["lat_min"])/2))
@@ -668,18 +675,28 @@ class RadarService:
     # -------------------------------------------------------------
     # Ingesta desde S3
     # -------------------------------------------------------------
-    def _fetch_s3_latest_keys(self, prefix: str, max_keys: int = 1000) -> List[str]:
-        """Consulta la API REST de S3 para listar los archivos más recientes."""
-        url = f"{settings.ORD_S3_ENDPOINT}/{settings.ORD_S3_BUCKET}?list-type=2&prefix={prefix}&max-keys={max_keys}"
-        req = urllib.request.Request(url, headers={"User-Agent": settings.AEMET_USER_AGENT})
+    def _fetch_s3_latest_keys(self, prefix: str, max_keys: int = 1000, max_pages: int = 10) -> List[str]:
+        """Consulta la API REST de S3 para listar los archivos de un prefijo (con paginación)."""
+        ns = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
+        keys: List[str] = []
+        token: Optional[str] = None
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                root = ET.fromstring(resp.read())
-                ns = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-                return [c.findtext("s3:Key", "", ns) for c in root.findall("s3:Contents", ns)]
+            for _ in range(max_pages):
+                params = {"list-type": "2", "prefix": prefix, "max-keys": str(max_keys)}
+                if token:
+                    params["continuation-token"] = token
+                url = f"{settings.ORD_S3_ENDPOINT}/{settings.ORD_S3_BUCKET}?{urllib.parse.urlencode(params)}"
+                req = urllib.request.Request(url, headers={"User-Agent": settings.AEMET_USER_AGENT})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    root = ET.fromstring(resp.read())
+                keys.extend(c.findtext("s3:Key", "", ns) for c in root.findall("s3:Contents", ns))
+                token = root.findtext("s3:NextContinuationToken", None, ns)
+                if root.findtext("s3:IsTruncated", "false", ns).lower() != "true" or not token:
+                    break
+            return keys
         except Exception as e:
             logger.warning(f"Error listando claves S3 ({prefix}): {e}")
-            return []
+            return keys
 
     def _download_s3_file(self, s3_key: str) -> Optional[bytes]:
         """Descarga un fichero de forma pública y sin firma desde S3."""
@@ -1052,11 +1069,27 @@ class RadarService:
                 logger.warning("Radar: No se encontraron claves DBZH en S3.")
                 return self.get_metadata()
 
-            recent_dbz_keys = dbz_keys[-288:]
+            # Solo fotogramas dentro de la ventana de sincronización. Los más antiguos los
+            # borraría _cleanup_old_cache() al final del ciclo y se reprocesarían en bucle
+            # (p. ej. cuando el feed OPERA deja de publicar y solo quedan claves de ayer).
+            window_ts = (now - timedelta(hours=RADAR_SYNC_WINDOW_HOURS)).strftime("%Y%m%dT%H%M")
+            recent_dbz_keys = []
+            for k in dbz_keys[-288:]:
+                ts = k.split("@")[1] if "@" in k else now.strftime("%Y%m%dT%H%M")
+                if ts[:13] >= window_ts:
+                    recent_dbz_keys.append((k, ts))
+
+            if not recent_dbz_keys:
+                last_ts = dbz_keys[-1].split("@")[1] if "@" in dbz_keys[-1] else "?"
+                logger.warning(
+                    f"Radar: Sin fotogramas OPERA en las últimas {RADAR_SYNC_WINDOW_HOURS}h "
+                    f"(último disponible: {last_ts}). Se omite la sincronización."
+                )
+                self._cleanup_old_cache()
+                return self.get_metadata()
 
             keys_to_download = []
-            for k in recent_dbz_keys:
-                ts = k.split("@")[1] if "@" in k else now.strftime("%Y%m%dT%H%M")
+            for k, ts in recent_dbz_keys:
                 mixed_file = self.composites_dir / f"mixed_{ts}.png"
                 if not mixed_file.exists():
                     keys_to_download.append((k, ts))
@@ -1070,12 +1103,15 @@ class RadarService:
                     if h5_bytes:
                         self.process_opera_composite(h5_bytes, ts)
 
+                def process_all():
+                    with ThreadPoolExecutor(max_workers=4) as pool:
+                        list(pool.map(download_and_process, keys_to_download))
+
                 # Procesar en paralelo
-                await loop.run_in_executor(None, lambda: list(ThreadPoolExecutor(max_workers=4).map(download_and_process, keys_to_download)))
-            elif recent_dbz_keys:
+                await loop.run_in_executor(None, process_all)
+            else:
                 # Si no hay fotogramas nuevos pendientes, refrescar el fotograma más reciente con fallback AEMET en directo
-                latest_k = recent_dbz_keys[-1]
-                latest_ts = latest_k.split("@")[1] if "@" in latest_k else now.strftime("%Y%m%dT%H%M")
+                latest_k, latest_ts = recent_dbz_keys[-1]
                 h5_bytes = await loop.run_in_executor(None, self._download_s3_file, latest_k)
                 if h5_bytes:
                     await loop.run_in_executor(None, self.process_opera_composite, h5_bytes, latest_ts)
@@ -1087,9 +1123,9 @@ class RadarService:
         """Elimina fotogramas y archivos con más de 25 horas de antigüedad y sincroniza la línea temporal."""
         try:
             now_utc = datetime.now(timezone.utc)
-            cutoff_dt = now_utc - timedelta(hours=25)
+            cutoff_dt = now_utc - timedelta(hours=RADAR_RETENTION_HOURS)
             cutoff_ts = cutoff_dt.strftime("%Y%m%dT%H%M")
-            cutoff_mtime = time.time() - (25 * 3600)
+            cutoff_mtime = time.time() - (RADAR_RETENTION_HOURS * 3600)
 
             for f in self.composites_dir.glob("*.*"):
                 stem = f.stem
