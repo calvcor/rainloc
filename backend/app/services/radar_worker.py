@@ -84,6 +84,10 @@ S3_PVOL_NODE_IDS: Dict[str, str] = {
 RADAR_SYNC_WINDOW_HOURS = 24
 RADAR_RETENTION_HOURS = 25
 
+# Relación Z-R de Marshall-Palmer (Z = a * R^b) para convertir reflectividad en intensidad de lluvia.
+ZR_MARSHALL_PALMER_A = 200.0
+ZR_MARSHALL_PALMER_B = 1.6
+
 SPAIN_BBOX = {"lat_min": 35.0, "lat_max": 44.5, "lon_min": -10.0, "lon_max": 5.0}
 
 # Si el último compuesto OPERA disponible es más antiguo que esto, se considera la fuente caída:
@@ -244,25 +248,15 @@ def colorize_dbz_array(dbz_matrix: np.ndarray) -> np.ndarray:
 def dbz_to_rain_rate(dbz_matrix: np.ndarray) -> np.ndarray:
     """
     Convierte una matriz 2D de reflectividad (dBZ) en tasa de precipitación instantánea (mm/h).
-    Aplica relación Z-R estándar de Marshall-Palmer (Z = 200 * R^1.6) para lluvia general (< 40 dBZ)
-    y relación convectiva para tormentas (Z = 300 * R^1.4) para dBZ >= 40.
+    Aplica la relación Z-R de Marshall-Palmer (Z = 200 * R^1.6) en todo el rango, la misma que
+    usa el producto RATE de OPERA (zr_a=200, zr_b=1.6), para que los mm/h sean comparables.
     Retorna matriz de float32 en mm/h (con valores < 5.0 dBZ o nodata fijados a 0.0).
     """
     valid = (dbz_matrix >= 5.0) & (dbz_matrix < 95.0)
     rate = np.zeros_like(dbz_matrix, dtype=np.float32)
-
-    # Régimen estratiforme / lluvia general (< 40 dBZ)
-    m_strat = valid & (dbz_matrix < 40.0)
-    if np.any(m_strat):
-        z_strat = 10.0 ** (dbz_matrix[m_strat] / 10.0)
-        rate[m_strat] = np.power(z_strat / 200.0, 1.0 / 1.6)
-
-    # Régimen convectivo / tormentas (>= 40 dBZ)
-    m_conv = valid & (dbz_matrix >= 40.0)
-    if np.any(m_conv):
-        z_conv = 10.0 ** (dbz_matrix[m_conv] / 10.0)
-        rate[m_conv] = np.power(z_conv / 300.0, 1.0 / 1.4)
-
+    if np.any(valid):
+        z = 10.0 ** (dbz_matrix[valid] / 10.0)
+        rate[valid] = np.power(z / ZR_MARSHALL_PALMER_A, 1.0 / ZR_MARSHALL_PALMER_B)
     return np.round(rate, 2)
 
 
