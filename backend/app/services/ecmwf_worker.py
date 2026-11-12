@@ -43,6 +43,7 @@ except ImportError:
     XARRAY_AVAILABLE = False
 
 from app.config import settings
+from app.services.array_cache import BoundedArrayCache
 
 logger = logging.getLogger("rainloc-backend.ecmwf")
 
@@ -134,7 +135,7 @@ class ECMWFWorker:
         self.current_manifest: Optional[Dict[str, Any]] = None
         self._sync_lock = asyncio.Lock()
         self._is_syncing: bool = False
-        self._in_memory_arrays: Dict[str, np.ndarray] = {}
+        self._in_memory_arrays = BoundedArrayCache()
         self._subscribers: Set[asyncio.Queue] = set()
         self._load_latest_manifest_from_disk()
 
@@ -504,10 +505,7 @@ class ECMWFWorker:
                 shutil.rmtree(old_dir, ignore_errors=True)
             
             # Limpiar memoria de matrices antiguas
-            kept_names = {d.name for d in dirs[:keep]}
-            keys_to_delete = [k for k in self._in_memory_arrays.keys() if not any(k.startswith(name) for name in kept_names)]
-            for k in keys_to_delete:
-                del self._in_memory_arrays[k]
+            self._in_memory_arrays.retain_prefixes(d.name for d in dirs[:keep])
             gc.collect()
         except Exception as e:
             logger.warning(f"ECMWF: Error purgando ciclos anteriores: {e}")
