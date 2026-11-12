@@ -22,6 +22,17 @@ export const CONFIG = {
     smoothSensitivity: 1.0 // Sensibilidad reactiva tipo Google Maps
   },
 
+  // Zoom mínimo al que se muestra cada nivel jerárquico de ríos (t_rio del IGN):
+  // los principales siempre; secundarios, afluentes y canales aparecen al acercarse
+  rios: {
+    minZoomByLevel: {
+      1: 0,  // Ríos principales (Ebro, Tajo, Júcar...)
+      2: 7,  // Secundarios destacados (Cabriel, Turia, Segre...)
+      3: 9,  // Afluentes y ríos menores
+      4: 10  // Canales y derivaciones
+    }
+  },
+
   // API Backend URL (FastAPI): Detecta si se accede tras Nginx/Docker en puerto 80 (usando ruta relativa) o en desarrollo directo
   apiBaseUrl: apiBase,
 

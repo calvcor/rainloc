@@ -16,6 +16,7 @@ export class MapManager {
     this.ccaaLayer = null;
     this.riosLayer = null;
     this.riosGeoJson = null;
+    this.riosLevelLayers = null; // Map nivel t_rio -> L.GeoJSON, gestionadas por zoom dentro de riosLayer
     this.currentBasemapId = null;
     const savedPrefs = StorageManager.load();
     this.ccaaVisible = (savedPrefs.ccaaVisible !== undefined) ? Boolean(savedPrefs.ccaaVisible) : true;
@@ -321,7 +322,7 @@ export class MapManager {
     } else if (tRio === 3) { // Afluentes y ríos menores
       weight = 1.2;
       opacity = isDarkMap ? 0.8 : 0.75;
-    } else if (tRio >= 4) { // Ramblas y cursos de agua estacionales
+    } else if (tRio >= 4) { // Canales y derivaciones
       weight = 0.85;
       opacity = isDarkMap ? 0.65 : 0.6;
     }
@@ -347,8 +348,11 @@ export class MapManager {
    * Actualiza el estilo dinámico de la red de ríos en tiempo real
    */
   updateRiosStyle(basemapId = null) {
-    if (this.riosLayer) {
-      this.riosLayer.setStyle((feature) => this._getRiosStyle(feature, basemapId));
+    // Recorre también los niveles ocultos por zoom para que aparezcan con el estilo correcto
+    if (this.riosLevelLayers) {
+      for (const layer of this.riosLevelLayers.values()) {
+        layer.setStyle((feature) => this._getRiosStyle(feature, basemapId));
+      }
     }
   }
 
@@ -389,41 +393,96 @@ export class MapManager {
 
     if (geojsonData && geojsonData.features) {
       this.riosGeoJson = geojsonData;
-      this.riosLayer = L.geoJSON(geojsonData, {
-        pane: 'riosPane',
-        style: (feature) => this._getRiosStyle(feature),
-        onEachFeature: (feature, layer) => {
-          const nombre = feature.properties?.nombre;
-          if (nombre) {
-            layer.bindTooltip(`🌊 ${nombre}`, {
-              sticky: true,
-              direction: 'auto',
-              className: 'river-tooltip'
-            });
-          }
 
-          layer.on({
-            mouseover: (e) => {
-              const currentStyle = this._getRiosStyle(feature);
-              e.target.setStyle({
-                weight: currentStyle.weight + 1.8,
-                opacity: 1.0,
-                color: this.currentBasemapId === 'esriDarkCanvas' ? '#a5f3fc' : '#075985'
-              });
-            },
-            mouseout: (e) => {
-              if (this.riosLayer) {
-                this.riosLayer.resetStyle(e.target);
-              }
-            }
-          });
-        }
-      });
+      // Una subcapa por nivel jerárquico para mostrar los afluentes solo al acercarse
+      const featuresByLevel = new Map();
+      for (const feature of geojsonData.features) {
+        const level = this._getRioLevel(feature);
+        if (!featuresByLevel.has(level)) featuresByLevel.set(level, []);
+        featuresByLevel.get(level).push(feature);
+      }
+
+      this.riosLayer = L.featureGroup();
+      this.riosLevelLayers = new Map();
+      for (const [level, features] of featuresByLevel) {
+        this.riosLevelLayers.set(level, this._createRiosLevelLayer(features));
+      }
+      this._updateRiosZoomVisibility();
+      this.map.on('zoomend', () => this._updateRiosZoomVisibility());
 
       if (this.riosVisible) {
         this.riosLayer.addTo(this.map);
       }
     }
+  }
+
+  /**
+   * Nivel jerárquico de un tramo de río (t_rio del IGN; sin dato se trata como afluente)
+   */
+  _getRioLevel(feature) {
+    return Number(feature?.properties?.t_rio) || 3;
+  }
+
+  /**
+   * Zoom mínimo al que se muestra un nivel de ríos (los niveles no configurados, como el más bajo)
+   */
+  _getRiosMinZoom(level) {
+    const thresholds = CONFIG.rios?.minZoomByLevel || {};
+    if (thresholds[level] !== undefined) return thresholds[level];
+    const known = Object.values(thresholds);
+    return known.length ? Math.max(...known) : 0;
+  }
+
+  /**
+   * Añade o quita del grupo de ríos las subcapas de cada nivel según el zoom actual
+   */
+  _updateRiosZoomVisibility() {
+    if (!this.riosLayer || !this.riosLevelLayers) return;
+    const zoom = this.map.getZoom();
+    for (const [level, layer] of this.riosLevelLayers) {
+      const shouldShow = zoom >= this._getRiosMinZoom(level);
+      const isShown = this.riosLayer.hasLayer(layer);
+      if (shouldShow && !isShown) {
+        this.riosLayer.addLayer(layer);
+      } else if (!shouldShow && isShown) {
+        this.riosLayer.removeLayer(layer);
+      }
+    }
+  }
+
+  /**
+   * Crea la capa GeoJSON interactiva (tooltip y resalte) de un nivel de ríos
+   */
+  _createRiosLevelLayer(features) {
+    const levelLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
+      pane: 'riosPane',
+      style: (feature) => this._getRiosStyle(feature),
+      onEachFeature: (feature, layer) => {
+        const nombre = feature.properties?.nombre;
+        if (nombre) {
+          layer.bindTooltip(`🌊 ${nombre}`, {
+            sticky: true,
+            direction: 'auto',
+            className: 'river-tooltip'
+          });
+        }
+
+        layer.on({
+          mouseover: (e) => {
+            const currentStyle = this._getRiosStyle(feature);
+            e.target.setStyle({
+              weight: currentStyle.weight + 1.8,
+              opacity: 1.0,
+              color: this.currentBasemapId === 'esriDarkCanvas' ? '#a5f3fc' : '#075985'
+            });
+          },
+          mouseout: (e) => {
+            levelLayer.resetStyle(e.target);
+          }
+        });
+      }
+    });
+    return levelLayer;
   }
 
   /**
